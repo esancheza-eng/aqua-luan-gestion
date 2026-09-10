@@ -1335,16 +1335,16 @@ function imprimirLiquidacionDash(){
     .total-general{background:#1a3a5c;border-radius:10px;padding:14px 18px;margin-top:8px;display:flex;justify-content:space-between;align-items:center;}
     .total-general span:first-child{font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.6);}
     .total-general span:last-child{font-family:'DM Serif Display',serif;font-size:22px;color:#4ec9a0;}
-    .firmas-box{display:flex;justify-content:space-between;gap:20px;margin-top:48px;}
-    .firma-linea{flex:1;text-align:center;font-size:11px;color:#1a3a5c;}
-    .firma-linea .raya{border-top:1px solid #1a3a5c;margin-bottom:6px;}
+    .firmas-box{display:flex;justify-content:space-between;align-items:flex-end;gap:36px;margin-top:64px;padding:0 8px;}
+    .firma-linea{flex:1;text-align:center;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#1a3a5c;}
+    .firma-linea .raya{border-top:1px solid #1a3a5c;margin:0 auto 8px;width:90%;height:36px;}
     @media print{body{padding:12px;}}
   </style></head><body>
   <div class="print-header">
     <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
     <div>
       <h1>LIQUIDACIÓN DE EFECTIVO — ${escHTML(asesorLabel)}</h1>
-      <p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
+      <p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · Impreso por: Liquidador${(ADMIN_ACTUAL && (ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario)) ? ' · ' + escHTML(ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario) : ''}</p>
     </div>
   </div>
   ${bloques || '<p style="color:#888;font-style:italic">No hay ventas, pagos ni gastos registrados en este período.</p>'}
@@ -1354,9 +1354,9 @@ function imprimirLiquidacionDash(){
   </div>
   ${_htmlEntregaLiquidacionPrint()}
   <div class="firmas-box">
-    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma secretaria</div>
-    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma asesor</div>
-    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma ayudante</div>
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Liquidador</div>
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Asesor</div>
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Ayudante</div>
   </div>
   <script>
     /* [FIX] Antes esto dependía 100% de window.onload, que espera a que cargue
