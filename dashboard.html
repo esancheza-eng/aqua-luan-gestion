@@ -96,6 +96,7 @@
             <button class="dash-nav-item" data-section="pedidosweb" id="navPedidosWeb" onclick="switchSeccionDash('pedidosweb')">🌐 Pedidos Web</button>
             <button class="dash-nav-item" data-section="auditoria" id="navAuditoria" onclick="switchSeccionDash('auditoria')">🕵️ Auditoría</button>
             <button class="dash-nav-item" data-section="liquidacionDash" id="navLiquidacionDash" onclick="switchSeccionDash('liquidacionDash')">💵 Liquidación</button>
+            <button class="dash-nav-item" data-section="cierreDelDia" id="navCierreDelDia" onclick="switchSeccionDash('cierreDelDia')">🧮 Cierre del Día</button>
             <button class="dash-nav-item" data-section="notasAdicionalesDash" id="navNotasAdicionalesDash" onclick="switchSeccionDash('notasAdicionalesDash')">📝 Notas Adicionales</button>
           </nav>
           <div class="dash-content">
@@ -213,7 +214,7 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Fecha Elim.</th><th>Hora Elim.</th><th>Eliminado por</th><th>Cliente</th><th>Asesor</th><th>Fecha pedido</th><th>Total</th><th>Pago</th><th></th></tr></thead>
+              <thead><tr><th>Fecha Elim.</th><th>Hora Elim.</th><th>Eliminado por</th><th>Cliente</th><th>Asesor</th><th>Fecha pedido</th><th>Total</th><th>Pago</th><th>Motivo</th><th></th></tr></thead>
               <tbody id="tablaEliminados"></tbody>
             </table>
           </div>
@@ -338,7 +339,7 @@
           <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Registro de quién hizo cada cambio o eliminación, con fecha y hora exactas. Solo visible para el administrador.</div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Fecha</th><th>Hora</th><th>Usuario</th><th>Tipo</th><th>Acción</th><th>Detalle</th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Hora</th><th>Usuario</th><th>Tipo</th><th>Acción</th><th>Detalle</th><th>Motivo</th></tr></thead>
               <tbody id="auditoriaTbody"></tbody>
             </table>
           </div>
@@ -380,6 +381,38 @@
           </div>
         </div>
         <!-- cierra seccion-liquidacionDash -->
+        </div>
+        <!-- [NEW] Cierre del Día — resumen consolidado de todas las rutas del período
+             filtrado, en formato de matriz (una columna por asesor + columna Total),
+             igual al formato de la hoja de papel que se usaba antes. Reutiliza los
+             mismos cálculos de _calcularLiquidacionDash() que ya usa la pestaña
+             Liquidación, así que los números siempre cuadran entre ambas pantallas. -->
+        <div class="dash-section" id="seccion-cierreDelDia">
+        <div class="table-card" style="margin-bottom:16px">
+          <div class="table-header">
+            <div class="table-title">🧮 Cierre del Día</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn-filter" style="background:#0f7c38;display:flex;align-items:center;gap:6px" onclick="imprimirCierreDelDia()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM7.5 12h2c.83 0 1.5.67 1.5 1.5S10.33 15 9.5 15H8v2H7v-5zm1 2h1c.28 0 .5-.22.5-.5s-.22-.5-.5-.5h-1v1zM12 12h2c.55 0 1 .45 1 1v3c0 .55-.45 1-1 1h-2v-5zm1 4h1v-3h-1v3zM16 12h2v1h-1v1h1v1h-1v2h-1v-5z"/></svg>
+                Imprimir PDF
+              </button>
+              <button class="btn-filter" id="cddBtnEditar" style="background:var(--navy)" onclick="_editarCierreDelDia()">✏ Editar</button>
+              <button class="btn-filter" id="cddBtnGuardar" style="display:none;background:#0f7c38" onclick="_confirmarGuardarCierreDelDia()">💾 Guardar Cierre del Día</button>
+              <button class="btn-filter" id="cddBtnCancelar" style="display:none;background:#fff;color:var(--navy);border:1.5px solid var(--border)" onclick="_cancelarCierreDelDia()">Cancelar</button>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 4px">Resumen por ruta del período filtrado arriba. Cada columna es un asesor (todos, aunque no hayan tenido movimiento ese día); la última columna es el total de todas las rutas. Los valores se calculan solos, pero puedes editarlos a mano si necesitas ajustar algo antes de guardar el cierre oficial del día.</div>
+          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px;font-style:italic" id="cierreDelDiaStatus"></div>
+          <div style="padding:0 1.25rem 1.25rem;overflow-x:auto" id="cierreDelDiaTabla1Wrap"></div>
+        </div>
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">💰 Forma de Entrega de Dinero</div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Cómo entregó cada asesor su liquidación, según lo registrado en la pestaña Liquidación.</div>
+          <div style="padding:0 1.25rem 1.25rem;overflow-x:auto" id="cierreDelDiaTabla2Wrap"></div>
+        </div>
+        <div id="cierreDelDiaEmptyMsg" class="empty-msg" style="display:none;padding:0 1.25rem 1.25rem;color:var(--muted);font-style:italic">Aún no hay ventas, pagos ni gastos registrados en este período.</div>
         </div>
         <!-- [NEW] Notas Adicionales — sección independiente en el menú lateral,
              debajo de Liquidación. Muestra los pedidos del período filtrado
@@ -541,6 +574,28 @@
     <div class="editar-footer">
       <button class="btn-cancelar-edicion" onclick="cerrarEditarPagoGasto()">❌ Cancelar</button>
       <button class="btn-guardar-edicion" id="btnGuardarPagoGasto" onclick="guardarEdicionPagoGasto()">✅ Guardar Cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ [NEW] MODAL MOTIVO DE ELIMINACIÓN — reutilizable para
+     cualquier "eliminar" (pedido, pago, gasto). Flujo en 2 pasos: 1) el botón
+     "Eliminar" original abre este modal en vez de borrar directo; 2) el admin
+     escribe el motivo y confirma con el botón "Eliminar" de aquí adentro. ═══ -->
+<div class="editar-overlay" id="modalMotivoEliminarOverlay" onclick="if(event.target===this)_cancelarMotivoEliminar()">
+  <div class="editar-modal" style="max-width:480px">
+    <div class="editar-header">
+      <div class="editar-header-title">🗑 Motivo de eliminación</div>
+      <button class="btn-cerrar-editar" onclick="_cancelarMotivoEliminar()">✕</button>
+    </div>
+    <div class="editar-body">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="motivoEliminarMensaje"></div>
+      <label style="font-weight:700;font-size:12px;display:block;margin-bottom:6px">Motivo por qué se elimina:</label>
+      <textarea id="motivoEliminarInput" rows="3" placeholder="Ej: Pedido duplicado, cliente canceló, error de registro..." style="width:100%;border:1.5px solid var(--border);border-radius:8px;padding:10px;font-family:inherit;font-size:13px;resize:vertical"></textarea>
+    </div>
+    <div class="editar-footer">
+      <button class="btn-cancelar-edicion" onclick="_cancelarMotivoEliminar()">❌ Cancelar</button>
+      <button class="btn-guardar-edicion" style="background:var(--red)" onclick="_confirmarMotivoEliminar()">🗑 Eliminar</button>
     </div>
   </div>
 </div>
