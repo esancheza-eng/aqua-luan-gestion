@@ -185,6 +185,8 @@ function switchSeccionDash(sec){
   }
   if (sec === 'liquidacionDash' && typeof renderLiquidacionDash === 'function') renderLiquidacionDash(); // [NEW] siempre refresca al entrar, ya usa datos que el Dashboard ya tiene cargados
   if (sec === 'cierreDelDia' && typeof renderCierreDelDia === 'function') renderCierreDelDia(); // [NEW] Cierre del Día — vista matriz, se refresca al entrar
+  if (sec === 'eliminados' && typeof renderTablaEliminados === 'function') renderTablaEliminados();
+  if (sec === 'auditoria' && typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
   if (sec === 'notasAdicionalesDash' && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash(); // [NEW] sección independiente de Notas Adicionales
   // [FIX] Los gráficos de "Resumen General" ya no se redibujan en cada cambio de
   // Firestore si esta pestaña no está activa (ver comentario en renderDashboard) —
@@ -429,37 +431,38 @@ function detenerListenerEliminados(){ if(_unsubEliminados){_unsubEliminados();_u
 /* [NEW] Auditoría — quién modificó/eliminó qué, cuándo, y el detalle antes/después.
    Limitado a los 300 registros más recientes por la misma razón que Eliminados/Roles:
    es una lista pura de lectura, sin ningún total acumulado que dependa del historial completo. */
-let _unsubAuditoria=null;
+let _unsubAuditoria=null, _auditoriaRaw=[];
 function _iniciarListenerAuditoria(){
   if(_unsubAuditoria){_unsubAuditoria();_unsubAuditoria=null;}
   _unsubAuditoria = db.collection('historialCambios').orderBy('creadoEn','desc').limit(300).onSnapshot(snap => {
-    const registros = snap.docs.map(d => d.data());
-    const tbody = document.getElementById('auditoriaTbody');
-    const count = document.getElementById('auditoriaCount');
-    if (count) count.textContent = `${registros.length} registro${registros.length!==1?'s':''}`;
-    if (!tbody) return;
-    const badgeAccion = (a) => {
-      const color = a==='eliminación' ? '#b71c1c' : (a==='edición' ? '#8a6d00' : '#0a7c6e');
-      const fondo = a==='eliminación' ? '#fee2e2' : (a==='edición' ? '#fff3cd' : '#e6f4f2');
-      return `<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;background:${fondo};color:${color}">${a||'-'}</span>`;
-    };
-    // [NEW] Para las ediciones de pedidos (que se guardan un registro por CAMPO
-    // cambiado), arma el detalle como "campo: antes → después" en vez de mostrar
-    // los campos internos crudos.
-    const detalleDe = (r) => {
-      if (r.campo) return `<b>${r.campo}:</b> "${(r.valorAnterior||'').toString().slice(0,40)}" → "${(r.valorNuevo||'').toString().slice(0,40)}"`;
-      return r.detalle || '-';
-    };
-    tbody.innerHTML = registros.length ? registros.map(r => `<tr>
-        <td style="font-size:12px;white-space:nowrap">${r.fecha||'-'}</td>
-        <td style="font-size:12px;white-space:nowrap">${r.hora||'-'}</td>
-        <td style="font-size:12px;font-weight:600">${r.usuarioAdmin||'-'}</td>
-        <td style="font-size:12px;text-transform:capitalize">${r.tipo||'-'}</td>
-        <td>${badgeAccion(r.accion)}</td>
-        <td style="font-size:12px;color:var(--muted)">${detalleDe(r)}</td>
-        <td style="font-size:12px;color:var(--muted);font-style:italic">${escHTML(r.motivo||'-')}</td>
-      </tr>`).join('') : '<tr><td colspan="7"><div class="empty-state"><div class="icon">🕵️</div>Sin registros de auditoría aún</div></td></tr>';
+    _auditoriaRaw = snap.docs.map(d => d.data());
+    renderTablaAuditoria();
   }, err => console.error('listener auditoría:', err));
+}
+function renderTablaAuditoria(){
+  const tbody = document.getElementById('auditoriaTbody');
+  const count = document.getElementById('auditoriaCount');
+  if (!tbody) return;
+  const registros = (_auditoriaRaw||[]).filter(r => _estaEnRangoFiltroDash(r.fecha, r.creadoEn));
+  if (count) count.textContent = `${registros.length} registro${registros.length!==1?'s':''}`;
+  const badgeAccion = (a) => {
+    const color = a==='eliminación' ? '#b71c1c' : (a==='edición' ? '#8a6d00' : '#0a7c6e');
+    const fondo = a==='eliminación' ? '#fee2e2' : (a==='edición' ? '#fff3cd' : '#e6f4f2');
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;background:${fondo};color:${color}">${a||'-'}</span>`;
+  };
+  const detalleDe = (r) => {
+    if (r.campo) return `<b>${r.campo}:</b> "${(r.valorAnterior||'').toString().slice(0,40)}" → "${(r.valorNuevo||'').toString().slice(0,40)}"`;
+    return r.detalle || '-';
+  };
+  tbody.innerHTML = registros.length ? registros.map(r => `<tr>
+      <td style="font-size:12px;white-space:nowrap">${r.fecha||'-'}</td>
+      <td style="font-size:12px;white-space:nowrap">${r.hora||'-'}</td>
+      <td style="font-size:12px;font-weight:600">${r.usuarioAdmin||'-'}</td>
+      <td style="font-size:12px;text-transform:capitalize">${r.tipo||'-'}</td>
+      <td>${badgeAccion(r.accion)}</td>
+      <td style="font-size:12px;color:var(--muted)">${detalleDe(r)}</td>
+      <td style="font-size:12px;color:var(--muted);font-style:italic">${escHTML(r.motivo||'-')}</td>
+    </tr>`).join('') : '<tr><td colspan="7"><div class="empty-state"><div class="icon">🕵️</div>Sin registros de auditoría en el período filtrado</div></td></tr>';
 }
 function detenerListenerAuditoria(){ if(_unsubAuditoria){_unsubAuditoria();_unsubAuditoria=null;} }
 
@@ -1456,6 +1459,34 @@ function fechaHoy() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
+function _isoFechaDash(valor, ts){
+  const raw = String(valor||'').trim();
+  if(raw){
+    const iso = raw.slice(0,10);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+    const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if(m) return m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
+  }
+  if(ts && typeof ts.toDate === 'function'){
+    const d = ts.toDate();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  if(ts instanceof Date && !isNaN(ts)){
+    return ts.getFullYear()+'-'+String(ts.getMonth()+1).padStart(2,'0')+'-'+String(ts.getDate()).padStart(2,'0');
+  }
+  return '';
+}
+function _estaEnRangoFiltroDash(fechaValor, ts){
+  const hoy = (typeof _topeFechaHoy === 'function') ? _topeFechaHoy() : fechaHoy();
+  const desde = document.getElementById('filtroFecha')?.value || '';
+  let hasta = document.getElementById('filtroFechaHasta')?.value || hoy;
+  if(!hasta || hasta > hoy) hasta = hoy;
+  const f = _isoFechaDash(fechaValor, ts);
+  if(!f) return false;
+  if(desde && f < desde) return false;
+  if(hasta && f > hasta) return false;
+  return true;
+}
 function _esRegistroDeHoy(fecha){
   const raw = String(fecha||'').trim();
   if(!raw) return false;
@@ -1619,6 +1650,8 @@ function _recalcularTodosLosDatos() {
   // [NEW] misma lógica de refresco perezoso para la sección independiente de Notas Adicionales
   const seccionNotasAdicionalesVisible = document.getElementById('seccion-notasAdicionalesDash')?.classList.contains('active');
   if (seccionNotasAdicionalesVisible && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash();
+  if (typeof renderTablaEliminados === 'function') renderTablaEliminados();
+  if (typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
   document.getElementById('lastUpdate').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit' });
 }
 function iniciarListenersDashboard() {
@@ -3717,12 +3750,13 @@ function renderTablaEliminados(){
   const tbody = document.getElementById('tablaEliminados');
   const count = document.getElementById('eliminadosCount');
   if(!tbody) return;
-  if(count) count.textContent = _eliminadosRaw.length + ' registro' + (_eliminadosRaw.length!==1?'s':'');
-  if(!_eliminadosRaw.length){
-    tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="icon">🗑</div>No hay pedidos eliminados registrados</div></td></tr>';
+  const lista = (_eliminadosRaw||[]).filter(p => _estaEnRangoFiltroDash(p.fechaEliminacion || p.fecha, p.eliminadoEn));
+  if(count) count.textContent = lista.length + ' registro' + (lista.length!==1?'s':'');
+  if(!lista.length){
+    tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="icon">🗑</div>No hay pedidos eliminados en el período filtrado</div></td></tr>';
     return;
   }
-  tbody.innerHTML = _eliminadosRaw.map((p, idx) => {
+  tbody.innerHTML = lista.map((p, idx) => {
     const total = p.total != null ? `<strong style="color:var(--red)">$${parseFloat(p.total).toFixed(2)}</strong>` : '—';
     const pago = p.formapago ? `<span class="badge badge-red">${escHTML(p.formapago)}</span>` : '';
     const asesorNombre = escHTML((p.empleado||'').split(':')[1]?.trim() || p.empleado || '-');
