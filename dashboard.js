@@ -457,7 +457,8 @@ function _iniciarListenerAuditoria(){
         <td style="font-size:12px;text-transform:capitalize">${r.tipo||'-'}</td>
         <td>${badgeAccion(r.accion)}</td>
         <td style="font-size:12px;color:var(--muted)">${detalleDe(r)}</td>
-      </tr>`).join('') : '<tr><td colspan="6"><div class="empty-state"><div class="icon">🕵️</div>Sin registros de auditoría aún</div></td></tr>';
+        <td style="font-size:12px;color:var(--muted);font-style:italic">${escHTML(r.motivo||'-')}</td>
+      </tr>`).join('') : '<tr><td colspan="7"><div class="empty-state"><div class="icon">🕵️</div>Sin registros de auditoría aún</div></td></tr>';
   }, err => console.error('listener auditoría:', err));
 }
 function detenerListenerAuditoria(){ if(_unsubAuditoria){_unsubAuditoria();_unsubAuditoria=null;} }
@@ -3593,10 +3594,42 @@ async function guardarEdicionPedido(){
    para pedidos, pagos, gastos, usuarios, etc. Queda visible en la nueva pestaña
    "Auditoría" del Dashboard: quién, qué tipo de registro, qué acción, cuándo
    (fecha/hora exacta) y el detalle de qué cambió. */
-async function _registrarAuditoria(tipo, accion, registroId, detalle){
+/* [NEW] Modal reutilizable de "Motivo de eliminación" — cualquier flujo de
+   eliminar (pedido, pago, gasto) llama a _pedirMotivoEliminar() en vez de
+   confirm(). El callback solo se ejecuta si el admin escribe un motivo y
+   confirma con el botón "Eliminar" del modal (segundo click). */
+let _motivoEliminarCallback = null;
+function _pedirMotivoEliminar(mensaje, callback){
+  const overlay = document.getElementById('modalMotivoEliminarOverlay');
+  const msgEl = document.getElementById('motivoEliminarMensaje');
+  const inputEl = document.getElementById('motivoEliminarInput');
+  if(!overlay || !msgEl || !inputEl){ callback(''); return; } // red de seguridad si el modal no está en el HTML
+  msgEl.textContent = mensaje;
+  inputEl.value = '';
+  _motivoEliminarCallback = callback;
+  overlay.classList.add('open');
+  setTimeout(()=>inputEl.focus(), 50);
+}
+function _cancelarMotivoEliminar(){
+  const overlay = document.getElementById('modalMotivoEliminarOverlay');
+  if(overlay) overlay.classList.remove('open');
+  _motivoEliminarCallback = null;
+}
+function _confirmarMotivoEliminar(){
+  const inputEl = document.getElementById('motivoEliminarInput');
+  const motivo = (inputEl.value||'').trim();
+  if(!motivo){ alert('Escribe el motivo por el que se elimina.'); inputEl.focus(); return; }
+  const cb = _motivoEliminarCallback;
+  const overlay = document.getElementById('modalMotivoEliminarOverlay');
+  if(overlay) overlay.classList.remove('open');
+  _motivoEliminarCallback = null;
+  if(cb) cb(motivo);
+}
+async function _registrarAuditoria(tipo, accion, registroId, detalle, motivo){
   try{
     await db.collection('historialCambios').add({
       tipo, accion, registroId: registroId || null, detalle: detalle || '',
+      motivo: motivo || '', // [NEW] motivo de eliminación, cuando aplica
       usuarioAdmin: actorAuditoria(), usuarioUid: (ADMIN_ACTUAL && ADMIN_ACTUAL.uid) || null, usuarioLogin: (ADMIN_ACTUAL && ADMIN_ACTUAL.usuario) || '',
       fecha: fechaHoy(),
       hora: new Date().toLocaleTimeString('es-EC'),
@@ -3611,9 +3644,7 @@ async function eliminarPedidoCompleto(pedidoId){
 
   const clienteNombre = p.cliente || 'Sin nombre';
   const totalPedido = p.total != null ? `$${parseFloat(p.total).toFixed(2)}` : '$0.00';
-  const confirmado = confirm(`¿Eliminar por completo el pedido de "${clienteNombre}" (${totalPedido})?\n\nEsta acción lo saca del dashboard y de la app de asesores, y también revierte cualquier movimiento de inventario generado automáticamente por esta venta. Queda respaldado en el historial de eliminados, pero ya no aparecerá en ningún reporte activo.`);
-  if(!confirmado) return;
-
+  _pedirMotivoEliminar(`Vas a eliminar por completo el pedido de "${clienteNombre}" (${totalPedido}). Esta acción lo saca del dashboard y de la app de asesores, y también revierte cualquier movimiento de inventario generado automáticamente por esta venta. Queda respaldado en el historial de eliminados, pero ya no aparecerá en ningún reporte activo.`, async (motivo) => {
   try{
     // 1) Respaldo completo del documento original + metadata de la eliminación
     const { _id, ...datosOriginales } = p; // quita el campo interno _id antes de guardar el respaldo
@@ -3621,6 +3652,7 @@ async function eliminarPedidoCompleto(pedidoId){
       ...datosOriginales,
       pedidoIdOriginal: pedidoId,
       eliminadoPor: actorAuditoria(),
+      motivoEliminacion: motivo, // [NEW]
       fechaEliminacion: fechaHoy(),
       horaEliminacion: new Date().toLocaleTimeString('es-EC'),
       eliminadoEn: firebase.firestore.FieldValue.serverTimestamp()
@@ -3628,7 +3660,7 @@ async function eliminarPedidoCompleto(pedidoId){
 
     // [NEW] Registro de auditoría de esta eliminación
     await _registrarAuditoria('pedido', 'eliminación', pedidoId,
-      `Pedido de "${clienteNombre}" (${totalPedido}) eliminado — respaldado en Pedidos Eliminados.`);
+      `Pedido de "${clienteNombre}" (${totalPedido}) eliminado — respaldado en Pedidos Eliminados.`, motivo);
 
     // 2) [NEW] Borra también los movimientos de inventario que esta venta
     // generó automáticamente (búsqueda por pedidoId, que sí es un campo
@@ -3656,6 +3688,7 @@ async function eliminarPedidoCompleto(pedidoId){
     console.error(err);
     alert('❌ Ocurrió un error al eliminar el pedido: ' + err.message);
   }
+  });
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -3670,7 +3703,7 @@ function renderTablaEliminados(){
   if(!tbody) return;
   if(count) count.textContent = _eliminadosRaw.length + ' registro' + (_eliminadosRaw.length!==1?'s':'');
   if(!_eliminadosRaw.length){
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">🗑</div>No hay pedidos eliminados registrados</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="icon">🗑</div>No hay pedidos eliminados registrados</div></td></tr>';
     return;
   }
   tbody.innerHTML = _eliminadosRaw.map((p, idx) => {
@@ -3702,10 +3735,11 @@ function renderTablaEliminados(){
       <td style="font-size:12px;color:var(--muted);white-space:nowrap">${limpiarFecha(p.fecha)}</td>
       <td style="text-align:right">${total}</td>
       <td>${pago}</td>
+      <td style="font-size:12px;color:var(--muted);font-style:italic;max-width:180px">${escHTML(p.motivoEliminacion||'-')}</td>
       <td><button class="btn-editar-fila" onclick="toggleEliminadoDetalle(${idx})" id="btnEliminadoToggle-${idx}" title="Ver todo lo que se eliminó">👁 Ver detalle</button></td>
     </tr>
     <tr id="filaEliminadoDetalle-${idx}" style="display:none">
-      <td colspan="9" style="background:var(--surface2);padding:14px 18px">
+      <td colspan="10" style="background:var(--surface2);padding:14px 18px">
         <div style="font-size:12px;color:var(--muted);line-height:1.9;margin-bottom:10px">
           📞 Teléfono: <b style="color:var(--text)">${escHTML(p.telefono||'-')}</b> &nbsp;·&nbsp;
           📍 Dirección: <b style="color:var(--text)">${escHTML(p.direccion||'-')}</b><br>
@@ -4094,23 +4128,25 @@ async function eliminarPagoDash(id){
   if(pagoChk && !_esRegistroDeHoy(pagoChk.fecha||pagoChk.FECHA)){ alert('Solo se pueden eliminar pagos del día de hoy.'); return; }
 
   const p = _pagosRaw.find(x => x._id === id);
-  if(!confirm(`¿Eliminar el pago de "${p?.cliente||'este cliente'}" ($${(parseFloat(p?.monto)||0).toFixed(2)})? Esta acción no se puede deshacer.`)) return;
+  _pedirMotivoEliminar(`Vas a eliminar el pago de "${p?.cliente||'este cliente'}" ($${(parseFloat(p?.monto)||0).toFixed(2)}). Esta acción no se puede deshacer.`, async (motivo) => {
   try{
     await db.collection('pagos').doc(id).delete();
-    await _registrarAuditoria('pago', 'eliminación', id, 'Pago eliminado por ' + actorAuditoria());
+    await _registrarAuditoria('pago', 'eliminación', id, 'Pago eliminado por ' + actorAuditoria(), motivo);
     mostrarToastEdicion('🗑 Pago eliminado correctamente.');
   }catch(err){ console.error(err); alert('❌ No se pudo eliminar el pago: ' + err.message); }
+  });
 }
 
 async function eliminarGastoDash(id){
   const g = _gastosRaw.find(x => x._id === id);
   if(g && !_esRegistroDeHoy(g.fecha||g.FECHA)){ alert('Solo se pueden eliminar gastos del día de hoy.'); return; }
-  if(!confirm(`¿Eliminar el gasto "${g?.desc||g?.categoria||'este gasto'}" ($${(parseFloat(g?.monto)||0).toFixed(2)})? Esta acción no se puede deshacer.`)) return;
+  _pedirMotivoEliminar(`Vas a eliminar el gasto "${g?.desc||g?.categoria||'este gasto'}" ($${(parseFloat(g?.monto)||0).toFixed(2)}). Esta acción no se puede deshacer.`, async (motivo) => {
   try{
     await db.collection('gastos').doc(id).delete();
-    await _registrarAuditoria('gasto', 'eliminación', id, 'Gasto eliminado por ' + actorAuditoria());
+    await _registrarAuditoria('gasto', 'eliminación', id, 'Gasto eliminado por ' + actorAuditoria(), motivo);
     mostrarToastEdicion('🗑 Gasto eliminado correctamente.');
   }catch(err){ console.error(err); alert('❌ No se pudo eliminar el gasto: ' + err.message); }
+  });
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -4269,7 +4305,9 @@ async function _llamarFuncion(nombre, datos){
 async function eliminarSecretariaSeleccionada(){
   const uid = document.getElementById('sec-eliminar-select').value;
   if(!uid){ alert('Selecciona una cuenta de la lista.'); return; }
-  if(!confirm('¿Quitar el acceso de esta Secretaria? Ya no podrá iniciar sesión, y el usuario quedará libre para volver a crearse si hace falta.')) return;
+  const sel = document.getElementById('sec-eliminar-select');
+  const nombreSeleccionado = sel.options[sel.selectedIndex]?.text || 'esta cuenta';
+  _pedirMotivoEliminar(`Vas a quitar el acceso de "${nombreSeleccionado}". Ya no podrá iniciar sesión, y el usuario quedará libre para volver a crearse si hace falta.`, async (motivo) => {
   try{
     // [FIX] Antes solo se borraba el perfil de Firestore y la cuenta de Firebase
     // Auth quedaba huérfana (con el mismo usuario/correo "ocupado" para siempre).
@@ -4277,7 +4315,13 @@ async function eliminarSecretariaSeleccionada(){
     // cosas — funciona igual para secretaria que para asesor (solo exige que la
     // cuenta objetivo no sea admin).
     await _llamarFuncion('eliminarAsesorCompleto', { uid });
+    // [NEW] Registro de auditoría de esta eliminación de usuario, con motivo —
+    // válido para cualquier cuenta que se borre por esta misma vía en el futuro,
+    // no solo secretarias.
+    await _registrarAuditoria('usuario', 'eliminación', uid,
+      `Cuenta de "${nombreSeleccionado}" eliminada — acceso revocado por completo.`, motivo);
     mostrarToastEdicion('✓ Acceso de Secretaria revocado por completo. El usuario queda libre para volver a crearse.');
     poblarSelectEliminarSecretaria();
   }catch(err){ console.error(err); alert('No se pudo eliminar: ' + (err.message || 'error desconocido')); }
+  });
 }
