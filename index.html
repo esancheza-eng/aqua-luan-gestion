@@ -89,11 +89,12 @@
             <button class="dash-nav-item" data-section="caja" id="navCaja" onclick="switchSeccionDash('caja')">💳 Cuadre de Caja</button>
             <button class="dash-nav-item" data-section="reporteAsesor" id="navReporteAsesor" onclick="switchSeccionDash('reporteAsesor')">👤 Reporte por Asesor</button>
             <button class="dash-nav-item" data-section="eliminados" id="navEliminados" onclick="switchSeccionDash('eliminados')">🗑 Pedidos Eliminados</button>
-            <button class="dash-nav-item" data-section="inventario" id="navInventario" onclick="switchSeccionDash('inventario')">📦 Inventario</button>
-            <button class="dash-nav-item" data-section="roles" id="navRoles" onclick="switchSeccionDash('roles')">💵 Roles de Pago</button>
+            <!-- [NEW] Oculto temporalmente para reducir lecturas de Firestore (este listener leía TODA la colección inventarioMovimientos sin límite, cada vez que algo cambiaba) — el botón, la sección HTML y todas las funciones siguen intactas, solo no hay forma de llegar aquí desde el menú. Para reactivarlo, quita este comentario y el que envuelve el <button>. -->
+            <!-- <button class="dash-nav-item" data-section="inventario" id="navInventario" onclick="switchSeccionDash('inventario')">📦 Inventario</button> -->
+            <!-- [NEW] Oculto temporalmente para reducir lecturas de Firestore — el botón, la sección HTML y todas las funciones siguen intactas, solo no hay forma de llegar aquí desde el menú. Para reactivarlo, quita este comentario y el que envuelve el <button>. -->
+            <!-- <button class="dash-nav-item" data-section="roles" id="navRoles" onclick="switchSeccionDash('roles')">💵 Roles de Pago</button> -->
             <button class="dash-nav-item" data-section="importar" id="navImportar" onclick="switchSeccionDash('importar')">📤 Importar Datos</button>
             <button class="dash-nav-item" data-section="usuarios" id="navUsuarios" onclick="switchSeccionDash('usuarios'); poblarSelectEliminarSecretaria();">👩‍💼 Crear Usuarios</button>
-            <button class="dash-nav-item" data-section="pedidosweb" id="navPedidosWeb" onclick="switchSeccionDash('pedidosweb')">🌐 Pedidos Web</button>
             <button class="dash-nav-item" data-section="auditoria" id="navAuditoria" onclick="switchSeccionDash('auditoria')">🕵️ Auditoría</button>
             <button class="dash-nav-item" data-section="liquidacionDash" id="navLiquidacionDash" onclick="switchSeccionDash('liquidacionDash')">💵 Liquidación</button>
             <button class="dash-nav-item" data-section="cierreDelDia" id="navCierreDelDia" onclick="switchSeccionDash('cierreDelDia')">🧮 Cierre del Día</button>
@@ -214,7 +215,7 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Fecha Elim.</th><th>Hora Elim.</th><th>Eliminado por</th><th>Cliente</th><th>Asesor</th><th>Fecha pedido</th><th>Total</th><th>Pago</th><th></th></tr></thead>
+              <thead><tr><th>Fecha Elim.</th><th>Hora Elim.</th><th>Eliminado por</th><th>Cliente</th><th>Asesor</th><th>Fecha pedido</th><th>Total</th><th>Pago</th><th>Motivo</th><th></th></tr></thead>
               <tbody id="tablaEliminados"></tbody>
             </table>
           </div>
@@ -318,17 +319,6 @@
           </div>
         </div>
         </div>
-        <div class="dash-section" id="seccion-pedidosweb">
-        <!-- [NEW] Pedidos Web — cola de pedidos que llegan de la página pública, pendientes de aprobación -->
-        <div class="table-card">
-          <div class="table-header">
-            <div class="table-title">🌐 Pedidos Web — Pendientes de Aprobación</div>
-            <span class="last-update" id="pedidosWebCount" style="margin-left:0">Cargando...</span>
-          </div>
-          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Estos pedidos llegaron desde la página web pública y todavía NO forman parte de las ventas reales — revísalos y apruébalos (asignando asesor y forma de pago) para que entren al sistema, o recházalos si son inválidos.</div>
-          <div id="listaPedidosWeb" style="padding:0 1.25rem 1.25rem"></div>
-        </div>
-        </div>
         <div class="dash-section" id="seccion-auditoria">
         <!-- [NEW] Auditoría / Modificaciones — quién cambió o eliminó qué, cuándo, y el detalle antes/después -->
         <div class="table-card">
@@ -339,7 +329,7 @@
           <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Registro de quién hizo cada cambio o eliminación, con fecha y hora exactas. Solo visible para el administrador.</div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Fecha</th><th>Hora</th><th>Usuario</th><th>Tipo</th><th>Acción</th><th>Detalle</th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Hora</th><th>Usuario</th><th>Tipo</th><th>Acción</th><th>Detalle</th><th>Motivo</th></tr></thead>
               <tbody id="auditoriaTbody"></tbody>
             </table>
           </div>
@@ -401,7 +391,7 @@
               <button class="btn-filter" id="cddBtnCancelar" style="display:none;background:#fff;color:var(--navy);border:1.5px solid var(--border)" onclick="_cancelarCierreDelDia()">Cancelar</button>
             </div>
           </div>
-          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 4px">Resumen por ruta del período filtrado arriba. Cada columna es un asesor; la última columna es el total de todas las rutas. Los valores se calculan solos, pero puedes editarlos a mano si necesitas ajustar algo antes de guardar el cierre oficial del día.</div>
+          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 4px">Resumen por ruta del período filtrado arriba. Cada columna es un asesor (todos, aunque no hayan tenido movimiento ese día); la última columna es el total de todas las rutas. Los valores se calculan solos, pero puedes editarlos a mano si necesitas ajustar algo antes de guardar el cierre oficial del día.</div>
           <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px;font-style:italic" id="cierreDelDiaStatus"></div>
           <div style="padding:0 1.25rem 1.25rem;overflow-x:auto" id="cierreDelDiaTabla1Wrap"></div>
         </div>
@@ -574,6 +564,28 @@
     <div class="editar-footer">
       <button class="btn-cancelar-edicion" onclick="cerrarEditarPagoGasto()">❌ Cancelar</button>
       <button class="btn-guardar-edicion" id="btnGuardarPagoGasto" onclick="guardarEdicionPagoGasto()">✅ Guardar Cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ [NEW] MODAL MOTIVO DE ELIMINACIÓN — reutilizable para
+     cualquier "eliminar" (pedido, pago, gasto). Flujo en 2 pasos: 1) el botón
+     "Eliminar" original abre este modal en vez de borrar directo; 2) el admin
+     escribe el motivo y confirma con el botón "Eliminar" de aquí adentro. ═══ -->
+<div class="editar-overlay" id="modalMotivoEliminarOverlay" onclick="if(event.target===this)_cancelarMotivoEliminar()">
+  <div class="editar-modal" style="max-width:480px">
+    <div class="editar-header">
+      <div class="editar-header-title">🗑 Motivo de eliminación</div>
+      <button class="btn-cerrar-editar" onclick="_cancelarMotivoEliminar()">✕</button>
+    </div>
+    <div class="editar-body">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="motivoEliminarMensaje"></div>
+      <label style="font-weight:700;font-size:12px;display:block;margin-bottom:6px">Motivo por qué se elimina:</label>
+      <textarea id="motivoEliminarInput" rows="3" placeholder="Ej: Pedido duplicado, cliente canceló, error de registro..." style="width:100%;border:1.5px solid var(--border);border-radius:8px;padding:10px;font-family:inherit;font-size:13px;resize:vertical"></textarea>
+    </div>
+    <div class="editar-footer">
+      <button class="btn-cancelar-edicion" onclick="_cancelarMotivoEliminar()">❌ Cancelar</button>
+      <button class="btn-guardar-edicion" style="background:var(--red)" onclick="_confirmarMotivoEliminar()">🗑 Eliminar</button>
     </div>
   </div>
 </div>
