@@ -655,26 +655,42 @@ function _idCierreDelDia(){
   return desde+'_'+hasta;
 }
 function _htmlTablaCierreDelDia(tablaNum, asesoresId, nombresDisplay, datos, filas, guardado){
-  const thead = '<tr><th>Ruta</th>' + nombresDisplay.map(n=>`<th>${escHTML(n)}</th>`).join('') + '<th>Total</th></tr>';
-  const tbody = filas.map(f=>{
-    let total = 0;
-    const celdas = asesoresId.map((id, colIdx)=>{
+  // Layout: 1 sola columna de nombres (filas = asesores). Las métricas van en columnas.
+  // Guardado/lectura siguen siendo guardado[etiqueta][asesorId] — no cambia el dato.
+  const thead = '<tr><th>Asesor</th>' + filas.map(f=>`<th${f.destacado?' class="cierre-matriz-destacado-col"':''}>${escHTML(f.etiqueta)}</th>`).join('') + '</tr>';
+  const colTotales = filas.map(()=>0);
+  const tbody = asesoresId.map((id, rowIdx)=>{
+    const celdas = filas.map((f, fi)=>{
       const guardadoVal = guardado?.[f.etiqueta]?.[id];
-      const v = (guardadoVal !== undefined && guardadoVal !== null && guardadoVal !== '') ? (Number(guardadoVal)||0) : (f.valor(datos[colIdx]) || 0);
-      total += v;
-      return `<td><input type="text" class="cdd-input" inputmode="decimal" data-etiqueta="${escHTML(f.etiqueta)}" data-asesor="${escHTML(id)}" value="${v.toFixed(2)}" disabled oninput="_filtrarInputMontoLiq(this);_recalcularFilaCierreDelDia(this)"></td>`;
+      const v = (guardadoVal !== undefined && guardadoVal !== null && guardadoVal !== '') ? (Number(guardadoVal)||0) : (f.valor(datos[rowIdx]) || 0);
+      colTotales[fi] += v;
+      return `<td class="${f.destacado?'cierre-matriz-destacado':''}"><input type="text" class="cdd-input" inputmode="decimal" data-etiqueta="${escHTML(f.etiqueta)}" data-asesor="${escHTML(id)}" value="${v.toFixed(2)}" disabled oninput="_filtrarInputMontoLiq(this);_recalcularFilaCierreDelDia(this)"></td>`;
     }).join('');
-    return `<tr${f.destacado?' class="cierre-matriz-destacado"':''}><td>${escHTML(f.etiqueta)}</td>${celdas}<td>$${total.toFixed(2)}</td></tr>`;
+    return `<tr><td class="cdd-nombre">${escHTML(nombresDisplay[rowIdx]||id)}</td>${celdas}</tr>`;
   }).join('');
-  return `<table class="cierre-matriz-table" id="cierreDelDiaTabla${tablaNum}"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+  const tfoot = '<tr class="cierre-matriz-total-row"><td>TOTAL</td>' + colTotales.map((t,i)=>`<td class="${filas[i].destacado?'cierre-matriz-destacado':''}">$${t.toFixed(2)}</td>`).join('') + '</tr>';
+  return `<table class="cierre-matriz-table cierre-matriz-asesores-col" id="cierreDelDiaTabla${tablaNum}"><thead>${thead}</thead><tbody>${tbody}</tbody><tfoot>${tfoot}</tfoot></table>`;
 }
 function _recalcularFilaCierreDelDia(input){
-  const tr = input.closest('tr');
-  if(!tr) return;
-  let total = 0;
-  tr.querySelectorAll('.cdd-input').forEach(el=>{ const p=_parseMontoLiq(el.value); total += p.ok ? p.valor : 0; });
-  const totalCell = tr.querySelector('td:last-child');
-  if(totalCell) totalCell.textContent = '$'+total.toFixed(2);
+  const tabla = input.closest('table');
+  if(!tabla) return;
+  const ths = tabla.querySelectorAll('thead th');
+  const colCount = ths.length;
+  const sums = Array(colCount).fill(0);
+  tabla.querySelectorAll('tbody tr').forEach(tr=>{
+    const tds = tr.querySelectorAll('td');
+    tds.forEach((td, i)=>{
+      if(i===0) return;
+      const inp = td.querySelector('.cdd-input');
+      const v = inp ? (_parseMontoLiq(inp.value).ok ? _parseMontoLiq(inp.value).valor : 0) : 0;
+      sums[i] += v;
+    });
+  });
+  const footTds = tabla.querySelectorAll('tfoot tr td');
+  footTds.forEach((td, i)=>{
+    if(i===0) return;
+    td.textContent = '$'+sums[i].toFixed(2);
+  });
 }
 function _setCierreDelDiaEditable(on){
   document.querySelectorAll('.cdd-input').forEach(el => el.disabled = !on);
@@ -735,10 +751,10 @@ function imprimirCierreDelDia(){
   const fecha = _textoRangoFecha();
   const filaAHtml = tr => {
     const celdas=[...tr.querySelectorAll('td')].map((td,i)=>{
-      if(i===0) return `<td>${escHTML(td.textContent)}</td>`;
+      if(i===0) return `<td style="text-align:center;font-weight:800">${escHTML(td.textContent)}</td>`;
       const inp=td.querySelector('input');
       const val = inp ? (parseFloat(inp.value)||0) : (parseFloat((td.textContent||'').replace('$',''))||0);
-      return `<td style="text-align:right">$${val.toFixed(2)}</td>`;
+      return `<td style="text-align:center">$${val.toFixed(2)}</td>`;
     }).join('');
     return `<tr>${celdas}</tr>`;
   };
@@ -747,7 +763,8 @@ function imprimirCierreDelDia(){
     if(!tabla) return '';
     const thead=tabla.querySelector('thead').innerHTML;
     const filas=[...tabla.querySelectorAll('tbody tr')].map(filaAHtml).join('');
-    return `<div class="cdd-print-title">${titulo}</div><table class="cdd-print-table"><thead>${thead}</thead><tbody>${filas}</tbody></table>`;
+    const pie=[...tabla.querySelectorAll('tfoot tr')].map(filaAHtml).join('');
+    return `<div class="cdd-print-title">${titulo}</div><table class="cdd-print-table"><thead>${thead}</thead><tbody>${filas}${pie}</tbody></table>`;
   };
   const bloque1 = armarTabla('cierreDelDiaTabla1', 'CIERRE DEL DÍA');
   const bloque2 = armarTabla('cierreDelDiaTabla2', 'FORMA DE ENTREGA DE DINERO');
@@ -762,10 +779,9 @@ function imprimirCierreDelDia(){
     .print-header p{font-size:11px;color:#888;margin-top:3px;}
     .cdd-print-title{font-size:12px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#1a3a5c;margin:18px 0 8px;}
     .cdd-print-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px;}
-    .cdd-print-table th{text-align:right;font-size:9px;font-weight:800;letter-spacing:0.04em;color:#888;padding:5px 6px;border-bottom:1px solid #d2dae2;}
-    .cdd-print-table th:first-child{text-align:left;}
-    .cdd-print-table td{padding:5px 6px;border-bottom:1px solid #e6ebf0;}
-    .cdd-print-table td:first-child{font-weight:700;text-align:left;}
+    .cdd-print-table th{text-align:center;font-size:9px;font-weight:800;letter-spacing:0.04em;color:#888;padding:5px 6px;border-bottom:1px solid #d2dae2;}
+    .cdd-print-table td{padding:5px 6px;border-bottom:1px solid #e6ebf0;text-align:center;}
+    .cdd-print-table td:first-child{font-weight:800;}
     .cdd-print-table tr:last-child td{border-bottom:none;}
     .firmas-box{display:flex;justify-content:center;margin-top:48px;}
     .firma-linea{width:280px;text-align:center;font-size:12px;color:#1a3a5c;font-weight:700;}
