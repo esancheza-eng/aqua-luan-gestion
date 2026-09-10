@@ -1566,6 +1566,10 @@ function _recalcularTodosLosDatos() {
   // viendo. Ahora solo se actualiza si esa pestaña está realmente abierta.
   const seccionLiquidacionVisible = document.getElementById('seccion-liquidacionDash')?.classList.contains('active');
   if (seccionLiquidacionVisible && typeof renderLiquidacionDash === 'function') renderLiquidacionDash();
+  // [NEW] misma lógica de refresco perezoso para Cierre del Día — antes solo se
+  // actualizaba al ENTRAR a la pestaña, no al cambiar el filtro de fecha estando ya adentro
+  const seccionCierreDelDiaVisible = document.getElementById('seccion-cierreDelDia')?.classList.contains('active');
+  if (seccionCierreDelDiaVisible && typeof renderCierreDelDia === 'function') renderCierreDelDia();
   // [NEW] misma lógica de refresco perezoso para la sección independiente de Notas Adicionales
   const seccionNotasAdicionalesVisible = document.getElementById('seccion-notasAdicionalesDash')?.classList.contains('active');
   if (seccionNotasAdicionalesVisible && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash();
