@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Aqua Luan</title>
+<link rel="icon" type="image/png" href="logo-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <div class="login-logo">
+      <img src="logo-luanaqua.png" alt="Aqua Luan" style="height:60px;width:auto;display:block;margin:0 auto 10px">
+      <div class="login-sub">Dashboard de Supervisión</div>
+    </div>
+    <div class="login-field">
+      <label>Usuario</label>
+      <input type="text" id="loginUser" placeholder="admin" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="login-field">
+      <label>Contraseña</label>
+      <input type="password" id="loginPass" placeholder="••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="login-error" id="loginError">Usuario o contraseña incorrectos.</div>
+    <button class="btn-login" onclick="doLogin()">Ingresar al Dashboard</button>
+    <div style="text-align:center;margin-top:10px">
+      <a href="#" onclick="olvidoPasswordAdmin();return false;" style="font-size:12px;color:rgba(255,255,255,0.65);text-decoration:underline;cursor:pointer">¿Olvidaste tu contraseña?</a>
+    </div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    <img width="130" src="logo-luanaqua.png" alt="Aqua Luan" style="display:block">
+    <div>
+      <div class="header-sub">Dashboard de Supervisión</div>
+      <div id="usuarioSesionBadge" style="font-size:11px;font-weight:700;color:#9fd6c8;margin-top:2px;letter-spacing:0.02em">—</div>
+    </div>
+  </div>
+  <div class="header-center">
+    <button class="tab-btn active" id="tabDashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
+    <button class="tab-btn" id="tabRutas" onclick="switchTab('rutas')">🗺️ Rutas del Día</button>
+  </div>
+  <div class="header-right">
+    <div class="update-badge"><div class="pulse-dot"></div><span>Tiempo real</span></div>
+    <button class="btn-cierre-dia" onclick="abrirCierreDia()">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M5 3V2M11 3V2M1 7h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Cierre del Día
+    </button>
+    <button class="btn-cierre-dia" id="btnMiPassword" onclick="cambiarMiPassword()" title="Cambiar tu propia contraseña de acceso">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M5 7V4.5a3 3 0 0 1 6 0V7" stroke="currentColor" stroke-width="1.5"/></svg>
+      Mi Contraseña
+    </button>
+    <button class="btn-logout" onclick="cerrarSesion()">Salir</button>
+  </div>
+</div>
+
+<!-- VIEW DASHBOARD -->
+<div class="view active" id="viewDashboard">
+  <div class="layout">
+    <div class="content">
+      <div class="main">
+        <div class="filter-bar">
+          <span class="filter-label">Filtrar por fecha</span>
+          <span class="filter-label" style="text-transform:none;font-size:12px">Desde</span>
+          <input type="date" id="filtroFecha">
+          <span class="filter-label" style="text-transform:none;font-size:12px">Hasta</span>
+          <input type="date" id="filtroFechaHasta">
+          <span class="filter-label" style="margin-left:6px">Asesor</span>
+          <select id="filtroAsesor">
+            <option value="">Todos</option>
+          </select>
+          <button class="btn-filter btn-hoy" onclick="filtrarHoy()">Hoy</button>
+          <button class="btn-filter" onclick="iniciarListenersDashboard()">Aplicar</button>
+          <button class="btn-filter" style="background:var(--muted)" onclick="limpiarFiltro()">Todo</button>
+          <span class="last-update" id="lastUpdate">—</span>
+        </div>
+        <div class="dash-shell">
+          <nav class="dash-nav">
+            <button class="dash-nav-item active" data-section="resumen" id="navResumen" onclick="switchSeccionDash('resumen')">📊 Resumen General</button>
+            <button class="dash-nav-item" data-section="pedidos" id="navPedidos" onclick="switchSeccionDash('pedidos')">📋 Detalle de Pedidos</button>
+            <button class="dash-nav-item" data-section="cliente" id="navCliente" onclick="switchSeccionDash('cliente')">🔍 Consultar por Cliente</button>
+            <button class="dash-nav-item" data-section="caja" id="navCaja" onclick="switchSeccionDash('caja')">💳 Cuadre de Caja</button>
+            <button class="dash-nav-item" data-section="reporteAsesor" id="navReporteAsesor" onclick="switchSeccionDash('reporteAsesor')">👤 Reporte por Asesor</button>
+            <button class="dash-nav-item" data-section="eliminados" id="navEliminados" onclick="switchSeccionDash('eliminados')">🗑 Pedidos Eliminados</button>
+            <button class="dash-nav-item" data-section="inventario" id="navInventario" onclick="switchSeccionDash('inventario')">📦 Inventario</button>
+            <button class="dash-nav-item" data-section="roles" id="navRoles" onclick="switchSeccionDash('roles')">💵 Roles de Pago</button>
+            <button class="dash-nav-item" data-section="importar" id="navImportar" onclick="switchSeccionDash('importar')">📤 Importar Datos</button>
+            <button class="dash-nav-item" data-section="usuarios" id="navUsuarios" onclick="switchSeccionDash('usuarios'); poblarSelectEliminarSecretaria();">👩‍💼 Crear Usuarios</button>
+            <button class="dash-nav-item" data-section="pedidosweb" id="navPedidosWeb" onclick="switchSeccionDash('pedidosweb')">🌐 Pedidos Web</button>
+            <button class="dash-nav-item" data-section="auditoria" id="navAuditoria" onclick="switchSeccionDash('auditoria')">🕵️ Auditoría</button>
+            <button class="dash-nav-item" data-section="liquidacionDash" id="navLiquidacionDash" onclick="switchSeccionDash('liquidacionDash')">💵 Liquidación</button>
+            <button class="dash-nav-item" data-section="notasAdicionalesDash" id="navNotasAdicionalesDash" onclick="switchSeccionDash('notasAdicionalesDash')">📝 Notas Adicionales</button>
+          </nav>
+          <div class="dash-content">
+        <div class="dash-section active" id="seccion-resumen">
+        <div class="kpi-grid" id="kpiGrid"><div class="loading"><div class="spinner"></div><span>Cargando...</span></div></div>
+        <div class="charts-grid" id="chartsGrid" style="display:none">
+          <div class="chart-card"><div class="chart-title">Ventas por Ruta / Asesor</div><div class="chart-wrap"><canvas id="chartRutas"></canvas></div></div>
+          <div class="chart-card"><div class="chart-title">Productos vendidos</div><div class="chart-wrap"><canvas id="chartProductos"></canvas></div></div>
+          <div class="chart-card full"><div class="chart-title">Ventas por hora del día</div><div class="chart-wrap"><canvas id="chartHoras"></canvas></div></div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-pedidos">
+        <div class="table-card" id="tableCard" style="display:none">
+          <div class="table-header">
+            <div class="table-title">📋 Detalle de pedidos</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="filtro-pago-wrap">
+                <button class="btn-filter" style="background:var(--navy);display:flex;align-items:center;gap:6px" onclick="toggleDropdownPago(event)">
+                  💳 Pago <span id="filtroPagoContador" style="display:none"></span> ▾
+                </button>
+                <div class="filtro-pago-dropdown" id="dropdownPago">
+                  <div id="filtroPagoOpciones"></div>
+                  <div class="filtro-pago-actions">
+                    <button type="button" onclick="marcarTodosFiltroPago(true)">Marcar todos</button>
+                    <button type="button" onclick="marcarTodosFiltroPago(false)">Desmarcar todos</button>
+                  </div>
+                </div>
+              </div>
+              <button class="btn-filter" style="background:#c0392b;display:flex;align-items:center;gap:6px" onclick="exportarDetallePDF()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM7.5 12h2c.83 0 1.5.67 1.5 1.5S10.33 15 9.5 15H8v2H7v-5zm1 2h1c.28 0 .5-.22.5-.5s-.22-.5-.5-.5h-1v1zM12 12h2c.55 0 1 .45 1 1v3c0 .55-.45 1-1 1h-2v-5zm1 4h1v-3h-1v3zM16 12h2v1h-1v1h1v1h-1v2h-1v-5z"/></svg>
+                Exportar a PDF
+              </button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Fecha</th><th>Hora</th><th>Asesor</th><th>Cliente</th><th>Teléfono</th><th>Producto</th><th>Cant.</th><th>Subtotal</th><th>Total</th><th>Pago</th><th>GPS</th><th>Acciones</th></tr></thead>
+              <tbody id="tablaPedidos"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="table-card" id="resumenClientesCard" style="display:none">
+          <div class="table-header">
+            <div class="table-title">👥 Resumen por Cliente</div>
+          </div>
+          <div id="resumenClientesContenido" style="padding:1rem 1.25rem"></div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-cliente">
+        <div class="table-card" id="clienteCard" style="display:none">
+          <div class="table-header">
+            <div class="table-title">🔍 Consultar por Cliente</div>
+            <span style="font-size:12px;color:var(--muted)" id="clienteContadorTabla">0 clientes</span>
+          </div>
+          <div style="padding:14px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+            <input type="text" id="clienteBusquedaTabla" placeholder="🔍 Buscar por nombre, teléfono o dirección..." oninput="mostrarDetalleCliente()" style="flex:1;min-width:240px;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none">
+            <select id="clienteFiltroEstado" onchange="mostrarDetalleCliente()" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer">
+              <option value="">Todos los estados</option>
+              <option value="VIP">VIP</option>
+              <option value="Activo">Activo</option>
+              <option value="Riesgo">Riesgo</option>
+              <option value="Inactivo">Inactivo</option>
+            </select>
+            <select id="clienteFiltroAsesorTabla" onchange="mostrarDetalleCliente()" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer">
+              <option value="">Todos los asesores</option>
+            </select>
+            <button class="btn-filter" id="btnExportarClientesSeleccionados" style="background:#c0392b;display:none;align-items:center;gap:6px" onclick="exportarClientesSeleccionadosPDF()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM7.5 12h2c.83 0 1.5.67 1.5 1.5S10.33 15 9.5 15H8v2H7v-5zm1 2h1c.28 0 .5-.22.5-.5s-.22-.5-.5-.5h-1v1zM12 12h2c.55 0 1 .45 1 1v3c0 .55-.45 1-1 1h-2v-5zm1 4h1v-3h-1v3zM16 12h2v1h-1v1h1v1h-1v2h-1v-5z"/></svg>
+              <span id="btnExportarClientesTexto">Exportar seleccionados a PDF</span>
+            </button>
+          </div>
+          <div id="clienteDetalleContenido" style="padding:0">
+            <div class="empty-state" style="padding:2rem"><div class="icon">👤</div>No hay clientes en este período</div>
+          </div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-caja">
+        <!-- [NEW] Detalle de Pagos y Gastos -->
+        <div class="table-card" id="pagosGastosCard" style="display:none">
+          <div class="table-header">
+            <div class="table-title">💳 Cuadre de Caja — Pagos y Gastos</div>
+            <button class="btn-filter" style="background:#1565c0;display:flex;align-items:center;gap:6px" onclick="exportarPagosGastosPDF()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM7.5 12h2c.83 0 1.5.67 1.5 1.5S10.33 15 9.5 15H8v2H7v-5zm1 2h1c.28 0 .5-.22.5-.5s-.22-.5-.5-.5h-1v1zM12 12h2c.55 0 1 .45 1 1v3c0 .55-.45 1-1 1h-2v-5zm1 4h1v-3h-1v3zM16 12h2v1h-1v1h1v1h-1v2h-1v-5z"/></svg>
+              Imprimir Pagos y Gastos
+            </button>
+          </div>
+          <div style="padding:1rem 1.25rem 0" id="resumenPgGrid"></div>
+          <div style="padding:1rem 1.25rem 8px" id="bloquePagosCaja">
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--blue)">💰 Pagos registrados</div>
+          </div>
+          <div style="padding:0 1.25rem 10px" id="resumenFormasPago"></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Cliente</th><th>Asesor / Ruta</th><th>Forma de Pago</th><th>Fecha</th><th style="text-align:right">Monto</th><th>Acciones</th></tr></thead>
+              <tbody id="tablaPagosDetalle"></tbody>
+            </table>
+          </div>
+          <div style="padding:1.25rem 1.25rem 8px" id="bloqueGastosCaja">
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--red)">📉 Gastos registrados</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Descripción</th><th>Responsable</th><th>Fecha</th><th style="text-align:right">Monto</th><th>Acciones</th></tr></thead>
+              <tbody id="tablaGastosDetalle"></tbody>
+            </table>
+          </div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-eliminados">
+        <!-- [NEW] Pedidos Eliminados — respaldo completo con fecha, hora y usuario -->
+        <div class="table-card" id="eliminadosCard">
+          <div class="table-header">
+            <div class="table-title">🗑 Pedidos Eliminados — Respaldo</div>
+            <span class="last-update" id="eliminadosCount" style="margin-left:0">Cargando...</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Fecha Elim.</th><th>Hora Elim.</th><th>Eliminado por</th><th>Cliente</th><th>Asesor</th><th>Fecha pedido</th><th>Total</th><th>Pago</th><th></th></tr></thead>
+              <tbody id="tablaEliminados"></tbody>
+            </table>
+          </div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-reporteAsesor">
+        <!-- [NEW] Reporte por Asesor — clic en una tarjeta para ver todo el detalle -->
+        <div class="table-card">
+          <div class="table-header"><div class="table-title">👤 Selecciona un asesor</div></div>
+          <div class="asesor-cards-grid" id="reporteAsesorCardsGrid" style="padding:1.25rem"></div>
+        </div>
+        <div id="reporteAsesorDetalleWrap" style="display:none"></div>
+        </div>
+        <div class="dash-section" id="seccion-inventario">
+        <!-- [NEW] Inventario — entradas y salidas con historial -->
+        <div class="table-card" id="inventarioCard">
+          <div class="table-header">
+            <div class="table-title">📦 Inventario — Registrar Movimiento</div>
+          </div>
+          <div style="padding:1.25rem">
+            <div class="editar-grid" style="max-width:900px">
+              <div class="editar-field"><label>Producto</label><select id="invProducto"><option value="">-- Selecciona --</option></select></div>
+              <div class="editar-field"><label>Tipo de movimiento</label><select id="invTipo"><option value="entrada">🟢 Entrada (compra)</option><option value="salida">🔴 Salida (venta / merma / ajuste)</option></select></div>
+              <div class="editar-field"><label>Cantidad</label><input type="number" id="invCantidad" min="1" step="1" placeholder="0"></div>
+              <div class="editar-field"><label>Fecha</label><input type="date" id="invFecha"></div>
+            </div>
+            <div class="editar-field" style="max-width:900px;margin-top:6px"><label>Motivo / Descripción</label><input type="text" id="invMotivo" placeholder="Ej. Compra a proveedor, merma por rotura, ajuste de conteo..."></div>
+            <button class="btn-filter" style="margin-top:12px;background:var(--teal)" onclick="registrarMovimientoInventario()">+ Registrar movimiento</button>
+            <div style="font-size:11px;color:var(--muted);margin-top:8px">⚠️ Este inventario es independiente de las ventas de la app de asesores — cada venta NO descuenta stock automáticamente todavía. Registra aquí las salidas por venta manualmente, o dime si quieres que lo conectemos automático más adelante.</div>
+          </div>
+          <div class="table-header"><div class="table-title">📊 Stock actual por producto</div></div>
+          <div class="table-wrap"><table><thead><tr><th>Producto</th><th style="text-align:right">Entradas</th><th style="text-align:right">Salidas</th><th style="text-align:right">Stock actual</th></tr></thead><tbody id="tablaStockActual"></tbody></table></div>
+          <div class="table-header"><div class="table-title">📋 Historial de movimientos</div></div>
+          <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th style="text-align:right">Cantidad</th><th>Motivo</th><th>Usuario</th></tr></thead><tbody id="tablaMovimientosInv"></tbody></table></div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-roles">
+        <!-- [NEW] Roles de Pago — sueldo + comisión por ventas (comisión configurable por asesor) -->
+        <div class="table-card">
+          <div class="table-header"><div class="table-title">💵 Roles de Pago — Calcular período</div></div>
+          <div style="padding:1rem 1.25rem;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+            <div class="editar-field" style="margin-bottom:0"><label>Desde</label><input type="date" id="rolesDesde"></div>
+            <div class="editar-field" style="margin-bottom:0"><label>Hasta</label><input type="date" id="rolesHasta"></div>
+            <button class="btn-filter" onclick="calcularRolesPago()">Calcular período</button>
+          </div>
+          <div style="padding:0 1.25rem 10px;font-size:11px;color:var(--muted)">⚠️ El % de comisión de cada asesor arranca en 0% — aún no tenemos la tabla de comisiones. Edítalo directamente en la columna "% Comisión" de cada fila (se recuerda para los próximos cálculos).</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Asesor</th><th style="text-align:right">Sueldo base</th><th style="text-align:right">Ventas período</th><th style="text-align:right">% Comisión</th><th style="text-align:right">Comisión $</th><th style="text-align:right">Total a pagar</th><th></th></tr></thead>
+              <tbody id="tablaRolesPago"><tr><td colspan="7"><div class="empty-state"><div class="icon">💵</div>Calcula un período para ver los roles</div></td></tr></tbody>
+            </table>
+          </div>
+          <div style="padding:1rem 1.25rem" id="rolesTotalGeneral"></div>
+        </div>
+        <div class="table-card">
+          <div class="table-header"><div class="table-title">📋 Roles generados (historial)</div></div>
+          <div class="table-wrap"><table><thead><tr><th>Período</th><th>Asesor</th><th style="text-align:right">Total pagado</th><th>Generado por</th><th>Fecha</th></tr></thead><tbody id="tablaRolesHistorial"></tbody></table></div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-importar">
+        <!-- [NEW] Importar pedidos históricos desde Excel/CSV -->
+        <div class="table-card">
+          <div class="table-header"><div class="table-title">📤 Importar Pedidos Históricos</div></div>
+          <div style="padding:1.25rem">
+            <div style="background:var(--surface2);border:1.5px dashed var(--border);border-radius:var(--radius);padding:14px 16px;font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.8">
+              <b style="color:var(--navy)">Formato esperado del Excel/CSV</b> (una fila por producto; varias filas con el mismo Cliente + Fecha + Asesor se agrupan automáticamente en un solo pedido):<br>
+              <code>Fecha | Asesor | Cliente | Telefono | Direccion | Producto | Cantidad | Precio | FormaPago | Notas</code><br>
+              La Fecha debe ir en formato AAAA-MM-DD (ej. 2026-03-15).
+            </div>
+            <input type="file" id="importarArchivo" accept=".xlsx,.xls,.csv">
+            <button class="btn-filter" style="background:var(--teal);margin-left:10px" onclick="procesarArchivoImportado()">📂 Leer archivo</button>
+            <div id="importarPreview" style="margin-top:16px"></div>
+            <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+              <div style="font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--orange);margin-bottom:8px">⚠️ Corregir asesores mal guardados</div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Corrige pedidos ya importados cuyo asesor no coincide con el formato de las rutas (ej. "JEFFERSON" → "RUTA 1: Jefferson"). Los filtros por asesor no funcionan hasta que se corrijan.</div>
+              <button class="btn-filter" style="background:var(--orange)" onclick="corregirAsesoresPedidosExistentes()">🔧 Corregir pedidos existentes</button>
+            </div>
+          </div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-usuarios">
+        <!-- [NEW] Crear Usuarios — cuentas de Secretaria (solo lectura del Dashboard) -->
+        <div class="table-card">
+          <div class="table-header"><div class="table-title">👩‍💼 Crear Usuarios — Secretaria</div></div>
+          <div style="padding:1.25rem;max-width:520px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Acceso de solo lectura al Dashboard: ve Resumen, Detalle de Pedidos, Consultar por Cliente, Cuadre de Caja y Reporte por Asesor — sin Editar/Eliminar pedidos ni las pestañas administrativas.</div>
+            <div class="editar-grid full">
+              <div class="editar-field"><label>Nombre completo</label><input type="text" id="sec-nombre" placeholder="Ej. María Fernanda Pérez" maxlength="60"></div>
+              <div class="editar-field"><label>Usuario (login)</label><input type="text" id="sec-usuario" placeholder="secretaria" maxlength="30"></div>
+              <div class="editar-field"><label>Contraseña</label><input type="password" id="sec-pass" placeholder="Mínimo 6 caracteres" maxlength="128"></div>
+            </div>
+            <button class="btn-guardar-edicion" id="sec-btn-crear" style="margin-top:6px" onclick="crearSecretariaReal()">✅ Crear Secretaria</button>
+            <div id="sec-resultado" style="display:none;margin-top:12px;padding:12px 14px;border-radius:10px;background:var(--teal-light);border:1px solid var(--success-border,#4ec9a0);color:var(--teal-dark);font-size:13px;font-weight:600;line-height:1.5"></div>
+          </div>
+        </div>
+        <div class="table-card">
+          <div class="table-header"><div class="table-title">🗑 Eliminar acceso de Secretaria</div></div>
+          <div style="padding:1.25rem;max-width:520px">
+            <div class="editar-field"><label>Selecciona la cuenta a eliminar</label><select id="sec-eliminar-select"><option value="">-- Selecciona --</option></select></div>
+            <button class="btn-eliminar-fila" style="padding:9px 16px" onclick="eliminarSecretariaSeleccionada()">🗑 Eliminar acceso</button>
+          </div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-pedidosweb">
+        <!-- [NEW] Pedidos Web — cola de pedidos que llegan de la página pública, pendientes de aprobación -->
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">🌐 Pedidos Web — Pendientes de Aprobación</div>
+            <span class="last-update" id="pedidosWebCount" style="margin-left:0">Cargando...</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Estos pedidos llegaron desde la página web pública y todavía NO forman parte de las ventas reales — revísalos y apruébalos (asignando asesor y forma de pago) para que entren al sistema, o recházalos si son inválidos.</div>
+          <div id="listaPedidosWeb" style="padding:0 1.25rem 1.25rem"></div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-auditoria">
+        <!-- [NEW] Auditoría / Modificaciones — quién cambió o eliminó qué, cuándo, y el detalle antes/después -->
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">🕵️ Auditoría — Modificaciones y Eliminaciones</div>
+            <span class="last-update" id="auditoriaCount" style="margin-left:0">Cargando...</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Registro de quién hizo cada cambio o eliminación, con fecha y hora exactas. Solo visible para el administrador.</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Fecha</th><th>Hora</th><th>Usuario</th><th>Tipo</th><th>Acción</th><th>Detalle</th></tr></thead>
+              <tbody id="auditoriaTbody"></tbody>
+            </table>
+          </div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-liquidacionDash">
+        <!-- [NEW] Liquidación de Efectivo por Asesor — misma pantalla que ya existe en la app
+             de ventas (index.html), pero con los datos filtrados por fecha del Dashboard. -->
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">💵 Liquidación de Efectivo por Asesor</div>
+            <button class="btn-filter" style="background:#0f7c38;display:flex;align-items:center;gap:6px" onclick="imprimirLiquidacionDash()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM7.5 12h2c.83 0 1.5.67 1.5 1.5S10.33 15 9.5 15H8v2H7v-5zm1 2h1c.28 0 .5-.22.5-.5s-.22-.5-.5-.5h-1v1zM12 12h2c.55 0 1 .45 1 1v3c0 .55-.45 1-1 1h-2v-5zm1 4h1v-3h-1v3zM16 12h2v1h-1v1h1v1h-1v2h-1v-5z"/></svg>
+              Imprimir PDF
+            </button>
+          </div>
+          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Efectivo que cada asesor de ruta debe entregar, según el período filtrado arriba: ventas al contado + pagos cobrados en efectivo, menos los gastos que hizo con esa misma caja. Los cobros por transferencia o cheque no se piden en efectivo, así que se muestran aparte solo como referencia.</div>
+          <div style="padding:0 1.25rem 1.25rem" id="liquidacionDashLista"></div>
+          <div id="liquidacionDashEmptyMsg" class="empty-msg" style="display:none;padding:0 1.25rem 1.25rem;color:var(--muted);font-style:italic">Aún no hay ventas, pagos ni gastos registrados en este período.</div>
+          <div style="margin:0 1.25rem 1.25rem;padding:14px 18px;background:var(--navy);border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.6)">💵 Total efectivo a entregar</span>
+            <span id="liquidacionDashTotalValor" style="font-family:'DM Serif Display',serif;font-size:1.6rem;color:#4ec9a0">$0.00</span>
+          </div>
+          <div id="liqEntregaBox" style="display:none;margin:0 1.25rem 1.25rem;padding:16px 18px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius)">
+            <div style="font-size:11px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--navy);margin-bottom:10px">Forma de entrega de la liquidación</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Oficina marca cómo llegó el dinero. El total lo calcula el sistema; aquí solo se registra la entrega.</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:8px 10px;background:#fff;border-radius:8px;border:1px solid var(--border)">
+              <span style="font-weight:800">Total a entregar</span>
+              <span id="liqEntregaTotalRef" style="font-weight:800;color:var(--teal)">$0.00</span>
+            </div>
+            <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><input type="checkbox" id="liqChkEfectivo" onchange="_guardarEntregaLiquidacion()"><span style="min-width:130px;font-weight:700">Efectivo</span><input type="text" id="liqMontoEfectivo" placeholder="0.00" inputmode="decimal" style="flex:1;height:36px;border:1.5px solid var(--border);border-radius:8px;padding:0 10px" oninput="_filtrarInputMontoLiq(this);_guardarEntregaLiquidacionDebounced()"></label>
+            <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><input type="checkbox" id="liqChkDeposito" onchange="_guardarEntregaLiquidacion()"><span style="min-width:130px;font-weight:700">Depósito</span><input type="text" id="liqMontoDeposito" placeholder="0.00" inputmode="decimal" style="flex:1;height:36px;border:1.5px solid var(--border);border-radius:8px;padding:0 10px" oninput="_filtrarInputMontoLiq(this);_guardarEntregaLiquidacionDebounced()"></label>
+            <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><input type="checkbox" id="liqChkTransferencia" onchange="_guardarEntregaLiquidacion()"><span style="min-width:130px;font-weight:700">Transferencia</span><input type="text" id="liqMontoTransferencia" placeholder="0.00" inputmode="decimal" style="flex:1;height:36px;border:1.5px solid var(--border);border-radius:8px;padding:0 10px" oninput="_filtrarInputMontoLiq(this);_guardarEntregaLiquidacionDebounced()"></label>
+            <div style="height:8px"></div>
+            <div id="liqFaltantesLista"></div>
+            <button type="button" id="liqBtnAddFaltante" onclick="_agregarFaltanteLiq()" style="margin:4px 0 8px;padding:8px 12px;border:1.5px dashed var(--border);background:#fff;border-radius:8px;font-weight:700;cursor:pointer;color:var(--navy)">+ Añadir faltante</button>
+            <div id="liqEntregaCuadre" style="font-size:12px;margin-top:8px;font-weight:700"></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px" id="liqEntregaStatus"></div>
+          </div>
+        </div>
+        <!-- cierra seccion-liquidacionDash -->
+        </div>
+        <!-- [NEW] Notas Adicionales — sección independiente en el menú lateral,
+             debajo de Liquidación. Muestra los pedidos del período filtrado
+             que traen alguna nota registrada (ej. regalías pendientes,
+             condiciones especiales, etc.), separado del cálculo de efectivo. -->
+        <div class="dash-section" id="seccion-notasAdicionalesDash">
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">📝 Notas Adicionales</div>
+            <button class="btn-filter" style="background:#0f7c38;display:flex;align-items:center;gap:6px" onclick="imprimirNotasAdicionalesDash()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM7.5 12h2c.83 0 1.5.67 1.5 1.5S10.33 15 9.5 15H8v2H7v-5zm1 2h1c.28 0 .5-.22.5-.5s-.22-.5-.5-.5h-1v1zM12 12h2c.55 0 1 .45 1 1v3c0 .55-.45 1-1 1h-2v-5zm1 4h1v-3h-1v3zM16 12h2v1h-1v1h1v1h-1v2h-1v-5z"/></svg>
+              Imprimir PDF
+            </button>
+          </div>
+          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Observaciones registradas en los pedidos del período filtrado (ej. regalías pendientes de entregas anteriores, condiciones especiales, referencias, etc.).</div>
+          <div style="padding:0 1.25rem 1.25rem;overflow-x:auto">
+            <table class="cierre-prod-table" id="notasAdicionalesTabla">
+              <thead><tr><th>Fecha</th><th>Asesor</th><th>Cliente</th><th>Nota</th></tr></thead>
+              <tbody id="notasAdicionalesTbody"></tbody>
+            </table>
+          </div>
+          <div id="notasAdicionalesEmptyMsg" class="empty-msg" style="display:none;padding:0 1.25rem 1.25rem;color:var(--muted);font-style:italic">No hay notas adicionales registradas en este período.</div>
+        </div>
+        </div>
+          </div>
+        </div>
+        <div class="notas-table-card" id="notasCard" style="display:none">
+          <div class="notas-table-header"><div class="notas-table-title">📋 Notas de Ventas — Resultados</div></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Asesor / Ruta</th><th>Cliente</th><th>Envase / Producto</th><th>Precio Unit.</th><th>Cantidad</th><th>Subtotal</th><th>Total Pedido</th><th>Forma Pago</th><th>Fecha</th></tr></thead>
+              <tbody id="tablaNotas"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW RUTAS -->
+<div class="view" id="viewRutas">
+  <div class="rutas-main">
+    <div class="rutas-filter-bar">
+      <span class="filter-label">📅 Fecha</span>
+      <input type="date" id="rutasFecha">
+      <button class="btn-filter btn-hoy" onclick="rutasHoy()">Hoy</button>
+      <span class="filter-label" style="margin-left:8px">👤 Asesor</span>
+      <select id="rutasAsesor">
+        <option value="">— Todos —</option>
+        <option value="RUTA 1: Jefferson">RUTA 1: Jefferson</option>
+        <option value="RUTA 2: Luis">RUTA 2: Luis</option>
+        <option value="RUTA 3: Vicente">RUTA 3: Vicente</option>
+        <option value="RUTA 4: Wilson">RUTA 4: Wilson</option>
+        <option value="RUTA 5: Lister">RUTA 5: Lister</option>
+        <option value="RUTA 6: Asesora">RUTA 6: Asesora</option>
+      </select>
+      <button class="btn-filter" onclick="aplicarRutas()">🗺️ Ver rutas</button>
+      <span class="last-update" id="rutasLastUpdate">—</span>
+    </div>
+    <div id="gpsDiagBox" style="display:none;background:#fffbe6;border:1.5px solid #f0c040;border-radius:var(--radius);padding:12px 16px;margin-bottom:1rem;font-size:12px;color:#7a5700;font-family:'DM Sans',sans-serif">
+      <strong>⚠️ Diagnóstico GPS</strong>
+      <div id="gpsDiagContent" style="margin-top:6px;line-height:1.7"></div>
+    </div>
+    <div class="rutas-map-card">
+      <div class="rutas-map-header">
+        <div class="rutas-map-title">📍 Mapa de recorridos por asesor</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div class="map-legend" id="mapLegend"></div>
+          <button class="btn-centrar" onclick="centrarMapa()">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" stroke="currentColor" stroke-width="1.8"/><line x1="8" y1="1" x2="8" y2="15" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>
+            Centrar mapa
+          </button>
+        </div>
+      </div>
+      <div id="leafletMap"></div>
+    </div>
+    <div class="asesor-cards-grid" id="asesorCardsGrid"><div class="loading"><div class="spinner"></div><span>Aplica filtros para ver rutas</span></div></div>
+    <div class="ruta-detail-card" id="rutaDetailCard" style="display:none">
+      <div class="ruta-detail-header">
+        <div class="ruta-detail-title">📋 Detalle de ruta — cronológico</div>
+        <span class="ruta-count-badge" id="rutaCountBadge">0 registros</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Asesor</th><th>Hora</th><th>Cliente</th><th>Dirección</th><th>Producto</th><th>Cant.</th><th>Total</th><th>Pago</th><th>Notas</th><th>GPS</th></tr></thead>
+          <tbody id="tablaRutaDetalle"></tbody>
+        </table>
+      </div>
+      <div style="padding:10px 16px;font-size:11px;color:var(--muted);border-top:1px solid var(--border)" id="rutaTableNote"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js" integrity="sha384-tgDxKHbfk8o2rrXLSytbpDGsGk0bdZehHXoeD7LhuGriE89B5ovitrlBu7FX4kj/" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js" integrity="sha384-UaGuhpArNP+gULAiiQrJNwk1AWTIZsfFEygQkDQYIGsTjoBmbSXgWfQeFJJXuFub" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js" integrity="sha384-O2tgK2bVAUCyEX//gu7nH2z8A92RsaKhRAQABpJ7kLaF/4KQYEltHstFCV7nxWpr" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-check-compat.js"></script>
+<!-- [FIX] xlsx (SheetJS, ~1MB) se quitó de aquí: antes se descargaba en CADA login,
+     para TODOS los usuarios (incluida Secretaria, que ni siquiera puede ver la
+     pestaña "Importar Datos"), aunque solo hace falta ahí. Como es un script
+     bloqueante cargado justo antes de dashboard.js, si cdn.sheetjs.com tardaba
+     en responder, TODO el dashboard se quedaba esperando antes de poder hacer
+     login o ver cualquier dato — eso explica la demora y el error intermitente
+     al entrar. Ahora se descarga solo la primera vez que el admin entra a
+     "Importar Datos" (ver cargarXLSX en dashboard.js), igual que ya se hacía
+     con Leaflet para el mapa de rutas. -->
+<script src="dashboard.js"></script>
+
+<!-- ═══════════════════ MODAL CIERRE DEL DÍA ═══════════════════ -->
+<div class="cierre-overlay" id="cierreOverlay" onclick="if(event.target===this)cerrarCierreDia()">
+  <div class="cierre-modal">
+    <div class="cierre-header">
+      <div class="cierre-header-title">
+        📅 Cierre del Día
+        <span class="cierre-fecha-badge" id="cierreFechaBadge">—</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn-print-cierre" onclick="imprimirCierre()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Imprimir
+        </button>
+        <button class="btn-cerrar-cierre" onclick="cerrarCierreDia()">✕ Cerrar</button>
+      </div>
+    </div>
+    <div class="cierre-body" id="cierreBody">
+      <!-- Se llena dinámicamente -->
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ [NEW] MODAL EDITAR PEDIDO ═══════════════════ -->
+<div class="editar-overlay" id="editarOverlay" onclick="if(event.target===this)cerrarEditarPedido()">
+  <div class="editar-modal">
+    <div class="editar-header">
+      <div class="editar-header-title">✏ Editar Pedido</div>
+      <button class="btn-cerrar-editar" onclick="cerrarEditarPedido()">✕</button>
+    </div>
+    <div class="editar-body" id="editarBody">
+      <!-- Se llena dinámicamente -->
+    </div>
+    <div class="editar-footer">
+      <button class="btn-cancelar-edicion" onclick="cerrarEditarPedido()">❌ Cancelar</button>
+      <button class="btn-guardar-edicion" id="btnGuardarEdicion" onclick="guardarEdicionPedido()">✅ Guardar Cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ [NEW] MODAL EDITAR PAGO / GASTO (Cuadre de Caja) ═══════════════════ -->
+<div class="editar-overlay" id="editarPagoGastoOverlay" onclick="if(event.target===this)cerrarEditarPagoGasto()">
+  <div class="editar-modal" style="max-width:480px">
+    <div class="editar-header">
+      <div class="editar-header-title" id="editarPagoGastoTitulo">✏ Editar</div>
+      <button class="btn-cerrar-editar" onclick="cerrarEditarPagoGasto()">✕</button>
+    </div>
+    <div class="editar-body" id="editarPagoGastoBody">
+      <!-- Se llena dinámicamente -->
+    </div>
+    <div class="editar-footer">
+      <button class="btn-cancelar-edicion" onclick="cerrarEditarPagoGasto()">❌ Cancelar</button>
+      <button class="btn-guardar-edicion" id="btnGuardarPagoGasto" onclick="guardarEdicionPagoGasto()">✅ Guardar Cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ [NEW] MODAL 360° — Consultar por Cliente ═══════════════════ -->
+<div class="editar-overlay" id="modalClienteOverlay" onclick="if(event.target===this)cerrarDetalleClienteModal()">
+  <div class="editar-modal" style="max-width:640px">
+    <div class="editar-header">
+      <div>
+        <div class="editar-header-title" id="modalClienteNombre">—</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.7);margin-top:2px" id="modalClienteSub">—</div>
+      </div>
+      <button class="btn-cerrar-editar" onclick="cerrarDetalleClienteModal()">✕</button>
+    </div>
+    <div class="editar-body">
+      <div class="editar-grid" id="modalClienteStats" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-bottom:18px"></div>
+      <div style="font-size:13px;font-weight:800;color:var(--navy);margin-bottom:10px">📋 Historial de pedidos</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Fecha</th><th>Producto</th><th style="text-align:center">Cant.</th><th style="text-align:right">Total</th><th>Pago</th></tr></thead>
+          <tbody id="modalClienteHistorial"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="editar-footer" style="justify-content:flex-start;gap:10px">
+      <a id="modalClienteWa" href="#" target="_blank" class="btn-guardar-edicion" style="background:#25d366;text-decoration:none;display:inline-flex;align-items:center;gap:6px">💬 WhatsApp</a>
+      <button class="btn-guardar-edicion" style="background:#c0392b" onclick="imprimirClienteModal()">🖨 Imprimir / PDF</button>
+      <button class="btn-cancelar-edicion" onclick="cerrarDetalleClienteModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
