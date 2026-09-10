@@ -530,22 +530,26 @@ display: inline-block;
 .cierre-prod-table tr:nth-child(even) td { background: var(--surface2); }
 .cierre-matriz-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .cierre-matriz-table th {
-  padding: 10px 12px; text-align: right; font-size: 10px; text-transform: uppercase;
+  padding: 10px 8px; text-align: center; font-size: 10px; text-transform: uppercase;
   letter-spacing: 0.05em; color: var(--muted); border-bottom: 2px solid var(--border); white-space: nowrap;
 }
-.cierre-matriz-table th:first-child { text-align: left; }
+.cierre-matriz-table th:first-child { text-align: center; font-size: 11px; font-weight: 800; color: var(--navy); }
 .cierre-matriz-table th:last-child { color: var(--navy); font-weight: 800; }
-/* [NEW] Nombres de asesores (todas las columnas menos "Ruta" y "Total") más
-   resaltados: más grandes, en negrita y en el color navy de la marca, en vez del
-   gris apagado genérico que tenían antes — así se leen de un vistazo quién es quién. */
-.cierre-matriz-table th:not(:first-child):not(:last-child) {
-  font-size: 13px; font-weight: 800; color: var(--navy); text-transform: none;
-  letter-spacing: 0; background: var(--surface2); border-bottom: 3px solid var(--teal);
+.cierre-matriz-table th:not(:first-child) {
+  font-size: 11px; font-weight: 800; color: var(--navy); letter-spacing: 0.02em;
+  background: var(--surface2); border-bottom: 3px solid var(--teal);
 }
-.cierre-matriz-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
-.cierre-matriz-table td:first-child { text-align: left; font-weight: 700; color: var(--navy); }
-.cierre-matriz-table td:last-child { font-weight: 800; color: var(--teal); background: var(--surface2); }
-.cierre-matriz-table tr:last-child td { border-bottom: none; }
+.cierre-matriz-table td { padding: 9px 8px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; }
+.cierre-matriz-table td.cdd-nombre,
+.cierre-matriz-table td:first-child { text-align: center; font-weight: 800; color: var(--navy); }
+.cierre-matriz-table .cdd-input {
+  width: 88px; max-width: 100%; text-align: center; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px; background: #fff;
+}
+.cierre-matriz-table td.cierre-matriz-destacado { font-weight: 800; background: var(--surface2); }
+.cierre-matriz-table td.cierre-matriz-destacado .cdd-input { font-weight: 800; color: #0f7c38; }
+.cierre-matriz-table tfoot td { font-weight: 800; color: var(--teal); background: var(--surface2); text-align: center; border-top: 2px solid var(--border); }
+.cierre-matriz-table tfoot td:first-child { color: var(--navy); }
 .cierre-matriz-destacado td { font-weight: 800; border-top: 2px solid var(--border); background: var(--surface2); }
 .cierre-matriz-destacado td:first-child { color: #0f7c38; }
 .cierre-prod-subtotal td {
