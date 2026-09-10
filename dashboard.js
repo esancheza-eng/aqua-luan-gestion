@@ -157,7 +157,7 @@ let editandoPedidoActual = null;
 ════════════════════════════════════════ */
 /* [NEW] Menú lateral del panel administrativo — cambia entre secciones sin mezclarlas */
 let _yaCargado = { eliminados:false, inventario:false, roles:false, pedidosweb:false, auditoria:false }; // [NEW] carga perezosa
-const SECCIONES_SECRETARIA = ['pedidos','caja','liquidacionDash','notasAdicionalesDash'];
+const SECCIONES_SECRETARIA = ['pedidos','caja','liquidacionDash','cierreDelDia','notasAdicionalesDash'];
 
 function switchSeccionDash(sec){
   if (ROL_ACTUAL === 'secretaria' && !SECCIONES_SECRETARIA.includes(sec)) {
@@ -184,6 +184,7 @@ function switchSeccionDash(sec){
     detenerListenerInventario();
   }
   if (sec === 'liquidacionDash' && typeof renderLiquidacionDash === 'function') renderLiquidacionDash(); // [NEW] siempre refresca al entrar, ya usa datos que el Dashboard ya tiene cargados
+  if (sec === 'cierreDelDia' && typeof renderCierreDelDia === 'function') renderCierreDelDia(); // [NEW] Cierre del Día — vista matriz, se refresca al entrar
   if (sec === 'notasAdicionalesDash' && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash(); // [NEW] sección independiente de Notas Adicionales
   // [FIX] Los gráficos de "Resumen General" ya no se redibujan en cada cambio de
   // Firestore si esta pestaña no está activa (ver comentario en renderDashboard) —
@@ -637,6 +638,221 @@ function renderLiquidacionDash(){
   const boxGlobal=document.getElementById('liqEntregaBox');
   if(boxGlobal) boxGlobal.style.display='none';
   asesores.forEach(nombre=>_cargarEntregaAsesor(nombre));
+}
+/* [NEW] Cierre del Día — vista consolidada en formato matriz (una columna por
+   asesor + columna Total), igual a la hoja de papel "Cierre del Día" que se
+   usaba antes. Tabla 1 arranca con los mismos números que _calcularLiquidacionDash()
+   (mismos que la pestaña Liquidación), pero es EDITABLE a mano: el admin/secretaria
+   puede ajustar cualquier celda antes de guardar el cierre oficial del día.
+   Tabla 2 arranca con lo que cada asesor registró en "Forma de entrega"
+   (colección cierresLiquidacion), también editable. Todo se guarda junto en
+   la colección 'cierresDelDia', un documento por período de fecha filtrado. */
+let _cierreDelDiaAsesoresCache = [];
+function _idCierreDelDia(){
+  const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
+  const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+  return desde+'_'+hasta;
+}
+function _htmlTablaCierreDelDia(tablaNum, asesores, datos, filas, guardado){
+  const thead = '<tr><th>Ruta</th>' + asesores.map(a=>`<th>${escHTML(a)}</th>`).join('') + '<th>Total</th></tr>';
+  const tbody = filas.map(f=>{
+    let total = 0;
+    const celdas = asesores.map((a, colIdx)=>{
+      const guardadoVal = guardado?.[f.etiqueta]?.[a];
+      const v = (guardadoVal !== undefined && guardadoVal !== null && guardadoVal !== '') ? (Number(guardadoVal)||0) : (f.valor(datos[colIdx]) || 0);
+      total += v;
+      return `<td><input type="text" class="cdd-input" inputmode="decimal" data-etiqueta="${escHTML(f.etiqueta)}" data-asesor="${escHTML(a)}" value="${v.toFixed(2)}" disabled oninput="_filtrarInputMontoLiq(this);_recalcularFilaCierreDelDia(this)"></td>`;
+    }).join('');
+    return `<tr${f.destacado?' class="cierre-matriz-destacado"':''}><td>${escHTML(f.etiqueta)}</td>${celdas}<td>$${total.toFixed(2)}</td></tr>`;
+  }).join('');
+  return `<table class="cierre-matriz-table" id="cierreDelDiaTabla${tablaNum}"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+}
+function _recalcularFilaCierreDelDia(input){
+  const tr = input.closest('tr');
+  if(!tr) return;
+  let total = 0;
+  tr.querySelectorAll('.cdd-input').forEach(el=>{ const p=_parseMontoLiq(el.value); total += p.ok ? p.valor : 0; });
+  const totalCell = tr.querySelector('td:last-child');
+  if(totalCell) totalCell.textContent = '$'+total.toFixed(2);
+}
+function _setCierreDelDiaEditable(on){
+  document.querySelectorAll('.cdd-input').forEach(el => el.disabled = !on);
+  const ed=document.getElementById('cddBtnEditar');
+  const gu=document.getElementById('cddBtnGuardar');
+  const ca=document.getElementById('cddBtnCancelar');
+  if(ed) ed.style.display = on ? 'none' : '';
+  if(gu) gu.style.display = on ? '' : 'none';
+  if(ca) ca.style.display = on ? '' : 'none';
+}
+function _editarCierreDelDia(){ _setCierreDelDiaEditable(true); }
+function _cancelarCierreDelDia(){ renderCierreDelDia(); }
+function _confirmarGuardarCierreDelDia(){
+  if(!confirm('¿Está seguro que desea guardar el Cierre del Día?')) return;
+  _guardarCierreDelDia();
+}
+async function _guardarCierreDelDia(){
+  if(typeof db==='undefined') return;
+  const leerTabla=(num)=>{
+    const tabla={};
+    document.querySelectorAll(`#cierreDelDiaTabla${num} .cdd-input`).forEach(el=>{
+      const etiqueta=el.dataset.etiqueta, asesor=el.dataset.asesor;
+      const p=_parseMontoLiq(el.value);
+      if(!tabla[etiqueta]) tabla[etiqueta]={};
+      tabla[etiqueta][asesor]=p.ok?p.valor:0;
+    });
+    return tabla;
+  };
+  const tabla1=leerTabla(1), tabla2=leerTabla(2);
+  const st=document.getElementById('cierreDelDiaStatus');
+  try{
+    await db.collection('cierresDelDia').doc(_idCierreDelDia()).set({
+      tabla1, tabla2, asesores:_cierreDelDiaAsesoresCache,
+      desde:document.getElementById('filtroFecha')?.value||'',
+      hasta:document.getElementById('filtroFechaHasta')?.value||'',
+      actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
+      actualizadoPor: (typeof actorAuditoria==='function') ? actorAuditoria() : ''
+    }, {merge:true});
+    if (typeof _registrarAuditoria === 'function') {
+      _registrarAuditoria('cierreDelDia', 'edición', _idCierreDelDia(), 'Cierre del Día guardado por '+actorAuditoria());
+    }
+    if(st) st.textContent='Guardado correctamente — última actualización por '+(typeof actorAuditoria==='function'?actorAuditoria():'');
+    _setCierreDelDiaEditable(false);
+  }catch(err){
+    console.warn('cierresDelDia escritura:', err);
+    if(st) st.textContent='No se pudo guardar el Cierre del Día.';
+    alert('No se pudo guardar el Cierre del Día. Intenta de nuevo.');
+  }
+}
+function _firmaUsuarioActualCierreDia(){
+  const rolLabel = ROL_ACTUAL === 'admin' ? 'Administrador' : 'Secretaria';
+  const nombre = (ADMIN_ACTUAL && (ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario)) || '';
+  return rolLabel + (nombre ? ': ' + nombre : '');
+}
+function imprimirCierreDelDia(){
+  const asesores=_cierreDelDiaAsesoresCache||[];
+  if(!asesores.length){ alert('No hay datos para imprimir en este período.'); return; }
+  const fecha = _textoRangoFecha();
+  const filaAHtml = tr => {
+    const celdas=[...tr.querySelectorAll('td')].map((td,i)=>{
+      if(i===0) return `<td>${escHTML(td.textContent)}</td>`;
+      const inp=td.querySelector('input');
+      const val = inp ? (parseFloat(inp.value)||0) : (parseFloat((td.textContent||'').replace('$',''))||0);
+      return `<td style="text-align:right">$${val.toFixed(2)}</td>`;
+    }).join('');
+    return `<tr>${celdas}</tr>`;
+  };
+  const armarTabla = (tablaId, titulo) => {
+    const tabla=document.getElementById(tablaId);
+    if(!tabla) return '';
+    const thead=tabla.querySelector('thead').innerHTML;
+    const filas=[...tabla.querySelectorAll('tbody tr')].map(filaAHtml).join('');
+    return `<div class="cdd-print-title">${titulo}</div><table class="cdd-print-table"><thead>${thead}</thead><tbody>${filas}</tbody></table>`;
+  };
+  const bloque1 = armarTabla('cierreDelDiaTabla1', 'CIERRE DEL DÍA');
+  const bloque2 = armarTabla('cierreDelDiaTabla2', 'FORMA DE ENTREGA DE DINERO');
+  const v = window.open('', '_blank', 'width=900,height=900');
+  const logoUrl = location.origin + '/logo-luanaqua.png';
+  v.document.write(`<html><head><title>Cierre del Día</title><style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'DM Sans',sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
+    .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:16px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
+    .print-header img{height:46px;width:auto;}
+    .print-header h1{font-family:'DM Serif Display',serif;font-size:20px;color:#1a3a5c;}
+    .print-header p{font-size:11px;color:#888;margin-top:3px;}
+    .cdd-print-title{font-size:12px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#1a3a5c;margin:18px 0 8px;}
+    .cdd-print-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px;}
+    .cdd-print-table th{text-align:right;font-size:9px;font-weight:800;letter-spacing:0.04em;color:#888;padding:5px 6px;border-bottom:1px solid #d2dae2;}
+    .cdd-print-table th:first-child{text-align:left;}
+    .cdd-print-table td{padding:5px 6px;border-bottom:1px solid #e6ebf0;}
+    .cdd-print-table td:first-child{font-weight:700;text-align:left;}
+    .cdd-print-table tr:last-child td{border-bottom:none;}
+    .firmas-box{display:flex;justify-content:center;margin-top:48px;}
+    .firma-linea{width:280px;text-align:center;font-size:12px;color:#1a3a5c;font-weight:700;}
+    .firma-linea .raya{border-top:1px solid #1a3a5c;margin-bottom:6px;}
+    @media print{body{padding:12px;}}
+  </style></head><body>
+  <div class="print-header">
+    <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
+    <div>
+      <h1>CIERRE DEL DÍA</h1>
+      <p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
+    </div>
+  </div>
+  ${bloque1}
+  ${bloque2}
+  <div class="firmas-box">
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma — ${escHTML(_firmaUsuarioActualCierreDia())}</div>
+  </div>
+  <script>
+    var _impresoCierreDia=false;
+    function _intentarImprimirCierreDia(){ if(_impresoCierreDia)return; _impresoCierreDia=true; window.print(); }
+    window.onload=_intentarImprimirCierreDia;
+    setTimeout(_intentarImprimirCierreDia,1200);
+  <\/script>
+  </body></html>`);
+  v.document.close();
+}
+async function renderCierreDelDia(){
+  const cont1 = document.getElementById('cierreDelDiaTabla1Wrap');
+  const cont2 = document.getElementById('cierreDelDiaTabla2Wrap');
+  const emptyMsg = document.getElementById('cierreDelDiaEmptyMsg');
+  const st = document.getElementById('cierreDelDiaStatus');
+  if(!cont1 || !cont2) return;
+  const porAsesor = _calcularLiquidacionDash();
+  const asesores = Object.keys(porAsesor).sort((a,b)=>a.localeCompare(b,'es'));
+  if(!asesores.length){
+    cont1.innerHTML=''; cont2.innerHTML='';
+    if(emptyMsg) emptyMsg.style.display='block';
+    if(st) st.textContent='';
+    _cierreDelDiaAsesoresCache=[];
+    return;
+  }
+  if(emptyMsg) emptyMsg.style.display='none';
+  _cierreDelDiaAsesoresCache = asesores;
+
+  // Tabla 1 — Cierre del Día (mismos campos que ya calcula la Liquidación)
+  const datosAsesores = asesores.map(a=>porAsesor[a]);
+  const filas1 = [
+    { etiqueta:'Valor/Liquidación', valor: n => n.ventasContado },
+    { etiqueta:'Pagos', valor: n => n.pagosEfectivo },
+    { etiqueta:'Créditos', valor: n => n.ventasCredito },
+    { etiqueta:'Gastos', valor: n => n.gastos },
+    { etiqueta:'Transferencias', valor: n => n.ventasTransferencia + n.pagosTransferencia },
+    { etiqueta:'Cheques', valor: n => n.ventasCheque + n.pagosCheque },
+    { etiqueta:'Valor a Entregar', valor: n => n.ventasContado + n.pagosEfectivo - n.gastos, destacado:true }
+  ];
+
+  // Tabla 2 — Forma de Entrega de Dinero (lee lo guardado por cada asesor en Liquidación)
+  const entregas = await Promise.all(asesores.map(async nombre=>{
+    try{
+      if(typeof db==='undefined') return {};
+      const snap = await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
+      return snap.exists ? snap.data() : {};
+    }catch(err){ console.warn('cierreDelDia lectura entrega:', err); return {}; }
+  }));
+  const filas2 = [
+    { etiqueta:'Efectivo', valor: e => (e.efectivo?.marcado ? (Number(e.efectivo.monto)||0) : 0) },
+    { etiqueta:'Depósito', valor: e => (e.deposito?.marcado ? (Number(e.deposito.monto)||0) : 0) },
+    { etiqueta:'Transferencia', valor: e => (e.transferencia?.marcado ? (Number(e.transferencia.monto)||0) : 0) },
+    { etiqueta:'Faltante 1', valor: e => Number(e.faltantes?.[0]?.monto)||0 },
+    { etiqueta:'Faltante 2', valor: e => Number(e.faltantes?.[1]?.monto)||0 },
+    { etiqueta:'Faltante 3', valor: e => Number(e.faltantes?.[2]?.monto)||0 }
+  ];
+
+  // Si ya se guardó un Cierre del Día para este período, esos valores mandan sobre
+  // los calculados (así se respeta cualquier ajuste manual que se haya hecho antes).
+  let guardado = {};
+  try{
+    if(typeof db!=='undefined'){
+      const snap = await db.collection('cierresDelDia').doc(_idCierreDelDia()).get();
+      if(snap.exists) guardado = snap.data() || {};
+    }
+  }catch(err){ console.warn('cierresDelDia lectura:', err); }
+
+  cont1.innerHTML = _htmlTablaCierreDelDia(1, asesores, datosAsesores, filas1, guardado.tabla1||{});
+  cont2.innerHTML = _htmlTablaCierreDelDia(2, asesores, entregas, filas2, guardado.tabla2||{});
+  if(st) st.textContent = guardado && guardado.actualizadoPor ? ('Última vez guardado por '+guardado.actualizadoPor) : 'Aún no se ha guardado este Cierre del Día — mostrando valores calculados automáticamente.';
+  _setCierreDelDiaEditable(false);
 }
 /* [NEW] Notas Adicionales — sección independiente en el menú lateral. Muestra
    los pedidos del período filtrado (fecha del Dashboard) que traen alguna
