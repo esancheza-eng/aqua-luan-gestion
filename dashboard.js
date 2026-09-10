@@ -653,15 +653,15 @@ function _idCierreDelDia(){
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
   return desde+'_'+hasta;
 }
-function _htmlTablaCierreDelDia(tablaNum, asesores, datos, filas, guardado){
-  const thead = '<tr><th>Ruta</th>' + asesores.map(a=>`<th>${escHTML(a)}</th>`).join('') + '<th>Total</th></tr>';
+function _htmlTablaCierreDelDia(tablaNum, asesoresId, nombresDisplay, datos, filas, guardado){
+  const thead = '<tr><th>Ruta</th>' + nombresDisplay.map(n=>`<th>${escHTML(n)}</th>`).join('') + '<th>Total</th></tr>';
   const tbody = filas.map(f=>{
     let total = 0;
-    const celdas = asesores.map((a, colIdx)=>{
-      const guardadoVal = guardado?.[f.etiqueta]?.[a];
+    const celdas = asesoresId.map((id, colIdx)=>{
+      const guardadoVal = guardado?.[f.etiqueta]?.[id];
       const v = (guardadoVal !== undefined && guardadoVal !== null && guardadoVal !== '') ? (Number(guardadoVal)||0) : (f.valor(datos[colIdx]) || 0);
       total += v;
-      return `<td><input type="text" class="cdd-input" inputmode="decimal" data-etiqueta="${escHTML(f.etiqueta)}" data-asesor="${escHTML(a)}" value="${v.toFixed(2)}" disabled oninput="_filtrarInputMontoLiq(this);_recalcularFilaCierreDelDia(this)"></td>`;
+      return `<td><input type="text" class="cdd-input" inputmode="decimal" data-etiqueta="${escHTML(f.etiqueta)}" data-asesor="${escHTML(id)}" value="${v.toFixed(2)}" disabled oninput="_filtrarInputMontoLiq(this);_recalcularFilaCierreDelDia(this)"></td>`;
     }).join('');
     return `<tr${f.destacado?' class="cierre-matriz-destacado"':''}><td>${escHTML(f.etiqueta)}</td>${celdas}<td>$${total.toFixed(2)}</td></tr>`;
   }).join('');
@@ -798,9 +798,23 @@ async function renderCierreDelDia(){
   const emptyMsg = document.getElementById('cierreDelDiaEmptyMsg');
   const st = document.getElementById('cierreDelDiaStatus');
   if(!cont1 || !cont2) return;
+  // Lista MAESTRA de todos los asesores activos (_asesoresCache, la misma que llena el
+  // dropdown "ASESOR" de arriba) — así siempre aparecen todas las rutas como columna,
+  // aunque alguna no haya tenido movimiento ese día (se muestra en $0.00).
   const porAsesor = _calcularLiquidacionDash();
-  const asesores = Object.keys(porAsesor).sort((a,b)=>a.localeCompare(b,'es'));
-  if(!asesores.length){
+  // [FIX] Lista maestra de todos los asesores activos (_asesoresCache, la misma que
+  // llena el dropdown "ASESOR" de arriba), FUSIONADA con cualquier asesor que sí tenga
+  // actividad registrada ese período (porAsesor). Esto es una red de seguridad: si el
+  // perfil de un asesor en Firestore tiene el campo 'esAdmin' mal configurado o
+  // ausente, la consulta .where('esAdmin','==',false) lo excluye silenciosamente de
+  // _asesoresCache — pero si igual tiene pedidos/pagos/gastos ese día, con esta fusión
+  // de todas formas aparece en la tabla, en vez de desaparecer sin explicación.
+  const rutasSet = new Set([
+    ...(Array.isArray(_asesoresCache) ? _asesoresCache : []),
+    ...Object.keys(porAsesor)
+  ]);
+  const rutasFull = [...rutasSet].sort((a,b)=>a.localeCompare(b,'es'));
+  if(!rutasFull.length){
     cont1.innerHTML=''; cont2.innerHTML='';
     if(emptyMsg) emptyMsg.style.display='block';
     if(st) st.textContent='';
@@ -808,10 +822,15 @@ async function renderCierreDelDia(){
     return;
   }
   if(emptyMsg) emptyMsg.style.display='none';
-  _cierreDelDiaAsesoresCache = asesores;
+  _cierreDelDiaAsesoresCache = rutasFull;
+  const nombresDisplay = rutasFull.map(r => r.split(':')[1]?.trim() || r); // "RUTA 1: JEFFERSON" -> "JEFFERSON"
+
+  // Objeto "vacío" para cualquier asesor sin ventas/pagos/gastos ese período —
+  // así no rompe los cálculos, simplemente da $0.00 en todo.
+  const _asesorVacio = { ventasContado:0, ventasCredito:0, ventasTransferencia:0, ventasCheque:0, ventasOtras:0, pagosEfectivo:0, pagosTransferencia:0, pagosCheque:0, pagosOtros:0, gastos:0, productos:{} };
 
   // Tabla 1 — Cierre del Día (mismos campos que ya calcula la Liquidación)
-  const datosAsesores = asesores.map(a=>porAsesor[a]);
+  const datosAsesores = rutasFull.map(r => porAsesor[r] || _asesorVacio);
   const filas1 = [
     { etiqueta:'Valor/Liquidación', valor: n => n.ventasContado },
     { etiqueta:'Pagos', valor: n => n.pagosEfectivo },
@@ -823,20 +842,30 @@ async function renderCierreDelDia(){
   ];
 
   // Tabla 2 — Forma de Entrega de Dinero (lee lo guardado por cada asesor en Liquidación)
-  const entregas = await Promise.all(asesores.map(async nombre=>{
+  const entregas = await Promise.all(rutasFull.map(async nombre=>{
     try{
       if(typeof db==='undefined') return {};
       const snap = await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
       return snap.exists ? snap.data() : {};
     }catch(err){ console.warn('cierreDelDia lectura entrega:', err); return {}; }
   }));
+  const _montoEfectivo = e => (e.efectivo?.marcado ? (Number(e.efectivo.monto)||0) : 0);
+  const _montoDeposito = e => (e.deposito?.marcado ? (Number(e.deposito.monto)||0) : 0);
+  const _montoTransferencia = e => (e.transferencia?.marcado ? (Number(e.transferencia.monto)||0) : 0);
+  const _montoFaltante1 = e => Number(e.faltantes?.[0]?.monto)||0;
+  const _montoFaltante2 = e => Number(e.faltantes?.[1]?.monto)||0;
+  const _montoFaltante3 = e => Number(e.faltantes?.[2]?.monto)||0;
   const filas2 = [
-    { etiqueta:'Efectivo', valor: e => (e.efectivo?.marcado ? (Number(e.efectivo.monto)||0) : 0) },
-    { etiqueta:'Depósito', valor: e => (e.deposito?.marcado ? (Number(e.deposito.monto)||0) : 0) },
-    { etiqueta:'Transferencia', valor: e => (e.transferencia?.marcado ? (Number(e.transferencia.monto)||0) : 0) },
-    { etiqueta:'Faltante 1', valor: e => Number(e.faltantes?.[0]?.monto)||0 },
-    { etiqueta:'Faltante 2', valor: e => Number(e.faltantes?.[1]?.monto)||0 },
-    { etiqueta:'Faltante 3', valor: e => Number(e.faltantes?.[2]?.monto)||0 }
+    { etiqueta:'Efectivo', valor: _montoEfectivo },
+    { etiqueta:'Depósito', valor: _montoDeposito },
+    { etiqueta:'Transferencia', valor: _montoTransferencia },
+    { etiqueta:'Faltante 1', valor: _montoFaltante1 },
+    { etiqueta:'Faltante 2', valor: _montoFaltante2 },
+    { etiqueta:'Faltante 3', valor: _montoFaltante3 },
+    { etiqueta:'TOTAL GENERAL', destacado:true, valor: e =>
+        _montoEfectivo(e) + _montoDeposito(e) + _montoTransferencia(e) +
+        _montoFaltante1(e) + _montoFaltante2(e) + _montoFaltante3(e)
+    }
   ];
 
   // Si ya se guardó un Cierre del Día para este período, esos valores mandan sobre
@@ -849,8 +878,8 @@ async function renderCierreDelDia(){
     }
   }catch(err){ console.warn('cierresDelDia lectura:', err); }
 
-  cont1.innerHTML = _htmlTablaCierreDelDia(1, asesores, datosAsesores, filas1, guardado.tabla1||{});
-  cont2.innerHTML = _htmlTablaCierreDelDia(2, asesores, entregas, filas2, guardado.tabla2||{});
+  cont1.innerHTML = _htmlTablaCierreDelDia(1, rutasFull, nombresDisplay, datosAsesores, filas1, guardado.tabla1||{});
+  cont2.innerHTML = _htmlTablaCierreDelDia(2, rutasFull, nombresDisplay, entregas, filas2, guardado.tabla2||{});
   if(st) st.textContent = guardado && guardado.actualizadoPor ? ('Última vez guardado por '+guardado.actualizadoPor) : 'Aún no se ha guardado este Cierre del Día — mostrando valores calculados automáticamente.';
   _setCierreDelDiaEditable(false);
 }
