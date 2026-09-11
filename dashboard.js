@@ -717,6 +717,94 @@ async function encerarRutasPruebaDash(){
     if (btn){ btn.disabled = false; btn.textContent = 'Encerar rutas de prueba'; }
   }
 }
+function _esRutaListerKaren(empleado){
+  const s = String(empleado||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  return s.includes('lister') || s.includes('karen');
+}
+async function _borrarPedidoEncerado(p, motivo){
+  const { _id, ...datosOriginales } = p;
+  await db.collection('pedidosEliminados').doc(_id).set({
+    ...datosOriginales,
+    pedidoIdOriginal: _id,
+    eliminadoPor: actorAuditoria(),
+    motivoEliminacion: motivo,
+    fechaEliminacion: fechaHoy(),
+    horaEliminacion: new Date().toLocaleTimeString('es-EC'),
+    eliminadoEn: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  try{
+    const movInv = await db.collection('inventarioMovimientos').where('pedidoId','==',_id).get();
+    if (!movInv.empty){
+      const loteInv = db.batch();
+      movInv.forEach(docMov => loteInv.delete(docMov.ref));
+      await loteInv.commit();
+    }
+  }catch(errInv){ console.warn('inventario encerar:', errInv); }
+  await db.collection('pedidos').doc(_id).delete();
+}
+async function encerarListerKarenTodoDash(){
+  if (ROL_ACTUAL !== 'admin'){ alert('Solo Administración puede encerar Lister y Karen.'); return; }
+  const ok1 = confirm(
+    'Esto encera TODA la información de Lister y Karen (todos los días), no solo el filtro de arriba.\n\n'+
+    'No se toca Ruta 1, 2, 3 ni 4.\n'+
+    'Los pedidos van a Pedidos Eliminados. Usuarios/rutas no se borran.\n\n'+
+    '¿Continuar a contar los registros?'
+  );
+  if (!ok1) return;
+  const btn = document.getElementById('btnEncerarListerKaren');
+  if (btn){ btn.disabled = true; btn.textContent = 'Buscando...'; }
+  try{
+    const [snapPed, snapPag, snapGas] = await Promise.all([
+      db.collection('pedidos').get(),
+      db.collection('pagos').get(),
+      db.collection('gastos').get()
+    ]);
+    const pedidos = [];
+    snapPed.forEach(doc => {
+      const d = doc.data() || {};
+      if (_esRutaListerKaren(d.empleado)) pedidos.push({ ...d, _id: doc.id });
+    });
+    const pagos = [];
+    snapPag.forEach(doc => {
+      const d = doc.data() || {};
+      if (_esRutaListerKaren(d.empleado)) pagos.push({ ...d, _id: doc.id });
+    });
+    const gastos = [];
+    snapGas.forEach(doc => {
+      const d = doc.data() || {};
+      if (_esRutaListerKaren(d.empleado)) gastos.push({ ...d, _id: doc.id });
+    });
+    const rutas = [...new Set([...pedidos,...pagos,...gastos].map(x => x.empleado||'Sin asignar'))].sort((a,b)=>a.localeCompare(b,'es'));
+    const total = pedidos.length + pagos.length + gastos.length;
+    if (!total){
+      alert('No hay pedidos, pagos ni gastos de Lister ni Karen en Firebase.');
+      return;
+    }
+    const ok2 = confirm(
+      '¿Encerar TODO Lister y Karen?\n\n'+
+      '• '+pedidos.length+' pedido(s)\n'+
+      '• '+pagos.length+' pago(s)\n'+
+      '• '+gastos.length+' gasto(s)\n\n'+
+      'Empleado encontrado:\n'+rutas.join('\n')+'\n\n'+
+      'Esto no usa el filtro de fecha. No hay deshacer en pagos/gastos.'
+    );
+    if (!ok2) return;
+    if (btn) btn.textContent = 'Encerando...';
+    const motivo = 'Encerado TOTAL Lister y Karen';
+    for (const p of pedidos) await _borrarPedidoEncerado(p, motivo);
+    for (const p of pagos) await db.collection('pagos').doc(p._id).delete();
+    for (const g of gastos) await db.collection('gastos').doc(g._id).delete();
+    await _registrarAuditoria('liquidacion', 'edición', 'encerar-lister-karen',
+      'Encerado TOTAL Lister/Karen ('+rutas.join(', ')+'): '+pedidos.length+' pedidos, '+pagos.length+' pagos, '+gastos.length+' gastos.',
+      motivo);
+    alert('Listo. Lister y Karen en cero en toda la base.\nLas demás rutas no se modificaron.');
+  }catch(err){
+    console.error(err);
+    alert('No se pudo encerar Lister/Karen: '+(err.message||err));
+  }finally{
+    if (btn){ btn.disabled = false; btn.textContent = 'Encerar Lister y Karen (todo)'; }
+  }
+}
 /* [NEW] Cierre del Día — vista consolidada en formato matriz (una columna por
    asesor + columna Total), igual a la hoja de papel "Cierre del Día" que se
    usaba antes. Tabla 1 arranca con los mismos números que _calcularLiquidacionDash()
@@ -1523,6 +1611,8 @@ function aplicarRestriccionesRol(){
   if (btnPass) btnPass.style.display = esSecretaria ? 'none' : '';
   const btnEncerar = document.getElementById('btnEncerarRutasPrueba');
   if (btnEncerar) btnEncerar.style.display = esSecretaria ? 'none' : '';
+  const btnLK = document.getElementById('btnEncerarListerKaren');
+  if (btnLK) btnLK.style.display = esSecretaria ? 'none' : '';
   pintarUsuarioHeader();
   if (esSecretaria) {
     switchTab('dashboard');
