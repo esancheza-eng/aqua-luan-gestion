@@ -643,6 +643,80 @@ function renderLiquidacionDash(){
   if(boxGlobal) boxGlobal.style.display='none';
   asesores.forEach(nombre=>_cargarEntregaAsesor(nombre));
 }
+function _esRutaDePruebaEncerar(empleado){
+  const s = String(empleado||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  return s.includes('ruta 1') || s.includes('ruta 2') || s.includes('jefferson');
+}
+function _listaMovimientosRutaPrueba(){
+  const pedidos = (_pedidosRaw||[]).filter(p => p._id && _esRutaDePruebaEncerar(p.empleado));
+  const pagos = (_pagosRaw||[]).filter(p => p._id && _esRutaDePruebaEncerar(p.empleado));
+  const gastos = (_gastosRaw||[]).filter(g => g._id && _esRutaDePruebaEncerar(g.empleado));
+  const rutas = [...new Set([...pedidos,...pagos,...gastos].map(x => x.empleado||'Sin asignar'))].sort((a,b)=>a.localeCompare(b,'es'));
+  return { pedidos, pagos, gastos, rutas };
+}
+async function encerarRutasPruebaDash(){
+  if (ROL_ACTUAL !== 'admin'){ alert('Solo Administración puede encerar rutas de prueba.'); return; }
+  const { pedidos, pagos, gastos, rutas } = _listaMovimientosRutaPrueba();
+  const total = pedidos.length + pagos.length + gastos.length;
+  if (!total){
+    alert('No hay movimientos de Ruta 1 ni Ruta 2 en el período filtrado.\nSolo se encera Ruta 1 (Jefferson) y Ruta 2 (Luis).');
+    return;
+  }
+  const periodo = (typeof _textoRangoFecha === 'function') ? _textoRangoFecha() : fechaHoy();
+  const ok = confirm(
+    '¿Encerar rutas de prueba del período '+periodo+'?\n\n'+
+    'Se archivan/eliminan:\n'+
+    '• '+pedidos.length+' pedido(s)\n'+
+    '• '+pagos.length+' pago(s)\n'+
+    '• '+gastos.length+' gasto(s)\n\n'+
+    'Rutas afectadas:\n'+rutas.join('\n')+'\n\n'+
+    'Solo se encera RUTA 1 Jefferson y RUTA 2 Luis.\n'+
+    'NO se toca Ruta 3, Ruta 4 ni ninguna otra.\n'+
+    'Los pedidos quedan en Pedidos Eliminados. Las rutas/usuarios no se borran.'
+  );
+  if (!ok) return;
+  const btn = document.getElementById('btnEncerarRutasPrueba');
+  if (btn){ btn.disabled = true; btn.textContent = 'Encerando...'; }
+  const motivo = 'Encerado de rutas de prueba (período '+periodo+')';
+  try{
+    for (const p of pedidos){
+      const { _id, ...datosOriginales } = p;
+      await db.collection('pedidosEliminados').doc(_id).set({
+        ...datosOriginales,
+        pedidoIdOriginal: _id,
+        eliminadoPor: actorAuditoria(),
+        motivoEliminacion: motivo,
+        fechaEliminacion: fechaHoy(),
+        horaEliminacion: new Date().toLocaleTimeString('es-EC'),
+        eliminadoEn: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      try{
+        const movInv = await db.collection('inventarioMovimientos').where('pedidoId','==',_id).get();
+        if (!movInv.empty){
+          const loteInv = db.batch();
+          movInv.forEach(docMov => loteInv.delete(docMov.ref));
+          await loteInv.commit();
+        }
+      }catch(errInv){ console.warn('inventario encerar:', errInv); }
+      await db.collection('pedidos').doc(_id).delete();
+    }
+    for (const p of pagos){
+      await db.collection('pagos').doc(p._id).delete();
+    }
+    for (const g of gastos){
+      await db.collection('gastos').doc(g._id).delete();
+    }
+    await _registrarAuditoria('liquidacion', 'edición', 'encerar-rutas-prueba',
+      'Enceradas solo Ruta 1 y Ruta 2 ('+rutas.join(', ')+'): '+pedidos.length+' pedidos, '+pagos.length+' pagos, '+gastos.length+' gastos. Período '+periodo+'.',
+      motivo);
+    alert('Listo. Ruta 1 y Ruta 2 en cero para '+periodo+'.\nLas demás rutas no se modificaron.');
+  }catch(err){
+    console.error(err);
+    alert('No se pudo completar el encerado: '+(err.message||err));
+  }finally{
+    if (btn){ btn.disabled = false; btn.textContent = 'Encerar rutas de prueba'; }
+  }
+}
 /* [NEW] Cierre del Día — vista consolidada en formato matriz (una columna por
    asesor + columna Total), igual a la hoja de papel "Cierre del Día" que se
    usaba antes. Tabla 1 arranca con los mismos números que _calcularLiquidacionDash()
@@ -1447,6 +1521,8 @@ function aplicarRestriccionesRol(){
   });
   const btnPass = document.getElementById('btnMiPassword');
   if (btnPass) btnPass.style.display = esSecretaria ? 'none' : '';
+  const btnEncerar = document.getElementById('btnEncerarRutasPrueba');
+  if (btnEncerar) btnEncerar.style.display = esSecretaria ? 'none' : '';
   pintarUsuarioHeader();
   if (esSecretaria) {
     switchTab('dashboard');
