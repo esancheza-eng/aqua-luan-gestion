@@ -2488,7 +2488,12 @@ function exportarClientePDF() {
   </div>
   ${bloquesHtml}
   ${clientesSeleccionados.length > 1 ? `<div class="total-final"><span>TOTAL GENERAL (${clientesSeleccionados.length} clientes)</span><b>$${totalGeneralTodos.toFixed(2)}</b></div>` : ''}
-  <script>window.onload=function(){window.print();}<\/script>
+  <script>
+    var _impresoPagina=false;
+    function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
+    window.onload=_intentarImprimirPagina;
+    setTimeout(_intentarImprimirPagina,1200);
+  <\/script>
   </body></html>`);
   v.document.close();
 }
@@ -2770,7 +2775,12 @@ function _imprimirClientesPDF(clientesArr) {
     th{background:#1a3a5c;color:#fff;padding:8px 10px;text-align:left}
     td{padding:7px 10px;border-bottom:1px solid #eee}
     hr{border:none;border-top:2px dashed #ccc;margin:24px 0}
-  </style></head><body><p style="font-size:12px;color:#888;margin-bottom:12px">${escHTML(lineaImpresoPor())} · ${new Date().toLocaleString('es-EC')}</p>${bloques}<script>window.onload=function(){window.print();}<\/script></body></html>`);
+  </style></head><body><p style="font-size:12px;color:#888;margin-bottom:12px">${escHTML(lineaImpresoPor())} · ${new Date().toLocaleString('es-EC')}</p>${bloques}<script>
+    var _impresoPagina=false;
+    function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
+    window.onload=_intentarImprimirPagina;
+    setTimeout(_intentarImprimirPagina,1200);
+  <\/script></body></html>`);
   v.document.close();
 }
 
@@ -3195,7 +3205,12 @@ function imprimirCierre() {
   </style></head><body>
   <div class="print-header"><h1>📅 Cierre del Día — Aqua Luan</h1><p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p></div>
   ${cuerpo}
-  <script>window.onload=function(){window.print();}<\/script>
+  <script>
+    var _impresoPagina=false;
+    function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
+    window.onload=_intentarImprimirPagina;
+    setTimeout(_intentarImprimirPagina,1200);
+  <\/script>
   </body></html>`);
   v.document.close();
 }
@@ -3287,7 +3302,12 @@ function exportarPagosGastosPDF() {
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
-  <script>window.onload=function(){window.print();}<\/script>
+  <script>
+    var _impresoPagina=false;
+    function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
+    window.onload=_intentarImprimirPagina;
+    setTimeout(_intentarImprimirPagina,1200);
+  <\/script>
   </body></html>`);
   v.document.close();
 }
@@ -3365,7 +3385,12 @@ function exportarDetallePDF() {
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
-  <script>window.onload=function(){window.print();}<\/script>
+  <script>
+    var _impresoPagina=false;
+    function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
+    window.onload=_intentarImprimirPagina;
+    setTimeout(_intentarImprimirPagina,1200);
+  <\/script>
   </body></html>`);
   v.document.close();
 }
