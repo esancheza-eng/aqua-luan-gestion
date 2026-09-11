@@ -643,6 +643,90 @@ function renderLiquidacionDash(){
   if(boxGlobal) boxGlobal.style.display='none';
   asesores.forEach(nombre=>_cargarEntregaAsesor(nombre));
 }
+function _esRutaHistoricoAEncerar(empleado){
+  const s = String(empleado||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  if (s.includes('ruta 3') || s.includes('ruta 4') || s.includes('vicente') || s.includes('wilson')) return false;
+  return s.includes('ruta 1') || s.includes('ruta 2') || s.includes('jefferson') ||
+    s.includes('luis') || s.includes('lister') || s.includes('karen');
+}
+async function _borrarPedidoEncerado(p, motivo){
+  const { _id, ...datosOriginales } = p;
+  await db.collection('pedidosEliminados').doc(_id).set({
+    ...datosOriginales,
+    pedidoIdOriginal: _id,
+    eliminadoPor: actorAuditoria(),
+    motivoEliminacion: motivo,
+    fechaEliminacion: fechaHoy(),
+    horaEliminacion: new Date().toLocaleTimeString('es-EC'),
+    eliminadoEn: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  try{
+    const movInv = await db.collection('inventarioMovimientos').where('pedidoId','==',_id).get();
+    if (!movInv.empty){
+      const loteInv = db.batch();
+      movInv.forEach(docMov => loteInv.delete(docMov.ref));
+      await loteInv.commit();
+    }
+  }catch(errInv){ console.warn('inventario encerar:', errInv); }
+  await db.collection('pedidos').doc(_id).delete();
+}
+async function encerarHistoricoRutasPruebaDash(){
+  if (ROL_ACTUAL !== 'admin'){ alert('Solo Administración puede encerar este histórico.'); return; }
+  const ok1 = confirm(
+    'Esto borra TODO el histórico (todos los días) de:\n'+
+    '• Ruta 1 Jefferson\n• Ruta 2 Luis\n• Lister\n• Karen\n\n'+
+    'NO se toca Ruta 3 Vicente ni Ruta 4 Wilson.\n'+
+    'Los pedidos van a Pedidos Eliminados.\n\n¿Buscar los registros?'
+  );
+  if (!ok1) return;
+  const btn = document.getElementById('btnEncerarHistoricoPrueba');
+  if (btn){ btn.disabled = true; btn.textContent = 'Buscando...'; }
+  try{
+    const [snapPed, snapPag, snapGas] = await Promise.all([
+      db.collection('pedidos').get(),
+      db.collection('pagos').get(),
+      db.collection('gastos').get()
+    ]);
+    const pick = (snap) => {
+      const arr = [];
+      snap.forEach(doc => {
+        const d = doc.data() || {};
+        if (_esRutaHistoricoAEncerar(d.empleado)) arr.push({ ...d, _id: doc.id });
+      });
+      return arr;
+    };
+    const pedidos = pick(snapPed), pagos = pick(snapPag), gastos = pick(snapGas);
+    const rutas = [...new Set([...pedidos,...pagos,...gastos].map(x => x.empleado||'Sin asignar'))].sort((a,b)=>a.localeCompare(b,'es'));
+    const total = pedidos.length + pagos.length + gastos.length;
+    if (!total){
+      alert('No quedó histórico de Jefferson, Luis, Lister ni Karen.');
+      return;
+    }
+    const ok2 = confirm(
+      '¿Borrar TODO este histórico?\n\n'+
+      '• '+pedidos.length+' pedido(s)\n'+
+      '• '+pagos.length+' pago(s)\n'+
+      '• '+gastos.length+' gasto(s)\n\n'+
+      'Rutas encontradas:\n'+rutas.join('\n')+'\n\n'+
+      'Vicente y Wilson no están en esta lista.'
+    );
+    if (!ok2) return;
+    if (btn) btn.textContent = 'Encerando...';
+    const motivo = 'Encerado histórico Jefferson, Luis, Lister y Karen';
+    for (const p of pedidos) await _borrarPedidoEncerado(p, motivo);
+    for (const p of pagos) await db.collection('pagos').doc(p._id).delete();
+    for (const g of gastos) await db.collection('gastos').doc(g._id).delete();
+    await _registrarAuditoria('liquidacion', 'edición', 'encerar-historico-prueba',
+      'Histórico borrado ('+rutas.join(', ')+'): '+pedidos.length+' pedidos, '+pagos.length+' pagos, '+gastos.length+' gastos. Protegidas Ruta 3 y 4.',
+      motivo);
+    alert('Listo. Histórico de Jefferson, Luis, Lister y Karen en cero.\nRuta 3 y 4 no se tocaron.');
+  }catch(err){
+    console.error(err);
+    alert('No se pudo encerar el histórico: '+(err.message||err));
+  }finally{
+    if (btn){ btn.disabled = false; btn.textContent = 'Encerar histórico 1, 2, Lister y Karen'; }
+  }
+}
 /* [NEW] Cierre del Día — vista consolidada en formato matriz (una columna por
    asesor + columna Total), igual a la hoja de papel "Cierre del Día" que se
    usaba antes. Tabla 1 arranca con los mismos números que _calcularLiquidacionDash()
@@ -1447,6 +1531,8 @@ function aplicarRestriccionesRol(){
   });
   const btnPass = document.getElementById('btnMiPassword');
   if (btnPass) btnPass.style.display = esSecretaria ? 'none' : '';
+  const btnHist = document.getElementById('btnEncerarHistoricoPrueba');
+  if (btnHist) btnHist.style.display = esSecretaria ? 'none' : '';
   pintarUsuarioHeader();
   if (esSecretaria) {
     switchTab('dashboard');
