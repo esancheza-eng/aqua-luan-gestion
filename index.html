@@ -337,18 +337,10 @@
         <div class="table-card">
           <div class="table-header">
             <div class="table-title">💵 Liquidación de Efectivo por Asesor</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn-filter" id="btnEncerarRutasPrueba" style="background:#8a6d00;display:flex;align-items:center;gap:6px" onclick="encerarRutasPruebaDash()">
-              Encerar rutas de prueba
-            </button>
-            <button class="btn-filter" id="btnEncerarListerKaren" style="background:#6b2d6b;display:flex;align-items:center;gap:6px" onclick="encerarListerKarenTodoDash()">
-              Encerar Lister y Karen (todo)
-            </button>
             <button class="btn-filter" style="background:#0f7c38;display:flex;align-items:center;gap:6px" onclick="imprimirLiquidacionDash()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM7.5 12h2c.83 0 1.5.67 1.5 1.5S10.33 15 9.5 15H8v2H7v-5zm1 2h1c.28 0 .5-.22.5-.5s-.22-.5-.5-.5h-1v1zM12 12h2c.55 0 1 .45 1 1v3c0 .55-.45 1-1 1h-2v-5zm1 4h1v-3h-1v3zM16 12h2v1h-1v1h1v1h-1v2h-1v-5z"/></svg>
               Imprimir PDF
             </button>
-            </div>
           </div>
           <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Efectivo que cada asesor de ruta debe entregar, según el período filtrado arriba: ventas al contado + pagos cobrados en efectivo, menos los gastos que hizo con esa misma caja. Los cobros por transferencia o cheque no se piden en efectivo, así que se muestran aparte solo como referencia.</div>
           <div style="padding:0 1.25rem 1.25rem" id="liquidacionDashLista"></div>
