@@ -1,12 +1,19 @@
-# Aqua Luan — Dashboard (gestion.elhyai.com)
-
+Aqua Luan — Dashboard (sistemaaqualuan.elhyai.com)
 Panel de supervisión (admin y secretaria).
-La app de asesores sigue en https://aqualuanpedidos.elhyai.com
-
-## Publicar
-1. Settings → Pages → Deploy from branch `main` / root.
-2. Custom domain: `sistemaaqualuan.elhyai.com`
-3. Esperar certificado SSL → Enforce HTTPS.
-4. Firebase Authentication → Authorized domains → agregar `sistemaaqualuan.elhyai.com`
-5. Subir aquí: dashboard.html, dashboard.js, dashboard.css, logo-luanaqua.png, logo-icon.png
-6. En la app (repo luan_aqua_basededatos) cambiar `location.href = 'dashboard.html'` a `https://sistemaaqualuan.elhyai.com`
+La app de asesores está en otro repo y otro dominio:
+Repo: `luan_aqua_basededatos`
+URL: https://aqualuanpedidos.elhyai.com
+Publicar
+Settings → Pages → Deploy from branch `main` / root.
+Custom domain: `sistemaaqualuan.elhyai.com`
+Esperar certificado SSL → Enforce HTTPS.
+Firebase Authentication → Authorized domains → agregar `sistemaaqualuan.elhyai.com`
+Archivos que sirve el sitio:
+`index.html` (portada; debe empezar con `<!DOCTYPE html>`)
+`dashboard.js`
+`dashboard.css`
+`logo-luanaqua.png`
+`logo-icon.png`
+`CNAME` (`sistemaaqualuan.elhyai.com`)
+No subir `dashboard.js` con el nombre `index.html`. Eso deja el sitio en texto crudo.
+Secretaria y admin entran solo aquí. Los asesores entran solo en `aqualuanpedidos.elhyai.com`.
