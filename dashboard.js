@@ -993,7 +993,7 @@ function imprimirNotasAdicionalesDash(){
     </tbody>
   </table>
   <div class="firmas">
-    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Secretaria</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
@@ -1354,9 +1354,9 @@ function imprimirLiquidacionDash(){
   </div>
   ${_htmlEntregaLiquidacionPrint()}
   <div class="firmas-box">
-    <div class="firma-linea"><div class="raya">&nbsp;</div>Liquidador</div>
-    <div class="firma-linea"><div class="raya">&nbsp;</div>Asesor</div>
-    <div class="firma-linea"><div class="raya">&nbsp;</div>Ayudante</div>
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Liquidadora</div>
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Asesor</div>
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Ayudante</div>
   </div>
   <script>
     /* [FIX] Antes esto dependía 100% de window.onload, que espera a que cargue
@@ -3283,7 +3283,7 @@ function exportarPagosGastosPDF() {
     </tbody>
   </table>
   <div class="firmas">
-    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Secretaria</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
@@ -3361,7 +3361,7 @@ function exportarDetallePDF() {
     </tbody>
   </table>
   <div class="firmas">
-    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Secretaria</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
