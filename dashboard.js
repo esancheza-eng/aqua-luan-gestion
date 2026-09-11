@@ -136,6 +136,19 @@ function etiquetaUsuarioSesion(){
 function lineaImpresoPor(){
   return 'Impreso por: ' + etiquetaUsuarioSesion();
 }
+
+function _dispararImpresion(win){
+  if(!win) return;
+  var hecho=false;
+  function go(){
+    if(hecho) return;
+    hecho=true;
+    try{ win.focus(); win.print(); }catch(e){}
+  }
+  setTimeout(go, 180);
+  setTimeout(go, 600);
+}
+
 function actorAuditoria(){
   return etiquetaUsuarioSesion() || (ADMIN_ACTUAL && (ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario)) || 'sistema';
 }
@@ -775,10 +788,10 @@ function imprimirCierreDelDia(){
   const logoUrl = location.origin + '/logo-luanaqua.png';
   v.document.write(`<html><head><title>Cierre del Día</title><style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'DM Sans',sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
     .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:16px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
     .print-header img{height:46px;width:auto;}
-    .print-header h1{font-family:'DM Serif Display',serif;font-size:20px;color:#1a3a5c;}
+    .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#1a3a5c;}
     .print-header p{font-size:11px;color:#888;margin-top:3px;}
     .cdd-print-title{font-size:12px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#1a3a5c;margin:18px 0 8px;}
     .cdd-print-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px;}
@@ -800,17 +813,20 @@ function imprimirCierreDelDia(){
   </div>
   ${bloque1}
   ${bloque2}
-  <div class="firmas-box">
-    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma — ${escHTML(_firmaUsuarioActualCierreDia())}</div>
+  <div class="firmas-box" style="display:flex;justify-content:space-between;gap:30px;width:100%">
+    <div class="firma-linea" style="flex:1"><div class="raya">&nbsp;</div>Firma Liquidador</div>
+    <div class="firma-linea" style="flex:1"><div class="raya">&nbsp;</div>Firma Asesor</div>
+    <div class="firma-linea" style="flex:1"><div class="raya">&nbsp;</div>Firma Ayudante</div>
   </div>
   <script>
     var _impresoCierreDia=false;
     function _intentarImprimirCierreDia(){ if(_impresoCierreDia)return; _impresoCierreDia=true; window.print(); }
     window.onload=_intentarImprimirCierreDia;
-    setTimeout(_intentarImprimirCierreDia,1200);
+    setTimeout(_intentarImprimirCierreDia,180);
   <\/script>
   </body></html>`);
   v.document.close();
+  _dispararImpresion(v);
 }
 async function renderCierreDelDia(){
   const cont1 = document.getElementById('cierreDelDiaTabla1Wrap');
@@ -961,13 +977,12 @@ function imprimirNotasAdicionalesDash(){
   // dashboard como base, así que una ruta relativa no cargaría.
   const logoUrl = location.origin + '/logo-luanaqua.png';
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Notas Adicionales — ${asesorLabel} — Aqua Luan — ${fecha}</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'DM Sans',sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
     .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:16px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
     .print-header img{height:46px;width:auto;}
-    .print-header h1{font-family:'DM Serif Display',serif;font-size:20px;color:#1a3a5c;}
+    .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#1a3a5c;}
     .print-header p{font-size:11px;color:#888;margin-top:3px;}
     table{width:100%;border-collapse:collapse;font-size:12px;}
     thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#fff;background:#1a3a5c;}
@@ -993,7 +1008,7 @@ function imprimirNotasAdicionalesDash(){
     </tbody>
   </table>
   <div class="firmas">
-    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidador</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
@@ -1001,10 +1016,11 @@ function imprimirNotasAdicionalesDash(){
     var _impresoNotas=false;
     function _intentarImprimirNotas(){ if(_impresoNotas)return; _impresoNotas=true; window.print(); }
     window.onload=_intentarImprimirNotas;
-    setTimeout(_intentarImprimirNotas,1200);
+    setTimeout(_intentarImprimirNotas,180);
   <\/script>
   </body></html>`);
   v.document.close();
+  _dispararImpresion(v);
 }
 
 let _liqTotalEntregarCache=0, _liqEntregaTimer=null, _liqEntregaCargando=false;
@@ -1311,13 +1327,12 @@ function imprimirLiquidacionDash(){
   // que ya se usa en Pagos y Gastos / Detalle de Pedidos.
   const logoUrl = location.origin + '/logo-luanaqua.png';
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Liquidación de Efectivo — ${asesorLabel} — Aqua Luan — ${fecha}</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'DM Sans',sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
     .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:16px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
     .print-header img{height:46px;width:auto;}
-    .print-header h1{font-family:'DM Serif Display',serif;font-size:20px;color:#1a3a5c;}
+    .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#1a3a5c;}
     .print-header p{font-size:11px;color:#888;margin-top:3px;}
     .ruta-block{background:#f0f5f8;border-radius:8px;margin-bottom:14px;padding:12px 14px;}
     .ruta-header{display:flex;justify-content:space-between;font-weight:800;font-size:14px;margin-bottom:8px;color:#1a3a5c;}
@@ -1334,7 +1349,7 @@ function imprimirLiquidacionDash(){
     .prod-subtotal td{font-weight:800;border-top:1px solid #d2dae2;padding-top:5px;}
     .total-general{background:#1a3a5c;border-radius:10px;padding:14px 18px;margin-top:8px;display:flex;justify-content:space-between;align-items:center;}
     .total-general span:first-child{font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.6);}
-    .total-general span:last-child{font-family:'DM Serif Display',serif;font-size:22px;color:#4ec9a0;}
+    .total-general span:last-child{font-family:Georgia,'Times New Roman',serif;font-size:22px;color:#4ec9a0;}
     .firmas-box{display:flex;justify-content:space-between;align-items:flex-end;gap:36px;margin-top:64px;padding:0 8px;}
     .firma-linea{flex:1;text-align:center;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#1a3a5c;}
     .firma-linea .raya{border-top:1px solid #1a3a5c;margin:0 auto 8px;width:90%;height:36px;}
@@ -1354,7 +1369,7 @@ function imprimirLiquidacionDash(){
   </div>
   ${_htmlEntregaLiquidacionPrint()}
   <div class="firmas-box">
-    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Liquidadora</div>
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Liquidador</div>
     <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Asesor</div>
     <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Ayudante</div>
   </div>
@@ -1368,10 +1383,11 @@ function imprimirLiquidacionDash(){
     var _impresoLiquidacion=false;
     function _intentarImprimirLiquidacion(){ if(_impresoLiquidacion)return; _impresoLiquidacion=true; window.print(); }
     window.onload=_intentarImprimirLiquidacion;
-    setTimeout(_intentarImprimirLiquidacion,1200);
+    setTimeout(_intentarImprimirLiquidacion,180);
   <\/script>
   </body></html>`);
   v.document.close();
+  _dispararImpresion(v);
 }
 
 /* [NEW] Inventario — entradas y salidas, en vivo */
@@ -2192,7 +2208,7 @@ function initLeafletMap() {
     options: { position:'topleft' },
     onAdd: function() {
       const div = L.DomUtil.create('div','');
-      div.innerHTML=`<div style="background:#fff;border-radius:4px;box-shadow:0 1px 5px rgba(0,0,0,0.25);overflow:hidden;display:flex;font-family:'DM Sans',sans-serif"><button id="btnMapa" onclick="setTile('mapa')" style="padding:6px 14px;font-size:12px;font-weight:700;border:none;background:#1a3a5c;color:#fff;cursor:pointer">Mapa</button><button id="btnSateli" onclick="setTile('satelite')" style="padding:6px 14px;font-size:12px;font-weight:600;border:none;background:#fff;color:#555;cursor:pointer;border-left:1px solid #ddd">Satélite</button></div>`;
+      div.innerHTML=`<div style="background:#fff;border-radius:4px;box-shadow:0 1px 5px rgba(0,0,0,0.25);overflow:hidden;display:flex;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif"><button id="btnMapa" onclick="setTile('mapa')" style="padding:6px 14px;font-size:12px;font-weight:700;border:none;background:#1a3a5c;color:#fff;cursor:pointer">Mapa</button><button id="btnSateli" onclick="setTile('satelite')" style="padding:6px 14px;font-size:12px;font-weight:600;border:none;background:#fff;color:#555;cursor:pointer;border-left:1px solid #ddd">Satélite</button></div>`;
       L.DomEvent.disableClickPropagation(div); return div;
     }
   });
@@ -2289,7 +2305,7 @@ function renderRutasDia(fecha, asesorFiltro) {
       const num=idx+1;
       const borderClr=shadeColor(color,-25);
       const personaSVG=`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="7" r="4"/><path d="M5.5 20c0-3.59 2.91-6.5 6.5-6.5s6.5 2.91 6.5 6.5H5.5z"/></svg>`;
-      const iconHtml=`<div style="position:relative;width:42px;height:52px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.4))"><svg xmlns="http://www.w3.org/2000/svg" width="42" height="52" viewBox="0 0 42 52" style="position:absolute;top:0;left:0"><path d="M21 1C10.5 1 2 9.5 2 20c0 14 19 31 19 31s19-17 19-31C40 9.5 31.5 1 21 1z" fill="${color}" stroke="${borderClr}" stroke-width="2"/><circle cx="21" cy="19" r="13" fill="rgba(255,255,255,0.18)"/></svg><div style="position:absolute;top:5px;left:50%;transform:translateX(-50%);width:18px;height:18px">${personaSVG}</div><div style="position:absolute;top:-4px;right:-4px;background:#fff;color:${color};border:2px solid ${color};border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;line-height:1;font-family:'DM Sans',sans-serif;box-shadow:0 1px 4px rgba(0,0,0,0.3)">${num}</div></div>`;
+      const iconHtml=`<div style="position:relative;width:42px;height:52px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.4))"><svg xmlns="http://www.w3.org/2000/svg" width="42" height="52" viewBox="0 0 42 52" style="position:absolute;top:0;left:0"><path d="M21 1C10.5 1 2 9.5 2 20c0 14 19 31 19 31s19-17 19-31C40 9.5 31.5 1 21 1z" fill="${color}" stroke="${borderClr}" stroke-width="2"/><circle cx="21" cy="19" r="13" fill="rgba(255,255,255,0.18)"/></svg><div style="position:absolute;top:5px;left:50%;transform:translateX(-50%);width:18px;height:18px">${personaSVG}</div><div style="position:absolute;top:-4px;right:-4px;background:#fff;color:${color};border:2px solid ${color};border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;line-height:1;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,0.3)">${num}</div></div>`;
       const icon=L.divIcon({className:'',html:iconHtml,iconSize:[42,52],iconAnchor:[21,52],popupAnchor:[0,-54]});
       const marker=L.marker([lat,lng],{icon}).addTo(leafletMap);
       const nombreAsesor=escHTML(asesorKey.split(':')[1]?.trim()||asesorKey);
@@ -2298,7 +2314,7 @@ function renderRutasDia(fecha, asesorFiltro) {
       const notas=r['NOTAS']?`<div style="margin-top:6px;font-style:italic;color:#555;font-size:11px">📝 ${escHTML(r['NOTAS'])}</div>`:'';
       const linkgps=r['LINK GPS']?`<a href="${r['LINK GPS']}" target="_blank" style="display:inline-block;margin-top:8px;background:#0a7c6e;color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;text-decoration:none">📍 Abrir GPS</a>`:'';
       const precStr=precision>0?`<div style="font-size:10px;color:#999;margin-top:2px">Precisión: ${precision}m${precision>50?' ⚠️':''}</div>`:'';
-      marker.bindPopup(`<div style="font-family:'DM Sans',sans-serif;min-width:200px;max-width:240px"><div style="background:${color};color:#fff;padding:8px 12px;margin:-13px -20px 10px;border-radius:4px 4px 0 0;font-size:12px;font-weight:700">${nombreAsesor} — Parada #${idx+1}</div><div style="font-size:13px;font-weight:700;color:#1a3a5c">${escHTML(r['CLIENTE']||'-')}</div><div style="font-size:11px;color:#666;margin-top:2px">🕐 ${r['HORA REGISTRO']||'-'}</div>${precStr}<div style="margin-top:8px;font-size:12px">${prod}</div><div style="margin-top:2px;font-size:12px">Total: ${total}</div><div style="margin-top:4px;font-size:11px;color:#888">💳 ${r['FORMA DE PAGO']||'—'}</div>${notas}${linkgps}</div>`,{maxWidth:260});
+      marker.bindPopup(`<div style="font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;min-width:200px;max-width:240px"><div style="background:${color};color:#fff;padding:8px 12px;margin:-13px -20px 10px;border-radius:4px 4px 0 0;font-size:12px;font-weight:700">${nombreAsesor} — Parada #${idx+1}</div><div style="font-size:13px;font-weight:700;color:#1a3a5c">${escHTML(r['CLIENTE']||'-')}</div><div style="font-size:11px;color:#666;margin-top:2px">🕐 ${r['HORA REGISTRO']||'-'}</div>${precStr}<div style="margin-top:8px;font-size:12px">${prod}</div><div style="margin-top:2px;font-size:12px">Total: ${total}</div><div style="margin-top:4px;font-size:11px;color:#888">💳 ${r['FORMA DE PAGO']||'—'}</div>${notas}${linkgps}</div>`,{maxWidth:260});
       if(precision>50){ const circle=L.circle([lat,lng],{radius:precision,color,fillColor:color,fillOpacity:0.08,weight:1,dashArray:'4,4'}).addTo(leafletMap); mapMarkers.push(circle); }
       mapMarkers.push(marker); coords.push([lat,lng]); allBounds.push([lat,lng]);
       const key=`${r['CLIENTE']}-${r['HORA REGISTRO']}-${asesorKey}`;
@@ -2459,16 +2475,15 @@ function exportarClientePDF() {
 
   const v = window.open('', '_blank', 'width=800,height=900');
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escHTML(tituloSeleccion)} — Aqua Luan</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'DM Sans',sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
     .print-header{text-align:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
-    .print-header h1{font-family:'DM Serif Display',serif;font-size:22px;color:#1a3a5c;}
+    .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:22px;color:#1a3a5c;}
     .print-header p{font-size:12px;color:#888;margin-top:4px;}
     .cliente-bloque{margin-bottom:22px;page-break-inside:avoid;}
     .cliente-bloque-titulo{display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:800;color:#1a3a5c;background:#f0f5f8;border-radius:8px 8px 0 0;padding:8px 12px;border:1px solid #ddd;border-bottom:none;}
-    .cliente-bloque-titulo span{color:#0a7c6e;font-family:'DM Serif Display',serif;font-size:16px;}
+    .cliente-bloque-titulo span{color:#0a7c6e;font-family:Georgia,'Times New Roman',serif;font-size:16px;}
     table{width:100%;border-collapse:collapse;font-size:12px;}
     thead tr{background:#1a3a5c;}
     thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#fff;}
@@ -2479,7 +2494,7 @@ function exportarClientePDF() {
     .total-row{background:#e6f4f2;font-weight:800;color:#085f54;}
     .total-row td{padding:12px;border-top:2px solid #0a7c6e;}
     .total-final{background:#1a3a5c;border-radius:10px;padding:14px 18px;margin-top:10px;display:flex;justify-content:space-between;align-items:center;color:#fff;}
-    .total-final b{font-family:'DM Serif Display',serif;font-size:18px;color:#4ec9a0;}
+    .total-final b{font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#4ec9a0;}
     @media print{body{padding:12px;} thead{display:table-header-group;}}
   </style></head><body>
   <div class="print-header">
@@ -2492,10 +2507,11 @@ function exportarClientePDF() {
     var _impresoPagina=false;
     function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
     window.onload=_intentarImprimirPagina;
-    setTimeout(_intentarImprimirPagina,1200);
+    setTimeout(_intentarImprimirPagina,180);
   <\/script>
   </body></html>`);
   v.document.close();
+  _dispararImpresion(v);
 }
 
 /* ════════════════════════════════════════
@@ -2779,9 +2795,10 @@ function _imprimirClientesPDF(clientesArr) {
     var _impresoPagina=false;
     function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
     window.onload=_intentarImprimirPagina;
-    setTimeout(_intentarImprimirPagina,1200);
+    setTimeout(_intentarImprimirPagina,180);
   <\/script></body></html>`);
   v.document.close();
+  _dispararImpresion(v);
 }
 
 
@@ -3131,12 +3148,12 @@ function abrirCierreDia() {
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
         <div style="flex:1;min-width:150px;background:var(--teal-light);border:1.5px solid var(--success-border,#4ec9a0);border-radius:var(--radius);padding:12px 16px">
           <div style="font-size:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--teal-dark)">🟢 Ingresos (pagos)</div>
-          <div style="font-family:'DM Serif Display',serif;font-size:1.4rem;color:var(--teal-dark)">$${totalIngresosCierre.toFixed(2)}</div>
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:1.4rem;color:var(--teal-dark)">$${totalIngresosCierre.toFixed(2)}</div>
           <div style="font-size:11px;color:var(--muted)">${pagosCierre.length} pago(s)</div>
         </div>
         <div style="flex:1;min-width:150px;background:#fdecea;border:1.5px solid #e57373;border-radius:var(--radius);padding:12px 16px">
           <div style="font-size:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--red)">🔴 Egresos (gastos)</div>
-          <div style="font-family:'DM Serif Display',serif;font-size:1.4rem;color:var(--red)">$${totalEgresosCierre.toFixed(2)}</div>
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:1.4rem;color:var(--red)">$${totalEgresosCierre.toFixed(2)}</div>
           <div style="font-size:11px;color:var(--muted)">${gastosCierre.length} gasto(s)</div>
         </div>
       </div>
@@ -3164,14 +3181,13 @@ function imprimirCierre() {
   const cuerpo = document.getElementById('cierreBody').innerHTML;
   const v = window.open('','_blank','width=800,height=900');
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cierre del Día — Aqua Luan — ${fecha}</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'DM Sans',sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
     .cierre-asesor-block{border:1.5px solid #ddd;border-radius:12px;overflow:hidden;margin-bottom:20px;page-break-inside:avoid;}
     .cierre-asesor-header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
     .cierre-asesor-nombre{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;color:#fff;}
-    .cierre-asesor-total{font-family:'DM Serif Display',serif;font-size:1.3rem;color:#4ec9a0;}
+    .cierre-asesor-total{font-family:Georgia,'Times New Roman',serif;font-size:1.3rem;color:#4ec9a0;}
     .cierre-section-label{font-size:9px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#888;padding:8px 16px 4px;border-bottom:1px solid #eee;background:#f8f8f8;}
     .cierre-prod-table{width:100%;border-collapse:collapse;font-size:12px;}
     .cierre-prod-table th{background:#f0f5f8;padding:7px 14px;text-align:left;font-size:10px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:#888;border-bottom:1px solid #eee;}
@@ -3186,7 +3202,7 @@ function imprimirCierre() {
     .cierre-resumen-pagos-title{font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#0a7c6e;margin-bottom:10px;}
     .cierre-total-general{background:#1a3a5c;border-radius:12px;padding:16px 20px;margin-top:16px;display:flex;align-items:center;justify-content:space-between;}
     .cierre-total-label{font-size:12px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.5);}
-    .cierre-total-value{font-family:'DM Serif Display',serif;font-size:2rem;color:#4ec9a0;}
+    .cierre-total-value{font-family:Georgia,'Times New Roman',serif;font-size:2rem;color:#4ec9a0;}
     .cierre-cliente-block{border:1px solid #ddd;border-radius:10px;overflow:hidden;margin:8px 16px;page-break-inside:avoid;}
     .cierre-cliente-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:8px 12px;background:#f0f5f8;border-bottom:1px solid #eee;}
     .cierre-cliente-nombre{font-size:12.5px;font-weight:800;color:#1a3a5c;}
@@ -3198,7 +3214,7 @@ function imprimirCierre() {
     .cierre-cliente-table td{padding:6px 12px;border-bottom:1px solid #f5f5f5;font-weight:500;}
     .cierre-cliente-table td:nth-child(2),.cierre-cliente-table td:nth-child(3),.cierre-cliente-table td:nth-child(4){text-align:right;}
     .print-header{text-align:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
-    .print-header h1{font-family:'DM Serif Display',serif;font-size:24px;color:#1a3a5c;}
+    .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:24px;color:#1a3a5c;}
     .print-header p{font-size:12px;color:#888;margin-top:4px;}
     .btn-cerrar-cierre,.btn-print-cierre{display:none!important;}
     @media print{body{padding:16px;} .cierre-asesor-block{page-break-inside:avoid;}}
@@ -3209,10 +3225,11 @@ function imprimirCierre() {
     var _impresoPagina=false;
     function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
     window.onload=_intentarImprimirPagina;
-    setTimeout(_intentarImprimirPagina,1200);
+    setTimeout(_intentarImprimirPagina,180);
   <\/script>
   </body></html>`);
   v.document.close();
+  _dispararImpresion(v);
 }
 
 /* [NEW] Exportar Pagos registrados a PDF */
@@ -3248,13 +3265,12 @@ function exportarPagosGastosPDF() {
   // dashboard como base, así que una ruta relativa no cargaría.
   const logoUrl = location.origin + '/logo-luanaqua.png';
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Pagos y Gastos — ${asesorLabel} — Aqua Luan — ${fecha}</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'DM Sans',sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
     .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:16px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
     .print-header img{height:46px;width:auto;}
-    .print-header h1{font-family:'DM Serif Display',serif;font-size:22px;color:#1a3a5c;}
+    .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:22px;color:#1a3a5c;}
     .print-header p{font-size:12px;color:#888;margin-top:4px;}
     .seccion-title{font-size:13px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;margin:22px 0 8px;}
     table{width:100%;border-collapse:collapse;font-size:12px;}
@@ -3298,7 +3314,7 @@ function exportarPagosGastosPDF() {
     </tbody>
   </table>
   <div class="firmas">
-    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidador</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
@@ -3306,10 +3322,11 @@ function exportarPagosGastosPDF() {
     var _impresoPagina=false;
     function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
     window.onload=_intentarImprimirPagina;
-    setTimeout(_intentarImprimirPagina,1200);
+    setTimeout(_intentarImprimirPagina,180);
   <\/script>
   </body></html>`);
   v.document.close();
+  _dispararImpresion(v);
 }
 
 function exportarDetallePDF() {
@@ -3345,13 +3362,12 @@ function exportarDetallePDF() {
 
   const v = window.open('', '_blank', 'width=1000,height=900');
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Detalle de Pedidos — ${asesorLabel} — Aqua Luan — ${fecha}</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'DM Sans',sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
     .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
     .print-header img{height:46px;width:auto;}
-    .print-header h1{font-family:'DM Serif Display',serif;font-size:22px;color:#1a3a5c;}
+    .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:22px;color:#1a3a5c;}
     .print-header p{font-size:12px;color:#888;margin-top:4px;}
     table{width:100%;border-collapse:collapse;font-size:11px;}
     thead tr{background:#1a3a5c;}
@@ -3381,7 +3397,7 @@ function exportarDetallePDF() {
     </tbody>
   </table>
   <div class="firmas">
-    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidador</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
@@ -3389,10 +3405,11 @@ function exportarDetallePDF() {
     var _impresoPagina=false;
     function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
     window.onload=_intentarImprimirPagina;
-    setTimeout(_intentarImprimirPagina,1200);
+    setTimeout(_intentarImprimirPagina,180);
   <\/script>
   </body></html>`);
   v.document.close();
+  _dispararImpresion(v);
 }
 
 function exportarExcel() {
@@ -4105,7 +4122,7 @@ function mostrarToastEdicion(msg){
   if(!t){
     t = document.createElement('div');
     t.id = 'toastEdicion';
-    t.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:12px 22px;border-radius:100px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;box-shadow:var(--shadow-lg);z-index:999;opacity:0;transition:opacity .25s;pointer-events:none";
+    t.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:12px 22px;border-radius:100px;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:13px;font-weight:700;box-shadow:var(--shadow-lg);z-index:999;opacity:0;transition:opacity .25s;pointer-events:none";
     document.body.appendChild(t);
   }
   t.textContent = msg;
