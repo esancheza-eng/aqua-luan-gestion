@@ -814,7 +814,7 @@ function imprimirCierreDelDia(){
   ${bloque1}
   ${bloque2}
   <div class="firmas-box" style="display:flex;justify-content:space-between;gap:30px;width:100%">
-    <div class="firma-linea" style="flex:1"><div class="raya">&nbsp;</div>Firma Liquidador</div>
+    <div class="firma-linea" style="flex:1"><div class="raya">&nbsp;</div>Firma Liquidadora</div>
     <div class="firma-linea" style="flex:1"><div class="raya">&nbsp;</div>Firma Asesor</div>
     <div class="firma-linea" style="flex:1"><div class="raya">&nbsp;</div>Firma Ayudante</div>
   </div>
@@ -1008,7 +1008,7 @@ function imprimirNotasAdicionalesDash(){
     </tbody>
   </table>
   <div class="firmas">
-    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidador</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
@@ -1359,7 +1359,7 @@ function imprimirLiquidacionDash(){
     <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
     <div>
       <h1>LIQUIDACIÓN DE EFECTIVO — ${escHTML(asesorLabel)}</h1>
-      <p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · Impreso por: Liquidador${(ADMIN_ACTUAL && (ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario)) ? ' · ' + escHTML(ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario) : ''}</p>
+      <p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · Impreso por: Liquidadora${(ADMIN_ACTUAL && (ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario)) ? ' · ' + escHTML(ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario) : ''}</p>
     </div>
   </div>
   ${bloques || '<p style="color:#888;font-style:italic">No hay ventas, pagos ni gastos registrados en este período.</p>'}
@@ -1369,7 +1369,7 @@ function imprimirLiquidacionDash(){
   </div>
   ${_htmlEntregaLiquidacionPrint()}
   <div class="firmas-box">
-    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Liquidador</div>
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Liquidadora</div>
     <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Asesor</div>
     <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Ayudante</div>
   </div>
@@ -3314,7 +3314,7 @@ function exportarPagosGastosPDF() {
     </tbody>
   </table>
   <div class="firmas">
-    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidador</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
@@ -3397,7 +3397,7 @@ function exportarDetallePDF() {
     </tbody>
   </table>
   <div class="firmas">
-    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidador</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
     <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
   </div>
