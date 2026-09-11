@@ -33,7 +33,7 @@ const auth = firebase.auth();
 // sentirse como que la pantalla se traba. Forzar persistencia LOCAL hace que
 // Firebase guarde la sesión directamente en el IndexedDB del propio dominio
 // del dashboard, sin depender de ese iframe entre dominios.
-auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.warn('No se pudo fijar persistencia LOCAL de Auth:', err));
+auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(err => console.warn('No se pudo fijar persistencia SESSION de Auth:', err));
 const db   = firebase.firestore();
 const DOMINIO_LOGIN = '@luanaqua.app';
 function _emailDeUsuario(usuario){
