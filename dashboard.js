@@ -895,7 +895,12 @@ async function renderCierreDelDia(){
     }catch(err){ console.warn('cierreDelDia lectura entrega:', err); return {}; }
   }));
   const _montoEfectivo = e => (e.efectivo?.marcado ? (Number(e.efectivo.monto)||0) : 0);
-  const _montoDeposito = e => (e.deposito?.marcado ? (Number(e.deposito.monto)||0) : 0);
+  const _montoDeposito = e => {
+    if(Array.isArray(e.depositos) && e.depositos.length){
+      return e.depositos.reduce((s,d)=>s+((d.marcado)?(Number(d.monto)||0):0),0);
+    }
+    return (e.deposito?.marcado ? (Number(e.deposito.monto)||0) : 0);
+  };
   const _montoTransferencia = e => (e.transferencia?.marcado ? (Number(e.transferencia.monto)||0) : 0);
   const _montoFaltante1 = e => Number(e.faltantes?.[0]?.monto)||0;
   const _montoFaltante2 = e => Number(e.faltantes?.[1]?.monto)||0;
@@ -1145,9 +1150,17 @@ async function renderMovimientosBancarios(){
         }catch(err){ return {nombre, data:{}}; }
       }));
       entregas.forEach(({nombre,data})=>{
-        const dep=data.deposito;
-        const monto=dep && dep.marcado ? (Number(dep.monto)||0) : 0;
-        if(monto>0) lineas.push({asesor:nombre, valor:monto, metodo:'Depósito'});
+        const deps=Array.isArray(data.depositos)&&data.depositos.length?data.depositos:null;
+        if(deps){
+          deps.forEach(dep=>{
+            const monto=dep && dep.marcado ? (Number(dep.monto)||0) : 0;
+            if(monto>0) lineas.push({asesor:nombre, valor:monto, metodo:'Depósito'});
+          });
+        } else {
+          const dep=data.deposito;
+          const monto=dep && dep.marcado ? (Number(dep.monto)||0) : 0;
+          if(monto>0) lineas.push({asesor:nombre, valor:monto, metodo:'Depósito'});
+        }
       });
     }
   }catch(err){ console.warn('movimientosBancarios depositos:', err); }
@@ -1317,7 +1330,8 @@ function _htmlEntregaAsesorBox(nombre, total){
       <span class="liq-ref-total" style="font-weight:800;color:var(--teal)">$${(Number(total)||0).toFixed(2)}</span>
     </div>
     <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><input type="checkbox" class="liq-chk-ef" onchange="_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))"><span style="min-width:130px;font-weight:700">Efectivo</span><input type="text" class="liq-monto-ef" placeholder="0.00" inputmode="decimal" style="flex:1;height:36px;border:1.5px solid var(--border);border-radius:8px;padding:0 10px" oninput="_filtrarInputMontoLiq(this);_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))"></label>
-    <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><input type="checkbox" class="liq-chk-dep" onchange="_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))"><span style="min-width:130px;font-weight:700">Depósito</span><input type="text" class="liq-monto-dep" placeholder="0.00" inputmode="decimal" style="flex:1;height:36px;border:1.5px solid var(--border);border-radius:8px;padding:0 10px" oninput="_filtrarInputMontoLiq(this);_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))"></label>
+    <div class="liq-depositos-lista"></div>
+    <button type="button" class="liq-btn-add-dep" onclick="_agregarDepositoAsesor(this)" style="display:none;margin:0 0 8px;padding:8px 12px;border:1.5px dashed var(--border);background:#fff;border-radius:8px;font-weight:700;cursor:pointer;color:var(--navy)">+ Añadir depósito</button>
     <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><input type="checkbox" class="liq-chk-tr" onchange="_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))"><span style="min-width:130px;font-weight:700">Transferencia</span><input type="text" class="liq-monto-tr" placeholder="0.00" inputmode="decimal" style="flex:1;height:36px;border:1.5px solid var(--border);border-radius:8px;padding:0 10px" oninput="_filtrarInputMontoLiq(this);_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))"></label>
     <div class="liq-faltantes-lista"></div>
     <button type="button" class="liq-btn-add-falt" onclick="_agregarFaltanteAsesor(this)" style="display:none;margin:4px 0 8px;padding:8px 12px;border:1.5px dashed var(--border);background:#fff;border-radius:8px;font-weight:700;cursor:pointer;color:var(--navy)">+ Añadir faltante</button>
@@ -1336,10 +1350,15 @@ function _setEntregaEditable(box, on){
   box.dataset.editando = on ? '1' : '0';
   box.querySelectorAll('input').forEach(el => { el.disabled = !on; });
   const add=box.querySelector('.liq-btn-add-falt');
+  const addDep=box.querySelector('.liq-btn-add-dep');
   const ed=box.querySelector('.liq-btn-editar');
   const gu=box.querySelector('.liq-btn-guardar');
   const ca=box.querySelector('.liq-btn-cancelar');
   if(add) add.style.display = on ? '' : 'none';
+  if(addDep){
+    const n=box.querySelectorAll('.liq-deposito-row').length;
+    addDep.style.display = (on && n<3) ? '' : 'none';
+  }
   if(ed) ed.style.display = on ? 'none' : '';
   if(gu) gu.style.display = on ? '' : 'none';
   if(ca) ca.style.display = on ? '' : 'none';
@@ -1390,12 +1409,18 @@ function _leerEntregaDesdeBox(box){
     const p=_parseMontoLiq(row.querySelector('.liq-falt-monto')?.value);
     return {monto:p.ok?p.valor:NaN, montoOk:p.ok, motivo:(row.querySelector('.liq-falt-motivo')?.value||'').trim()};
   });
+  const depositos=[...box.querySelectorAll('.liq-deposito-row')].map(row=>{
+    const p=_parseMontoLiq(row.querySelector('.liq-dep-monto')?.value);
+    return {marcado:!!row.querySelector('.liq-chk-dep')?.checked, monto:p.ok?p.valor:NaN, montoOk:p.ok};
+  });
+  const dep1=depositos[0]||{marcado:false,monto:0};
   return {
     efectivo:{marcado:!!box.querySelector('.liq-chk-ef')?.checked, monto:n('.liq-monto-ef')},
-    deposito:{marcado:!!box.querySelector('.liq-chk-dep')?.checked, monto:n('.liq-monto-dep')},
+    deposito:{marcado:!!dep1.marcado, monto:Number.isNaN(dep1.monto)?0:dep1.monto},
+    depositos,
     transferencia:{marcado:!!box.querySelector('.liq-chk-tr')?.checked, monto:n('.liq-monto-tr')},
     faltantes,
-    invalido:[n('.liq-monto-ef'),n('.liq-monto-dep'),n('.liq-monto-tr')].some(v=>Number.isNaN(v)) || faltantes.some(f=>!f.montoOk)
+    invalido:[n('.liq-monto-ef'),n('.liq-monto-tr')].some(v=>Number.isNaN(v)) || depositos.some(d=>!d.montoOk) || faltantes.some(f=>!f.montoOk)
   };
 }
 function _htmlFilaFaltanteAsesor(i,monto,motivo){
@@ -1409,6 +1434,50 @@ function _htmlFilaFaltanteAsesor(i,monto,motivo){
     </div>
   </div>`;
 }
+function _htmlFilaDepositoAsesor(i,marcado,monto){
+  const val=monto?String(monto):'';
+  return `<label class="liq-deposito-row" style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+    <input type="checkbox" class="liq-chk-dep" ${marcado?'checked':''} onchange="_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))">
+    <span style="min-width:130px;font-weight:700">Depósito ${i+1}</span>
+    <input type="text" class="liq-dep-monto" placeholder="0.00" inputmode="decimal" value="${val.replace(/"/g,'')}" style="flex:1;height:36px;border:1.5px solid var(--border);border-radius:8px;padding:0 10px" oninput="_filtrarInputMontoLiq(this);_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))">
+    ${i>0?`<button type="button" onclick="_quitarDepositoAsesor(this)" style="height:36px;padding:0 10px;border:none;background:#fdecea;color:#c0392b;border-radius:8px;font-weight:700;cursor:pointer">Quitar</button>`:''}
+  </label>`;
+}
+function _agregarDepositoAsesor(btn){
+  const box=btn.closest('.liq-entrega-asesor');
+  if(!box) return;
+  const list=box.querySelector('.liq-depositos-lista');
+  const actual=[...box.querySelectorAll('.liq-deposito-row')].map(row=>({
+    marcado:!!row.querySelector('.liq-chk-dep')?.checked,
+    monto:row.querySelector('.liq-dep-monto')?.value||''
+  }));
+  if(actual.length>=3) return;
+  actual.push({marcado:true,monto:''});
+  list.innerHTML=actual.map((d,i)=>_htmlFilaDepositoAsesor(i,d.marcado,d.monto)).join('');
+  const add=box.querySelector('.liq-btn-add-dep');
+  if(add) add.style.display=actual.length>=3?'none':'';
+  _actualizarCuadreBox(box);
+}
+function _quitarDepositoAsesor(btn){
+  const box=btn.closest('.liq-entrega-asesor');
+  const row=btn.closest('.liq-deposito-row');
+  if(row) row.remove();
+  if(!box) return;
+  const rows=[...box.querySelectorAll('.liq-deposito-row')];
+  const actual=rows.map(r=>({marcado:!!r.querySelector('.liq-chk-dep')?.checked, monto:r.querySelector('.liq-dep-monto')?.value||''}));
+  const list=box.querySelector('.liq-depositos-lista');
+  if(list) list.innerHTML=actual.map((d,i)=>_htmlFilaDepositoAsesor(i,d.marcado,d.monto)).join('');
+  const add=box.querySelector('.liq-btn-add-dep');
+  if(add && box.dataset.editando==='1') add.style.display=actual.length>=3?'none':'';
+  _actualizarCuadreBox(box);
+}
+function _sumaDepositosEntrega(u){
+  if(u && Array.isArray(u.depositos) && u.depositos.length){
+    return u.depositos.reduce((s,d)=>s+((d.marcado && d.montoOk!==false)?(Number(d.monto)||0):0),0);
+  }
+  return (u && u.deposito && u.deposito.marcado)?(Number(u.deposito.monto)||0):0;
+}
+
 function _guardarEntregaDesdeFila(el){
   const box=el.closest('.liq-entrega-asesor');
   if(box) _actualizarCuadreBox(box);
@@ -1440,8 +1509,9 @@ function _actualizarCuadreBox(box){
     el.textContent='Hay un monto inválido.';
     return;
   }
-  const suma=(u.efectivo.marcado?u.efectivo.monto:0)+(u.deposito.marcado?u.deposito.monto:0)+(u.transferencia.marcado?u.transferencia.monto:0)+(u.faltantes||[]).reduce((s,f)=>s+(f.montoOk?f.monto:0),0);
-  if(suma===0 && !u.efectivo.marcado && !u.deposito.marcado && !u.transferencia.marcado){
+  const suma=(u.efectivo.marcado?u.efectivo.monto:0)+_sumaDepositosEntrega(u)+(u.transferencia.marcado?u.transferencia.monto:0)+(u.faltantes||[]).reduce((s,f)=>s+(f.montoOk?f.monto:0),0);
+  const hayDep=(u.depositos||[]).some(d=>d.marcado)||u.deposito?.marcado;
+  if(suma===0 && !u.efectivo.marcado && !hayDep && !u.transferencia.marcado){
     el.textContent=''; return;
   }
   const diff=tot-suma;
@@ -1465,11 +1535,15 @@ async function _cargarEntregaAsesor(nombre){
     const setN=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.value=(v?Number(v).toFixed(2):''); };
     const chk=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.checked=!!v; };
     chk('.liq-chk-ef', d.efectivo?.marcado);
-    chk('.liq-chk-dep', d.deposito?.marcado);
     chk('.liq-chk-tr', d.transferencia?.marcado);
     setN('.liq-monto-ef', d.efectivo?.monto);
-    setN('.liq-monto-dep', d.deposito?.monto);
     setN('.liq-monto-tr', d.transferencia?.monto);
+    let deps=Array.isArray(d.depositos)&&d.depositos.length?d.depositos.map(x=>({marcado:!!x.marcado,monto:x.monto||''})):[];
+    if(!deps.length && (d.deposito?.marcado || Number(d.deposito?.monto)>0)){
+      deps=[{marcado:!!d.deposito.marcado, monto:d.deposito.monto||''}];
+    }
+    const listDep=box.querySelector('.liq-depositos-lista');
+    if(listDep) listDep.innerHTML=(deps.length?deps:[{marcado:false,monto:''}]).slice(0,3).map((x,i)=>_htmlFilaDepositoAsesor(i,x.marcado,x.monto)).join('');
     let filas=Array.isArray(d.faltantes)?d.faltantes.map(f=>({monto:f.monto||'',motivo:f.motivo||''})):[];
     const list=box.querySelector('.liq-faltantes-lista');
     if(list) list.innerHTML=(filas.length?filas:[{monto:'',motivo:''}]).map((f,i)=>_htmlFilaFaltanteAsesor(i,f.monto,f.motivo)).join('');
@@ -1496,10 +1570,15 @@ async function _guardarEntregaAsesor(nombre){
   const st=box.querySelector('.liq-entrega-status');
   try{
     const faltantes=(u.faltantes||[]).map(f=>({monto:f.montoOk?Number(f.monto)||0:0, motivo:f.motivo||''}));
+    const depositos=(u.depositos||[]).map(d=>({marcado:!!d.marcado, monto:d.montoOk?Number(d.monto)||0:0}));
+    const depSuma=_sumaDepositosEntrega(u);
     const tot=parseFloat(box.dataset.total||0)||0;
     await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).set({
       asesor:nombre,
-      efectivo:u.efectivo, deposito:u.deposito, transferencia:u.transferencia,
+      efectivo:u.efectivo,
+      deposito:{marcado:depSuma>0, monto:depSuma},
+      depositos,
+      transferencia:u.transferencia,
       faltantes,
       totalEntregar:tot,
       desde:document.getElementById('filtroFecha')?.value||'',
@@ -1529,7 +1608,7 @@ function _htmlEntregaLiquidacionPrint(){
     return `<div class="ruta-block">
       <div class="ruta-header"><span>FORMA DE ENTREGA — ${escHTML(nom)}</span><span>$${tot.toFixed(2)}</span></div>
       ${fila(u.efectivo.marcado,'Efectivo',u.efectivo.monto)}
-      ${fila(u.deposito.marcado,'Depósito',u.deposito.monto)}
+      ${(u.depositos&&u.depositos.length?u.depositos:[{marcado:u.deposito?.marcado,monto:u.deposito?.monto}]).map((d,i)=>fila(!!d.marcado,'Depósito '+(i+1),d.monto||0)).join('')}
       ${fila(u.transferencia.marcado,'Transferencia',u.transferencia.monto)}
       ${(u.faltantes||[]).filter(f=>f.montoOk&&f.monto>0).map((f,i)=>`<div class="ruta-linea"><span>Faltante ${i+1}${f.motivo?' — '+escHTML(f.motivo):''}</span><b>$${f.monto.toFixed(2)}</b></div>`).join('')||'<div class="ruta-linea"><span>Faltantes</span><b>$0.00</b></div>'}
     </div>`;
