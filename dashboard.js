@@ -2661,7 +2661,7 @@ function exportarClientePDF() {
     @media print{body{padding:12px;} thead{display:table-header-group;}}
   </style></head><body>
   <div class="print-header">
-    <h1>🔍 ${escHTML(tituloSeleccion)}</h1>
+    <h1>${escHTML(tituloSeleccion)}</h1>
     <p>${clientesSeleccionados.length} cliente(s) · Asesor: ${asesorLabel} · Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
   </div>
   ${bloquesHtml}
@@ -3382,7 +3382,7 @@ function imprimirCierre() {
     .btn-cerrar-cierre,.btn-print-cierre{display:none!important;}
     @media print{body{padding:16px;} .cierre-asesor-block{page-break-inside:avoid;}}
   </style></head><body>
-  <div class="print-header"><h1>📅 Cierre del Día — Aqua Luan</h1><p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p></div>
+  <div class="print-header"><h1>Cierre del Día — Aqua Luan</h1><p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p></div>
   ${cuerpo}
   <script>
     var _impresoPagina=false;
@@ -3456,11 +3456,11 @@ function exportarPagosGastosPDF() {
   <div class="print-header">
     <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
     <div>
-      <h1>💳 Pagos y Gastos — ${escHTML(asesorLabel)}</h1>
+      <h1>Pagos y Gastos — ${escHTML(asesorLabel)}</h1>
       <p>Fecha: ${fecha} · ${pagos.length} pago(s) · ${gastos.length} gasto(s) · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
     </div>
   </div>
-  <div class="seccion-title" style="color:#1565c0">💰 Pagos registrados</div>
+  <div class="seccion-title" style="color:#1565c0">Pagos registrados</div>
   <table class="tabla-pagos">
     <thead><tr><th>Cliente</th><th>Asesor</th><th>Forma de Pago</th><th>Fecha</th><th>Monto</th></tr></thead>
     <tbody>
@@ -3468,7 +3468,7 @@ function exportarPagosGastosPDF() {
       <tr class="total-row-pagos"><td colspan="4" style="text-align:right">TOTAL PAGOS</td><td style="text-align:right">$${totalPagos.toFixed(2)}</td></tr>
     </tbody>
   </table>
-  <div class="seccion-title" style="color:#c0392b">📉 Gastos registrados</div>
+  <div class="seccion-title" style="color:#c0392b">Gastos registrados</div>
   <table class="tabla-gastos">
     <thead><tr><th>Descripción</th><th>Responsable</th><th>Fecha</th><th>Monto</th></tr></thead>
     <tbody>
@@ -3548,7 +3548,7 @@ function exportarDetallePDF() {
   <div class="print-header">
     <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
     <div>
-      <h1>📋 Detalle de Pedidos — ${escHTML(asesorLabel)}</h1>
+      <h1>Detalle de Pedidos — ${escHTML(asesorLabel)}</h1>
       <p>Fecha: ${fecha} · Asesor: ${asesorLabel} · ${datos.length} línea(s) · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
     </div>
   </div>
