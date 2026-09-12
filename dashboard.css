@@ -420,6 +420,14 @@ display: inline-block;
 }
 .btn-gps-small:hover { background: var(--teal); color: #fff; }
 .highlight-row { background: var(--teal-light) !important; }
+#tablaPedidos tr.sep-cliente td {
+  padding: 0;
+  height: 8px;
+  border: none;
+  background: transparent;
+  border-bottom: 2px solid var(--navy);
+}
+
 /* [NEW] Panel administrativo — menú lateral por secciones */
 .dash-shell { display: flex; gap: 16px; align-items: flex-start; }
 .dash-nav {
