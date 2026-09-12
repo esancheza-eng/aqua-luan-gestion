@@ -79,23 +79,23 @@
         </div>
         <div class="dash-shell">
           <nav class="dash-nav">
-            <button class="dash-nav-item active" data-section="resumen" id="navResumen" onclick="switchSeccionDash('resumen')">📊 Resumen General</button>
-            <button class="dash-nav-item" data-section="pedidos" id="navPedidos" onclick="switchSeccionDash('pedidos')">📋 Detalle de Pedidos</button>
-            <button class="dash-nav-item" data-section="cliente" id="navCliente" onclick="switchSeccionDash('cliente')">🔍 Consultar por Cliente</button>
-            <button class="dash-nav-item" data-section="caja" id="navCaja" onclick="switchSeccionDash('caja')">💳 Cuadre de Caja</button>
-            <button class="dash-nav-item" data-section="reporteAsesor" id="navReporteAsesor" onclick="switchSeccionDash('reporteAsesor')">👤 Reporte por Asesor</button>
-            <button class="dash-nav-item" data-section="eliminados" id="navEliminados" onclick="switchSeccionDash('eliminados')">🗑 Pedidos Eliminados</button>
+            <button class="dash-nav-item active" data-section="resumen" id="navResumen" onclick="switchSeccionDash('resumen')"><svg class="nav-ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Resumen General</button>
+            <button class="dash-nav-item" data-section="pedidos" id="navPedidos" onclick="switchSeccionDash('pedidos')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg>Detalle de Pedidos</button>
+            <button class="dash-nav-item" data-section="cliente" id="navCliente" onclick="switchSeccionDash('cliente')"><svg class="nav-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>Consultar por Cliente</button>
+            <button class="dash-nav-item" data-section="caja" id="navCaja" onclick="switchSeccionDash('caja')"><svg class="nav-ico" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Cuadre de Caja</button>
+            <button class="dash-nav-item" data-section="reporteAsesor" id="navReporteAsesor" onclick="switchSeccionDash('reporteAsesor')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Reporte por Asesor</button>
+            <button class="dash-nav-item" data-section="eliminados" id="navEliminados" onclick="switchSeccionDash('eliminados')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Pedidos Eliminados</button>
             <!-- [NEW] Oculto temporalmente para reducir lecturas de Firestore (este listener leía TODA la colección inventarioMovimientos sin límite, cada vez que algo cambiaba) — el botón, la sección HTML y todas las funciones siguen intactas, solo no hay forma de llegar aquí desde el menú. Para reactivarlo, quita este comentario y el que envuelve el <button>. -->
             <!-- <button class="dash-nav-item" data-section="inventario" id="navInventario" onclick="switchSeccionDash('inventario')">📦 Inventario</button> -->
             <!-- [NEW] Oculto temporalmente para reducir lecturas de Firestore — el botón, la sección HTML y todas las funciones siguen intactas, solo no hay forma de llegar aquí desde el menú. Para reactivarlo, quita este comentario y el que envuelve el <button>. -->
             <!-- <button class="dash-nav-item" data-section="roles" id="navRoles" onclick="switchSeccionDash('roles')">💵 Roles de Pago</button> -->
-            <button class="dash-nav-item" data-section="importar" id="navImportar" onclick="switchSeccionDash('importar')">📤 Importar Datos</button>
-            <button class="dash-nav-item" data-section="usuarios" id="navUsuarios" onclick="switchSeccionDash('usuarios'); poblarSelectEliminarSecretaria();">👩‍💼 Crear Usuarios</button>
-            <button class="dash-nav-item" data-section="auditoria" id="navAuditoria" onclick="switchSeccionDash('auditoria')">🕵️ Auditoría</button>
-            <button class="dash-nav-item" data-section="liquidacionDash" id="navLiquidacionDash" onclick="switchSeccionDash('liquidacionDash')">💵 Liquidación</button>
-            <button class="dash-nav-item" data-section="cierreDelDia" id="navCierreDelDia" onclick="switchSeccionDash('cierreDelDia')">🧮 Cierre del Día</button>
-            <button class="dash-nav-item" data-section="notasAdicionalesDash" id="navNotasAdicionalesDash" onclick="switchSeccionDash('notasAdicionalesDash')">📝 Notas Adicionales</button>
-            <button class="dash-nav-item" data-section="movimientosBancarios" id="navMovimientosBancarios" onclick="switchSeccionDash('movimientosBancarios')">🏦 Movimientos Bancarios</button>
+            <button class="dash-nav-item" data-section="importar" id="navImportar" onclick="switchSeccionDash('importar')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Importar Datos</button>
+            <button class="dash-nav-item" data-section="usuarios" id="navUsuarios" onclick="switchSeccionDash('usuarios'); poblarSelectEliminarSecretaria();"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>Crear Usuarios</button>
+            <button class="dash-nav-item" data-section="auditoria" id="navAuditoria" onclick="switchSeccionDash('auditoria')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Auditoría</button>
+            <button class="dash-nav-item" data-section="liquidacionDash" id="navLiquidacionDash" onclick="switchSeccionDash('liquidacionDash')"><svg class="nav-ico" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>Liquidación</button>
+            <button class="dash-nav-item" data-section="cierreDelDia" id="navCierreDelDia" onclick="switchSeccionDash('cierreDelDia')"><svg class="nav-ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Cierre del Día</button>
+            <button class="dash-nav-item" data-section="notasAdicionalesDash" id="navNotasAdicionalesDash" onclick="switchSeccionDash('notasAdicionalesDash')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>Notas Adicionales</button>
+            <button class="dash-nav-item" data-section="movimientosBancarios" id="navMovimientosBancarios" onclick="switchSeccionDash('movimientosBancarios')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>Movimientos Bancarios</button>
           </nav>
           <div class="dash-content">
         <div class="dash-section active" id="seccion-resumen">
