@@ -170,7 +170,7 @@ let editandoPedidoActual = null;
 ════════════════════════════════════════ */
 /* [NEW] Menú lateral del panel administrativo — cambia entre secciones sin mezclarlas */
 let _yaCargado = { eliminados:false, inventario:false, roles:false, pedidosweb:false, auditoria:false }; // [NEW] carga perezosa
-const SECCIONES_SECRETARIA = ['pedidos','caja','liquidacionDash','cierreDelDia','notasAdicionalesDash'];
+const SECCIONES_SECRETARIA = ['pedidos','caja','liquidacionDash','cierreDelDia','notasAdicionalesDash','movimientosBancarios'];
 
 function switchSeccionDash(sec){
   if (ROL_ACTUAL === 'secretaria' && !SECCIONES_SECRETARIA.includes(sec)) {
@@ -201,6 +201,7 @@ function switchSeccionDash(sec){
   if (sec === 'eliminados' && typeof renderTablaEliminados === 'function') renderTablaEliminados();
   if (sec === 'auditoria' && typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
   if (sec === 'notasAdicionalesDash' && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash(); // [NEW] sección independiente de Notas Adicionales
+  if (sec === 'movimientosBancarios' && typeof renderMovimientosBancarios === 'function') renderMovimientosBancarios();
   // [FIX] Los gráficos de "Resumen General" ya no se redibujan en cada cambio de
   // Firestore si esta pestaña no está activa (ver comentario en renderDashboard) —
   // así que al entrar aquí se redibujan al instante con los últimos datos en caché.
@@ -1023,6 +1024,150 @@ function imprimirNotasAdicionalesDash(){
   _dispararImpresion(v);
 }
 
+
+function _idMovimientosBancarios(){
+  const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
+  const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+  return desde+'_'+hasta;
+}
+function _nombreCortoAsesor(nombre){
+  return String(nombre||'').split(':')[1]?.trim() || String(nombre||'Sin asignar');
+}
+function _esMetodoBancario(forma){
+  const f=String(forma||'').trim().toLowerCase();
+  if(f==='transferencia') return 'Transferencia';
+  if(f==='cheque') return 'Cheque';
+  if(f==='depósito' || f==='deposito') return 'Depósito';
+  return '';
+}
+function _lineasMovimientosDesdeDatos(){
+  const lineas=[];
+  (_pedidosRaw||[]).forEach(p=>{
+    const asesor=p.empleado || 'Sin asignar';
+    if (p.pagos !== null && p.pagos !== undefined) {
+      (p.pagos||[]).forEach(pg=>{
+        const metodo=_esMetodoBancario(pg.forma);
+        const monto=parseFloat(pg.monto||0)||0;
+        if(metodo && monto>0) lineas.push({asesor, valor:monto, metodo});
+      });
+    } else {
+      const metodo=_esMetodoBancario(p.formapago);
+      const tot=parseFloat(p.total||0)||0;
+      if(metodo && tot>0) lineas.push({asesor, valor:tot, metodo});
+    }
+  });
+  (_pagosRaw||[]).forEach(p=>{
+    const metodo=_esMetodoBancario(p.forma);
+    const monto=parseFloat(p.monto||0)||0;
+    if(metodo && monto>0) lineas.push({asesor:p.empleado||'Sin asignar', valor:monto, metodo});
+  });
+  return lineas;
+}
+function _idFilaMovBanc(l, idx){
+  const sl=String(l.asesor||'').toLowerCase().replace(/[^a-z0-9]+/g,'-');
+  return sl+'__'+String(l.metodo||'').toLowerCase()+'__'+Number(l.valor||0).toFixed(2)+'__'+idx;
+}
+let _mbBloqueado=false;
+async function renderMovimientosBancarios(){
+  const tbody=document.getElementById('mbTbody');
+  const totalEl=document.getElementById('mbTotal');
+  const st=document.getElementById('mbStatus');
+  const btn=document.getElementById('mbBtnGuardar');
+  if(!tbody) return;
+  let lineas=_lineasMovimientosDesdeDatos();
+  try{
+    if(typeof db!=='undefined'){
+      const rutasSet=new Set([...(Array.isArray(_asesoresCache)?_asesoresCache:[]), ...(_pedidosRaw||[]).map(p=>p.empleado||''), ...(_pagosRaw||[]).map(p=>p.empleado||'')].filter(Boolean));
+      const entregas=await Promise.all([...rutasSet].map(async nombre=>{
+        try{
+          const snap=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
+          return {nombre, data: snap.exists ? snap.data() : {}};
+        }catch(err){ return {nombre, data:{}}; }
+      }));
+      entregas.forEach(({nombre,data})=>{
+        const dep=data.deposito;
+        const monto=dep && dep.marcado ? (Number(dep.monto)||0) : 0;
+        if(monto>0) lineas.push({asesor:nombre, valor:monto, metodo:'Depósito'});
+      });
+    }
+  }catch(err){ console.warn('movimientosBancarios depositos:', err); }
+  lineas.sort((a,b)=>{
+    const na=_nombreCortoAsesor(a.asesor).localeCompare(_nombreCortoAsesor(b.asesor),'es');
+    if(na!==0) return na;
+    return String(a.metodo).localeCompare(String(b.metodo),'es');
+  });
+  let guardado={};
+  try{
+    if(typeof db!=='undefined'){
+      const snap=await db.collection('movimientosBancarios').doc(_idMovimientosBancarios()).get();
+      if(snap.exists) guardado=snap.data()||{};
+    }
+  }catch(err){ console.warn('movimientosBancarios lectura:', err); }
+  _mbBloqueado=!!guardado.bloqueado;
+  const porId={};
+  (guardado.filas||[]).forEach(f=>{ if(f && f.id) porId[f.id]=f; });
+  const total=lineas.reduce((s,l)=>s+(Number(l.valor)||0),0);
+  if(totalEl) totalEl.textContent='$'+total.toFixed(2);
+  if(!lineas.length){
+    tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:#888;font-style:italic;padding:18px">No hay transferencias, cheques ni depósitos en este período.</td></tr>';
+  } else {
+    tbody.innerHTML=lineas.map((l,idx)=>{
+      const id=_idFilaMovBanc(l,idx);
+      const saved=porId[id]||{};
+      const cuenta=saved.cuenta||'';
+      const banco=saved.banco||'';
+      const dis=_mbBloqueado?'disabled':'';
+      return `<tr data-mb-id="${escHTML(id)}" data-asesor="${escHTML(l.asesor)}" data-valor="${Number(l.valor).toFixed(2)}" data-metodo="${escHTML(l.metodo)}">
+        <td style="font-weight:800;color:var(--navy)">${escHTML(_nombreCortoAsesor(l.asesor))}</td>
+        <td style="text-align:right;font-weight:700">$${Number(l.valor).toFixed(2)}</td>
+        <td>${escHTML(l.metodo)}</td>
+        <td><input type="text" class="cdd-input mb-cuenta" ${dis} value="${escHTML(cuenta)}" placeholder="Nombre de cuenta" style="width:100%;min-width:140px"></td>
+        <td><input type="text" class="cdd-input mb-banco" ${dis} value="${escHTML(banco)}" placeholder="Banco" style="width:100%;min-width:120px"></td>
+      </tr>`;
+    }).join('');
+  }
+  if(btn){
+    btn.style.display=_mbBloqueado?'none':'inline-flex';
+    btn.disabled=_mbBloqueado;
+  }
+  if(st){
+    st.textContent=_mbBloqueado
+      ? ('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — ya no se puede editar.')
+      : 'Completa Nombre de cuenta y Banco. Al guardar se bloquea la hoja.';
+  }
+}
+async function guardarMovimientosBancarios(){
+  if(_mbBloqueado){ alert('Esta hoja ya fue guardada y no se puede editar.'); return; }
+  if(typeof db==='undefined'){ alert('No hay conexión para guardar.'); return; }
+  const filas=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].map(tr=>({
+    id: tr.dataset.mbId||'',
+    asesor: tr.dataset.asesor||'',
+    valor: parseFloat(tr.dataset.valor||0)||0,
+    metodo: tr.dataset.metodo||'',
+    cuenta: (tr.querySelector('.mb-cuenta')?.value||'').trim(),
+    banco: (tr.querySelector('.mb-banco')?.value||'').trim()
+  }));
+  if(!filas.length){ alert('No hay movimientos para guardar en este período.'); return; }
+  if(!confirm('Al guardar, Nombre de cuenta y Banco quedarán bloqueados. ¿Continuar?')) return;
+  const st=document.getElementById('mbStatus');
+  if(st) st.textContent='Guardando…';
+  try{
+    await db.collection('movimientosBancarios').doc(_idMovimientosBancarios()).set({
+      periodo:_idMovimientosBancarios(),
+      bloqueado:true,
+      filas,
+      actualizadoPor: actorAuditoria(),
+      actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
+    }, {merge:true});
+    _mbBloqueado=true;
+    await renderMovimientosBancarios();
+  }catch(err){
+    console.warn('movimientosBancarios escritura:', err);
+    alert('No se pudo guardar. Revisa la conexión e inténtalo de nuevo.');
+    if(st) st.textContent='No se pudo guardar.';
+  }
+}
+
 let _liqTotalEntregarCache=0, _liqEntregaTimer=null, _liqEntregaCargando=false;
 function _slugAsesorLiq(nombre){
   return String(nombre||'general').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'general';
@@ -1666,6 +1811,8 @@ function _recalcularTodosLosDatos() {
   // [NEW] misma lógica de refresco perezoso para la sección independiente de Notas Adicionales
   const seccionNotasAdicionalesVisible = document.getElementById('seccion-notasAdicionalesDash')?.classList.contains('active');
   if (seccionNotasAdicionalesVisible && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash();
+  const seccionMovBancVisible = document.getElementById('seccion-movimientosBancarios')?.classList.contains('active');
+  if (seccionMovBancVisible && typeof renderMovimientosBancarios === 'function') renderMovimientosBancarios();
   if (typeof renderTablaEliminados === 'function') renderTablaEliminados();
   if (typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
   document.getElementById('lastUpdate').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit' });
