@@ -95,6 +95,7 @@
             <button class="dash-nav-item" data-section="liquidacionDash" id="navLiquidacionDash" onclick="switchSeccionDash('liquidacionDash')">💵 Liquidación</button>
             <button class="dash-nav-item" data-section="cierreDelDia" id="navCierreDelDia" onclick="switchSeccionDash('cierreDelDia')">🧮 Cierre del Día</button>
             <button class="dash-nav-item" data-section="notasAdicionalesDash" id="navNotasAdicionalesDash" onclick="switchSeccionDash('notasAdicionalesDash')">📝 Notas Adicionales</button>
+            <button class="dash-nav-item" data-section="movimientosBancarios" id="navMovimientosBancarios" onclick="switchSeccionDash('movimientosBancarios')">🏦 Movimientos Bancarios</button>
           </nav>
           <div class="dash-content">
         <div class="dash-section active" id="seccion-resumen">
@@ -421,6 +422,37 @@
             </table>
           </div>
           <div id="notasAdicionalesEmptyMsg" class="empty-msg" style="display:none;padding:0 1.25rem 1.25rem;color:var(--muted);font-style:italic">No hay notas adicionales registradas en este período.</div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-movimientosBancarios">
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">🏦 Movimientos Bancarios</div>
+            <button class="btn-filter" id="mbBtnGuardar" style="background:#0f7c38" onclick="guardarMovimientosBancarios()">💾 Guardar información</button>
+          </div>
+          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Se alimenta de Liquidación (Transferencia, Cheque y Depósito) de todos los asesores. Nombre de cuenta y Banco se escriben aquí. Al guardar, la hoja queda bloqueada.</div>
+          <div id="mbStatus" style="font-size:12px;padding:0 1.25rem 10px;color:var(--muted)"></div>
+          <div style="padding:0 1.25rem 1.25rem;overflow-x:auto">
+            <table class="cierre-prod-table" id="mbTabla">
+              <thead>
+                <tr>
+                  <th>Asesor</th>
+                  <th style="text-align:right">Valor</th>
+                  <th>Método de pago</th>
+                  <th>Nombre de cuenta</th>
+                  <th>Banco</th>
+                </tr>
+              </thead>
+              <tbody id="mbTbody"></tbody>
+              <tfoot>
+                <tr>
+                  <td style="font-weight:800">TOTAL</td>
+                  <td id="mbTotal" style="text-align:right;font-weight:800">$0.00</td>
+                  <td colspan="3"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
         </div>
           </div>
