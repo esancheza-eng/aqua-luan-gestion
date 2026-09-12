@@ -440,6 +440,11 @@ display: inline-block;
 }
 .dash-nav-item:hover { background: rgba(255,255,255,0.1); color: #ffffff; }
 .dash-nav-item.active { background: var(--teal); color: #fff; }
+.dash-nav-item .nav-ico {
+  width: 18px; height: 18px; flex-shrink: 0;
+  stroke: currentColor; fill: none; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 .dash-content { flex: 1; min-width: 0; }
 .dash-section { display: none; }
 .dash-section.active { display: block; animation: fadeUp 0.35s ease both; }
