@@ -136,9 +136,17 @@ function etiquetaUsuarioSesion(){
 function lineaImpresoPor(){
   return 'Impreso por: ' + etiquetaUsuarioSesion();
 }
+function _quitarEmoji(str){
+  return String(str||'').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu,'');
+}
 
 function _dispararImpresion(win){
   if(!win) return;
+  try{
+    if(win.document && win.document.body){
+      win.document.body.innerHTML = _quitarEmoji(win.document.body.innerHTML);
+    }
+  }catch(e){}
   var hecho=false;
   function go(){
     if(hecho) return;
@@ -3101,7 +3109,7 @@ function renderReporteAsesorDetalle(){
       <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th style="text-align:center">Cant.</th><th style="text-align:right">Total</th><th>Pago</th></tr></thead><tbody>${filasPedidos}</tbody></table></div>
       <div class="table-header"><div class="table-title">💰 Pagos cobrados</div></div>
       <div class="table-wrap"><table><thead><tr><th>Cliente</th><th style="text-align:right">Monto</th><th>Forma</th><th>Fecha</th></tr></thead><tbody>${filasPagos}</tbody></table></div>
-      <div class="table-header"><div class="table-title">📉 Gastos registrados</div></div>
+      <div class="table-header"><div class="table-title">Gastos registrados</div></div>
       <div class="table-wrap"><table><thead><tr><th>Descripción</th><th style="text-align:right">Monto</th><th>Fecha</th></tr></thead><tbody>${filasGastos}</tbody></table></div>
     </div>`;
 }
@@ -3341,7 +3349,7 @@ function cerrarCierreDia() {
 
 function imprimirCierre() {
   const fecha  = document.getElementById('cierreFechaBadge').textContent;
-  const cuerpo = document.getElementById('cierreBody').innerHTML;
+  const cuerpo = _quitarEmoji(document.getElementById('cierreBody').innerHTML);
   const v = window.open('','_blank','width=800,height=900');
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cierre del Día — Aqua Luan — ${fecha}</title>
   <style>
