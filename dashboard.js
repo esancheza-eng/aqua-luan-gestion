@@ -1061,8 +1061,44 @@ function _htmlSelectCuentaMB(valor, dis){
   return `<select class="cdd-input mb-cuenta" ${dis} style="width:100%;min-width:160px">${opts.join('')}</select>`;
 }
 function _htmlInputBancoMB(valor, dis){
-  const v=escHTML(valor||'');
-  return `<input class="cdd-input mb-banco" list="mbListaBancos" ${dis} value="${v}" placeholder="Pichincha, Guayaquil u otro" style="width:100%;min-width:140px" autocomplete="off">`;
+  const v=String(valor||'');
+  const esLista = !v || MB_BANCOS.includes(v);
+  const sel = esLista ? v : '__otro__';
+  const extra = (!esLista && v) ? v : '';
+  const show = sel==='__otro__' ? '' : 'display:none;';
+  return `<div style="display:flex;flex-direction:column;gap:6px;min-width:170px">
+    <select class="cdd-input mb-banco-sel" ${dis} onchange="_toggleBancoOtroMB(this)" style="width:100%">
+      <option value="">Seleccionar banco</option>
+      <option value="Pichincha"${sel==='Pichincha'?' selected':''}>Pichincha</option>
+      <option value="Guayaquil"${sel==='Guayaquil'?' selected':''}>Guayaquil</option>
+      <option value="__otro__"${sel==='__otro__'?' selected':''}>Otro banco…</option>
+    </select>
+    <input type="text" class="cdd-input mb-banco-otro" ${dis} value="${escHTML(extra)}" placeholder="Escribe el banco" style="width:100%;${show}">
+    <input type="hidden" class="mb-banco" value="${escHTML(v)}">
+  </div>`;
+}
+function _toggleBancoOtroMB(sel){
+  const wrap=sel.closest('div');
+  if(!wrap) return;
+  const otro=wrap.querySelector('.mb-banco-otro');
+  const hid=wrap.querySelector('.mb-banco');
+  if(!otro||!hid) return;
+  if(sel.value==='__otro__'){
+    otro.style.display='block';
+    otro.focus();
+    hid.value=(otro.value||'').trim();
+  } else {
+    otro.style.display='none';
+    otro.value='';
+    hid.value=sel.value||'';
+  }
+}
+function _valorBancoFilaMB(tr){
+  const sel=tr.querySelector('.mb-banco-sel');
+  const otro=tr.querySelector('.mb-banco-otro');
+  if(sel && sel.value==='__otro__') return (otro?.value||'').trim();
+  if(sel && sel.value) return sel.value.trim();
+  return (tr.querySelector('.mb-banco')?.value||'').trim();
 }
 function _lineasMovimientosDesdeDatos(){
   const lineas=[];
@@ -1169,7 +1205,7 @@ async function guardarMovimientosBancarios(){
     valor: parseFloat(tr.dataset.valor||0)||0,
     metodo: tr.dataset.metodo||'',
     cuenta: (tr.querySelector('.mb-cuenta')?.value||'').trim(),
-    banco: (tr.querySelector('.mb-banco')?.value||'').trim()
+    banco: _valorBancoFilaMB(tr)
   }));
   if(!filas.length){ alert('No hay movimientos para guardar en este período.'); return; }
   if(!confirm('Al guardar, Nombre de cuenta y Banco quedarán bloqueados. ¿Continuar?')) return;
