@@ -1040,6 +1040,22 @@ function _esMetodoBancario(forma){
   if(f==='depósito' || f==='deposito') return 'Depósito';
   return '';
 }
+const MB_CUENTAS = ['Angel Fonseca','Ana Luisa','Grupo Fonseca'];
+const MB_BANCOS = ['Pichincha','Guayaquil'];
+function _htmlSelectCuentaMB(valor, dis){
+  const v=String(valor||'');
+  const opts=['<option value="">Seleccionar cuenta</option>'].concat(
+    MB_CUENTAS.map(n=>`<option value="${escHTML(n)}"${v===n?' selected':''}>${escHTML(n)}</option>`)
+  );
+  if(v && !MB_CUENTAS.includes(v)){
+    opts.push(`<option value="${escHTML(v)}" selected>${escHTML(v)}</option>`);
+  }
+  return `<select class="cdd-input mb-cuenta" ${dis} style="width:100%;min-width:160px">${opts.join('')}</select>`;
+}
+function _htmlInputBancoMB(valor, dis){
+  const v=escHTML(valor||'');
+  return `<input class="cdd-input mb-banco" list="mbListaBancos" ${dis} value="${v}" placeholder="Pichincha, Guayaquil u otro" style="width:100%;min-width:140px" autocomplete="off">`;
+}
 function _lineasMovimientosDesdeDatos(){
   const lineas=[];
   (_pedidosRaw||[]).forEach(p=>{
@@ -1121,8 +1137,8 @@ async function renderMovimientosBancarios(){
         <td style="font-weight:800;color:var(--navy)">${escHTML(_nombreCortoAsesor(l.asesor))}</td>
         <td style="text-align:right;font-weight:700">$${Number(l.valor).toFixed(2)}</td>
         <td>${escHTML(l.metodo)}</td>
-        <td><input type="text" class="cdd-input mb-cuenta" ${dis} value="${escHTML(cuenta)}" placeholder="Nombre de cuenta" style="width:100%;min-width:140px"></td>
-        <td><input type="text" class="cdd-input mb-banco" ${dis} value="${escHTML(banco)}" placeholder="Banco" style="width:100%;min-width:120px"></td>
+        <td>${_htmlSelectCuentaMB(cuenta, dis)}</td>
+        <td>${_htmlInputBancoMB(banco, dis)}</td>
       </tr>`;
     }).join('');
   }
@@ -1133,7 +1149,7 @@ async function renderMovimientosBancarios(){
   if(st){
     st.textContent=_mbBloqueado
       ? ('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — ya no se puede editar.')
-      : 'Completa Nombre de cuenta y Banco. Al guardar se bloquea la hoja.';
+      : 'Elige la cuenta y el banco (o escribe otro banco). Al guardar se bloquea la hoja.';
   }
 }
 async function guardarMovimientosBancarios(){
