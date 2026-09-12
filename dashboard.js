@@ -1228,6 +1228,72 @@ async function guardarMovimientosBancarios(){
   }
 }
 
+function imprimirMovimientosBancarios(){
+  const filas=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].map(tr=>{
+    const asesor=tr.cells[0]?.textContent.trim()||_nombreCortoAsesor(tr.dataset.asesor||'');
+    const valor=parseFloat(tr.dataset.valor||0)||0;
+    const metodo=tr.dataset.metodo||'';
+    const cuenta=(tr.querySelector('.mb-cuenta')?.value||'').trim()||'—';
+    const banco=_valorBancoFilaMB(tr)||'—';
+    return {asesor, valor, metodo, cuenta, banco};
+  });
+  if(!filas.length){ alert('No hay movimientos bancarios para imprimir en este período.'); return; }
+  const fecha=_textoRangoFecha();
+  const total=filas.reduce((s,f)=>s+(Number(f.valor)||0),0);
+  const filasHtml=filas.map(f=>`<tr>
+    <td>${escHTML(f.asesor)}</td>
+    <td style="text-align:right">$${Number(f.valor).toFixed(2)}</td>
+    <td>${escHTML(f.metodo)}</td>
+    <td>${escHTML(f.cuenta)}</td>
+    <td>${escHTML(f.banco)}</td>
+  </tr>`).join('');
+  const v=window.open('','_blank','width=900,height=900');
+  const logoUrl=location.origin+'/logo-luanaqua.png';
+  v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Movimientos Bancarios — Aqua Luan — ${fecha}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
+    .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:16px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
+    .print-header img{height:46px;width:auto;}
+    .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#1a3a5c;}
+    .print-header p{font-size:11px;color:#888;margin-top:3px;}
+    table{width:100%;border-collapse:collapse;font-size:12px;}
+    thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#fff;background:#1a3a5c;}
+    thead th:nth-child(2){text-align:right;}
+    tbody td{padding:9px 12px;border-bottom:1px solid #eee;}
+    tbody tr:nth-child(even){background:#f7fafb;}
+    .total-row{background:#e6f4f2;font-weight:800;color:#085f54;}
+    .total-row td{padding:12px;border-top:2px solid #0a7c6e;}
+    .firmas{display:flex;justify-content:space-between;gap:30px;margin-top:70px;page-break-inside:avoid;}
+    .firmas .firma{flex:1;text-align:center;}
+    .firmas .firma-linea{border-top:1.5px solid #1a3a5c;margin-bottom:6px;}
+    .firmas .firma-label{font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#1a3a5c;}
+    @media print{body{padding:12px;} thead{display:table-header-group;} .firmas{margin-top:60px;}}
+  </style></head><body>
+  <div class="print-header">
+    <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
+    <div>
+      <h1>MOVIMIENTOS BANCARIOS</h1>
+      <p>Fecha: ${fecha} · ${filas.length} movimiento(s) · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Asesor</th><th>Valor</th><th>Método de pago</th><th>Nombre de cuenta</th><th>Banco</th></tr></thead>
+    <tbody>
+      ${filasHtml}
+      <tr class="total-row"><td>TOTAL</td><td style="text-align:right">$${total.toFixed(2)}</td><td colspan="3"></td></tr>
+    </tbody>
+  </table>
+  <div class="firmas">
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
+    <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
+  </div>
+  </body></html>`);
+  v.document.close();
+  _dispararImpresion(v);
+}
+
 let _liqTotalEntregarCache=0, _liqEntregaTimer=null, _liqEntregaCargando=false;
 function _slugAsesorLiq(nombre){
   return String(nombre||'general').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'general';
