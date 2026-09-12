@@ -2353,7 +2353,8 @@ document.addEventListener('click', (ev) => {
 function renderTabla(pedidos) {
   const tbody = document.getElementById('tablaPedidos');
   if (!pedidos.length) { tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="icon">📋</div>No hay pedidos en este período</div></td></tr>'; return; }
-  tbody.innerHTML = pedidos.slice(0,100).map(r => {
+  const lista = pedidos.slice(0,100);
+  tbody.innerHTML = lista.map((r, idx) => {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
     // [FIX] NUEVO FORMATO DE PAGO MÚLTIPLE — antes esto solo miraba el campo viejo
@@ -2379,7 +2380,7 @@ function renderTabla(pedidos) {
        (las filas de pagos/gastos no lo traen, pero renderTabla solo recibe pedidos con producto) */
     const puedeAB = r['_pedidoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
     const accion = puedeAB ? `<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
-    return `<tr>
+    const fila = `<tr>
       <td style="white-space:nowrap;font-size:12px">${limpiarFecha(r['FECHA'])}</td>
       <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${escHTML(r['HORA REGISTRO']||'-')}</td>
       <td style="font-size:12px">${escHTML((r['ASESOR / RUTA']||'').split(':')[1]?.trim()||r['ASESOR / RUTA']||'-')}</td>
@@ -2393,6 +2394,9 @@ function renderTabla(pedidos) {
       <td>${gps}</td>
       <td>${accion}</td>
     </tr>`;
+    const este = String(r['CLIENTE']||'').trim().toLowerCase();
+    const sig = String(lista[idx+1]?.['CLIENTE']||'').trim().toLowerCase();
+    return fila + ((idx < lista.length-1 && este !== sig) ? '<tr class="sep-cliente"><td colspan="12"></td></tr>' : '');
   }).join('');
 }
 
