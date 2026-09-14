@@ -422,10 +422,10 @@ display: inline-block;
 .highlight-row { background: var(--teal-light) !important; }
 #tablaPedidos tr.sep-cliente td {
   padding: 0;
-  height: 8px;
+  height: 5px;
   border: none;
-  background: transparent;
-  border-bottom: 2px solid var(--navy);
+  background: #0a0a0a;
+  border-bottom: 4px solid #000;
 }
 
 /* [NEW] Panel administrativo — menú lateral por secciones */
