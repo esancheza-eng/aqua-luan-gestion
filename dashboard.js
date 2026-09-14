@@ -2550,13 +2550,13 @@ function actualizarTablaCentral(datos) {
   poblarClienteSelect(datos);
   document.getElementById('clienteCard').style.display = 'block';
   if (!datos.length) { tbody.innerHTML='<tr><td colspan="12"><div class="empty-state"><div class="icon">📋</div>No hay pedidos con estos filtros</div></td></tr>'; return; }
-  tbody.innerHTML = datos.map(r => {
+  tbody.innerHTML = datos.map((r, idx) => {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
     const pago  = r['FORMA DE PAGO'] ? `<span class="badge badge-teal">${r['FORMA DE PAGO']}</span>` : '';
     const puedeAB = r['_pedidoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
     const accion = puedeAB ? `<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
-    return `<tr>
+    const fila = `<tr>
       <td style="white-space:nowrap;font-size:12px">${limpiarFecha(r['FECHA'])}</td>
       <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${escHTML(r['HORA REGISTRO']||'-')}</td>
       <td style="font-size:12px">${escHTML((r['ASESOR / RUTA']||'').split(':')[1]?.trim()||r['ASESOR / RUTA']||'-')}</td>
@@ -2570,6 +2570,9 @@ function actualizarTablaCentral(datos) {
       <td>${gps}</td>
       <td>${accion}</td>
     </tr>`;
+    const este = String(r['CLIENTE']||'').trim().toLowerCase();
+    const sig = String(datos[idx+1]?.['CLIENTE']||'').trim().toLowerCase();
+    return fila + ((idx < datos.length-1 && este !== sig) ? '<tr class="sep-cliente"><td colspan="12"></td></tr>' : '');
   }).join('');
 }
 
@@ -3727,10 +3730,10 @@ function exportarDetallePDF() {
 
   const totalGeneral = datos.filter(r=>r['TOTAL PEDIDO ($)']&&parseFloat(r['TOTAL PEDIDO ($)'])>0).reduce((s,r)=>s+(parseFloat(r['TOTAL PEDIDO ($)'])||0),0);
 
-  const filas = datos.map(r => {
+  const filas = datos.map((r, idx) => {
     const total = r['TOTAL PEDIDO ($)'] ? `$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}` : '—';
     const precioUnit = r['PRECIO UNIT.']!==undefined && r['PRECIO UNIT.']!=='' ? `$${parseFloat(r['PRECIO UNIT.']).toFixed(2)}` : '—';
-    return `<tr>
+    const fila = `<tr>
       <td>${limpiarFecha(r['FECHA'])}</td>
       <td>${(r['ASESOR / RUTA']||'').split(':')[1]?.trim()||r['ASESOR / RUTA']||'-'}</td>
       <td>${escHTML(r['CLIENTE']||'-')}</td>
@@ -3742,6 +3745,9 @@ function exportarDetallePDF() {
       <td style="text-align:right;font-weight:700">${total}</td>
       <td>${escHTML(_textoDesgloseFila(r))}</td>
     </tr>`;
+    const este = String(r['CLIENTE']||'').trim().toLowerCase();
+    const sig = String(datos[idx+1]?.['CLIENTE']||'').trim().toLowerCase();
+    return fila + ((idx < datos.length-1 && este !== sig) ? '<tr class="sep-cliente"><td colspan="10"></td></tr>' : '');
   }).join('');
 
   // [NEW] URL absoluta del logo — esta ventana de impresión se abre en blanco
@@ -3763,6 +3769,8 @@ function exportarDetallePDF() {
     thead th{padding:8px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#fff;}
     tbody td{padding:7px 10px;border-bottom:1px solid #eee;}
     tbody tr:nth-child(even){background:#f7fafb;}
+    tbody tr.sep-cliente td{padding:0;height:8px;border:none;background:transparent;border-bottom:2px solid #1a3a5c;}
+    tbody tr.sep-cliente + tr{background:#fff;}
     .total-row{background:#e6f4f2;font-weight:800;color:#085f54;}
     .total-row td{padding:10px;border-top:2px solid #0a7c6e;}
     .firmas{display:flex;justify-content:space-between;gap:30px;margin-top:70px;page-break-inside:avoid;}
