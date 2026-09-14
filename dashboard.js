@@ -178,7 +178,7 @@ let editandoPedidoActual = null;
 ════════════════════════════════════════ */
 /* [NEW] Menú lateral del panel administrativo — cambia entre secciones sin mezclarlas */
 let _yaCargado = { eliminados:false, inventario:false, roles:false, pedidosweb:false, auditoria:false }; // [NEW] carga perezosa
-const SECCIONES_SECRETARIA = ['pedidos','caja','liquidacionDash','cierreDelDia','notasAdicionalesDash','movimientosBancarios'];
+const SECCIONES_SECRETARIA = ['pedidos','caja','liquidacionDash','cierreDelDia','notasAdicionalesDash','movimientosBancarios','cobranzasClientes'];
 
 function switchSeccionDash(sec){
   if (ROL_ACTUAL === 'secretaria' && !SECCIONES_SECRETARIA.includes(sec)) {
@@ -210,6 +210,7 @@ function switchSeccionDash(sec){
   if (sec === 'auditoria' && typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
   if (sec === 'notasAdicionalesDash' && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash(); // [NEW] sección independiente de Notas Adicionales
   if (sec === 'movimientosBancarios' && typeof renderMovimientosBancarios === 'function') renderMovimientosBancarios();
+  if (sec === 'cobranzasClientes' && typeof renderCobranzasClientes === 'function') renderCobranzasClientes();
   // [FIX] Los gráficos de "Resumen General" ya no se redibujan en cada cambio de
   // Firestore si esta pestaña no está activa (ver comentario en renderDashboard) —
   // así que al entrar aquí se redibujan al instante con los últimos datos en caché.
@@ -2051,6 +2052,8 @@ function _recalcularTodosLosDatos() {
   if (seccionNotasAdicionalesVisible && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash();
   const seccionMovBancVisible = document.getElementById('seccion-movimientosBancarios')?.classList.contains('active');
   if (seccionMovBancVisible && typeof renderMovimientosBancarios === 'function') renderMovimientosBancarios();
+  const seccionCobranzasVisible = document.getElementById('seccion-cobranzasClientes')?.classList.contains('active');
+  if (seccionCobranzasVisible && typeof renderCobranzasClientes === 'function') renderCobranzasClientes();
   if (typeof renderTablaEliminados === 'function') renderTablaEliminados();
   if (typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
   document.getElementById('lastUpdate').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit' });
@@ -3721,6 +3724,121 @@ function exportarPagosGastosPDF() {
   _dispararImpresion(v);
 }
 
+
+function _normNombreCliente(n){
+  return String(n||'').trim().replace(/\s+/g,' ').toLowerCase();
+}
+function _creditoDePedido(p){
+  if (!p) return 0;
+  if (p.pagos !== null && p.pagos !== undefined) return parseFloat(p.creditoPendiente||0)||0;
+  const tot=parseFloat(p.total)||0;
+  const abono=parseFloat(p.abono||0)||0;
+  if (abono>0 && abono<tot) return tot-abono;
+  if (abono<=0 && p.formapago==='Crédito') return tot;
+  return 0;
+}
+function _pagadoEnVentaPedido(p){
+  const tot=parseFloat(p.total)||0;
+  const cred=_creditoDePedido(p);
+  return Math.max(0, tot-cred);
+}
+function _datosCobranzasClientes(){
+  const asesorSel=document.getElementById('filtroAsesor')?.value||'';
+  const map={};
+  const asegurar=(nombre)=>{
+    const key=_normNombreCliente(nombre)||'sin-nombre';
+    if(!map[key]) map[key]={nombre:nombre||'Sin nombre', telefono:'', asesor:'', ventas:0, pagadoVenta:0, deuda:0, cobros:0, pedidos:0, ingresos:[]};
+    return map[key];
+  };
+  (_pedidosRaw||[]).forEach(p=>{
+    if (asesorSel && (p.empleado||'')!==asesorSel) return;
+    const c=asegurar(p.cliente);
+    const tot=parseFloat(p.total)||0;
+    c.ventas+=tot;
+    c.pagadoVenta+=_pagadoEnVentaPedido(p);
+    c.deuda+=_creditoDePedido(p);
+    c.pedidos+=1;
+    if (p.telefono) c.telefono=p.telefono;
+    if (p.empleado) c.asesor=p.empleado;
+  });
+  (_pagosRaw||[]).forEach(pg=>{
+    if (asesorSel && (pg.empleado||'')!==asesorSel) return;
+    const cliente=pg.cliente||'Sin nombre';
+    const c=asegurar(cliente);
+    const monto=parseFloat(pg.monto)||0;
+    c.cobros+=monto;
+    c.ingresos.push({fecha:pg.fecha||'', monto, forma:pg.forma||'', asesor:pg.empleado||'', notas:pg.notas||''});
+    if (pg.empleado && !c.asesor) c.asesor=pg.empleado;
+  });
+  return Object.values(map).map(c=>{
+    c.saldo=c.deuda-c.cobros;
+    c.asesorCorto=String(c.asesor||'').split(':')[1]?.trim()||c.asesor||'—';
+    return c;
+  }).sort((a,b)=>b.saldo-a.saldo || a.nombre.localeCompare(b.nombre,'es'));
+}
+function renderCobranzasClientes(){
+  const tbody=document.getElementById('tablaCobranzasClientes');
+  const kpis=document.getElementById('cobranzasKpis');
+  const cont=document.getElementById('cobranzasContador');
+  if(!tbody) return;
+  const q=_normNombreCliente(document.getElementById('cobranzasBusqueda')?.value||'');
+  const filtro=document.getElementById('cobranzasFiltroSaldo')?.value||'';
+  let rows=_datosCobranzasClientes();
+  if(q){
+    rows=rows.filter(c=>_normNombreCliente(c.nombre).includes(q) || _normNombreCliente(c.telefono).includes(q) || _normNombreCliente(c.asesorCorto).includes(q));
+  }
+  if(filtro==='con_deuda') rows=rows.filter(c=>c.saldo>0.004);
+  if(filtro==='al_dia') rows=rows.filter(c=>Math.abs(c.saldo)<=0.004);
+  if(filtro==='sobrepago') rows=rows.filter(c=>c.saldo<-0.004);
+  const totDeuda=rows.reduce((s,c)=>s+c.deuda,0);
+  const totCobros=rows.reduce((s,c)=>s+c.cobros,0);
+  const totSaldo=rows.reduce((s,c)=>s+Math.max(0,c.saldo),0);
+  const nPend=rows.filter(c=>c.saldo>0.004).length;
+  if(cont) cont.textContent=rows.length+' cliente(s)';
+  if(kpis){
+    kpis.innerHTML=`
+      <div class="kpi-card navy"><div class="kpi-label">Clientes</div><div class="kpi-value">${rows.length}</div><div class="kpi-sub">${nPend} con saldo</div></div>
+      <div class="kpi-card orange"><div class="kpi-label">Deuda generada</div><div class="kpi-value">$${totDeuda.toFixed(2)}</div><div class="kpi-sub">crédito al vender</div></div>
+      <div class="kpi-card teal"><div class="kpi-label">Cobros / ingresos</div><div class="kpi-value">$${totCobros.toFixed(2)}</div><div class="kpi-sub">pagos del cliente</div></div>
+      <div class="kpi-card red"><div class="kpi-label">Saldo pendiente</div><div class="kpi-value">$${totSaldo.toFixed(2)}</div><div class="kpi-sub">deuda − cobros (>0)</div></div>`;
+  }
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan="8"><div class="empty-state"><div class="icon">💰</div>No hay cobranzas en este período</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML=rows.map(c=>{
+    const saldoTxt=c.saldo>0.004 ? ('$'+c.saldo.toFixed(2)) : (c.saldo<-0.004 ? ('-$'+Math.abs(c.saldo).toFixed(2)) : '$0.00');
+    const color=c.saldo>0.004 ? 'var(--red)' : (c.saldo<-0.004 ? '#0a7c6e' : 'var(--muted)');
+    const key=escHTML(_normNombreCliente(c.nombre));
+    return `<tr style="cursor:pointer" onclick="verDetalleCobranzaCliente('${key.replace(/'/g,'&#39;')}')">
+      <td style="font-weight:700">${escHTML(c.nombre)}</td>
+      <td style="color:var(--muted)">${escHTML(c.telefono||'—')}</td>
+      <td>${escHTML(c.asesorCorto)}</td>
+      <td style="text-align:right">$${c.ventas.toFixed(2)}</td>
+      <td style="text-align:right">$${c.pagadoVenta.toFixed(2)}</td>
+      <td style="text-align:right;font-weight:700">$${c.deuda.toFixed(2)}</td>
+      <td style="text-align:right;color:var(--teal);font-weight:700">$${c.cobros.toFixed(2)}</td>
+      <td style="text-align:right;font-weight:800;color:${color}">${saldoTxt}</td>
+    </tr>`;
+  }).join('');
+}
+function verDetalleCobranzaCliente(key){
+  const rows=_datosCobranzasClientes();
+  const c=rows.find(x=>_normNombreCliente(x.nombre)===key);
+  const box=document.getElementById('cobranzasDetalle');
+  if(!box || !c) return;
+  const ingresos=c.ingresos.length
+    ? c.ingresos.map(i=>`<tr><td>${escHTML(i.fecha||'—')}</td><td>${escHTML(i.forma||'—')}</td><td>${escHTML((i.asesor||'').split(':')[1]?.trim()||i.asesor||'—')}</td><td style="text-align:right">$${(Number(i.monto)||0).toFixed(2)}</td><td>${escHTML(i.notas||'')}</td></tr>`).join('')
+    : '<tr><td colspan="5" style="color:#888;font-style:italic">Sin cobros registrados en Pagos para este cliente en el período.</td></tr>';
+  box.innerHTML=`<div style="margin-top:16px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+    <div style="padding:10px 14px;background:var(--surface2);font-weight:800;color:var(--navy)">Cruce de ${escHTML(c.nombre)} — deuda $${c.deuda.toFixed(2)} vs cobros $${c.cobros.toFixed(2)}</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha cobro</th><th>Forma</th><th>Asesor</th><th style="text-align:right">Monto</th><th>Notas</th></tr></thead>
+      <tbody>${ingresos}</tbody>
+    </table></div>
+  </div>`;
+}
+
 function exportarDetallePDF() {
   const datos = _pedidosTablaFiltrados; // [NEW] exporta lo mismo que se ve en pantalla (respeta el filtro de Pago)
   if (!datos.length) { alert('No hay datos para exportar. Aplica los filtros primero.'); return; }
@@ -3769,7 +3887,7 @@ function exportarDetallePDF() {
     thead th{padding:8px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#fff;}
     tbody td{padding:7px 10px;border-bottom:1px solid #eee;}
     tbody tr:nth-child(even){background:#f7fafb;}
-    tbody tr.sep-cliente td{padding:0;height:8px;border:none;background:transparent;border-bottom:2px solid #1a3a5c;}
+    tbody tr.sep-cliente td{padding:0;height:5px;border:none;background:#0a0a0a;border-bottom:4px solid #000;}
     tbody tr.sep-cliente + tr{background:#fff;}
     .total-row{background:#e6f4f2;font-weight:800;color:#085f54;}
     .total-row td{padding:10px;border-top:2px solid #0a7c6e;}
