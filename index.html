@@ -85,10 +85,9 @@
             <button class="dash-nav-item" data-section="caja" id="navCaja" onclick="switchSeccionDash('caja')"><svg class="nav-ico" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Cuadre de Caja</button>
             <button class="dash-nav-item" data-section="reporteAsesor" id="navReporteAsesor" onclick="switchSeccionDash('reporteAsesor')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Reporte por Asesor</button>
             <button class="dash-nav-item" data-section="eliminados" id="navEliminados" onclick="switchSeccionDash('eliminados')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Pedidos Eliminados</button>
-            <!-- [NEW] Oculto temporalmente para reducir lecturas de Firestore (este listener leía TODA la colección inventarioMovimientos sin límite, cada vez que algo cambiaba) — el botón, la sección HTML y todas las funciones siguen intactas, solo no hay forma de llegar aquí desde el menú. Para reactivarlo, quita este comentario y el que envuelve el <button>. -->
-            <!-- <button class="dash-nav-item" data-section="inventario" id="navInventario" onclick="switchSeccionDash('inventario')">📦 Inventario</button> -->
-            <!-- [NEW] Oculto temporalmente para reducir lecturas de Firestore — el botón, la sección HTML y todas las funciones siguen intactas, solo no hay forma de llegar aquí desde el menú. Para reactivarlo, quita este comentario y el que envuelve el <button>. -->
-            <!-- <button class="dash-nav-item" data-section="roles" id="navRoles" onclick="switchSeccionDash('roles')">💵 Roles de Pago</button> -->
+            <button class="dash-nav-item" data-section="inventario" id="navInventario" onclick="switchSeccionDash('inventario')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>Inventario</button>
+            <button class="dash-nav-item" data-section="roles" id="navRoles" onclick="switchSeccionDash('roles')"><svg class="nav-ico" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01M6 12h.01M18 12h.01"/></svg>Roles de Pago</button>
+            <button class="dash-nav-item" data-section="cobranzasClientes" id="navCobranzasClientes" onclick="switchSeccionDash('cobranzasClientes')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Consulta Cobranzas</button>
             <button class="dash-nav-item" data-section="importar" id="navImportar" onclick="switchSeccionDash('importar')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Importar Datos</button>
             <button class="dash-nav-item" data-section="usuarios" id="navUsuarios" onclick="switchSeccionDash('usuarios'); poblarSelectEliminarSecretaria();"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>Crear Usuarios</button>
             <button class="dash-nav-item" data-section="auditoria" id="navAuditoria" onclick="switchSeccionDash('auditoria')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Auditoría</button>
@@ -169,6 +168,45 @@
           <div id="clienteDetalleContenido" style="padding:0">
             <div class="empty-state" style="padding:2rem"><div class="icon">👤</div>No hay clientes en este período</div>
           </div>
+        </div>
+        </div>
+        <div class="dash-section" id="seccion-cobranzasClientes">
+        <div class="table-card" id="cobranzasCard">
+          <div class="table-header">
+            <div class="table-title">💰 Consulta Cobranzas — Clientes</div>
+            <span style="font-size:12px;color:var(--muted)" id="cobranzasContador">0 clientes</span>
+          </div>
+          <div style="padding:12px 20px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">
+            Cruza la <b>deuda generada</b> (saldo a crédito al vender) con los <b>ingresos/cobros</b> registrados en Pagos para ese mismo cliente. El saldo estimado es deuda menos cobros del período filtrado.
+          </div>
+          <div style="padding:14px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+            <input type="text" id="cobranzasBusqueda" placeholder="Buscar cliente, teléfono o asesor..." oninput="renderCobranzasClientes()" style="flex:1;min-width:240px;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none">
+            <select id="cobranzasFiltroSaldo" onchange="renderCobranzasClientes()" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer">
+              <option value="">Todos</option>
+              <option value="con_deuda">Con saldo pendiente</option>
+              <option value="al_dia">Al día (saldo 0)</option>
+              <option value="sobrepago">Cobros mayores a la deuda</option>
+            </select>
+          </div>
+          <div style="padding:1rem 1.25rem 0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px" id="cobranzasKpis"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Teléfono</th>
+                  <th>Asesor</th>
+                  <th style="text-align:right">Ventas</th>
+                  <th style="text-align:right">Pagado en venta</th>
+                  <th style="text-align:right">Deuda generada</th>
+                  <th style="text-align:right">Cobros / ingresos</th>
+                  <th style="text-align:right">Saldo estimado</th>
+                </tr>
+              </thead>
+              <tbody id="tablaCobranzasClientes"></tbody>
+            </table>
+          </div>
+          <div id="cobranzasDetalle" style="padding:0 1.25rem 1.25rem"></div>
         </div>
         </div>
         <div class="dash-section" id="seccion-caja">
