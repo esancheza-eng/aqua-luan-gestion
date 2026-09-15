@@ -1146,26 +1146,68 @@ function _valorBancoFilaMB(tr){
   if(sel && sel.value) return sel.value.trim();
   return (tr.querySelector('.mb-banco')?.value||'').trim();
 }
+function _fmtFechaHoraMB(fecha, ts){
+  let d=null;
+  try{
+    if(ts && typeof ts.toDate==='function') d=ts.toDate();
+    else if(ts && typeof ts.toMillis==='function') d=new Date(ts.toMillis());
+    else if(ts instanceof Date) d=ts;
+    else if(typeof ts==='number' && ts>0) d=new Date(ts);
+  }catch(e){}
+  if(d && !isNaN(d.getTime())){
+    const dd=String(d.getDate()).padStart(2,'0');
+    const mm=String(d.getMonth()+1).padStart(2,'0');
+    const yy=d.getFullYear();
+    const hh=String(d.getHours()).padStart(2,'0');
+    const mi=String(d.getMinutes()).padStart(2,'0');
+    return dd+'/'+mm+'/'+yy+' '+hh+':'+mi;
+  }
+  const raw=String(fecha||'').trim();
+  if(!raw) return '—';
+  if(/^\d{4}-\d{2}-\d{2}/.test(raw)){
+    const p=raw.slice(0,10).split('-');
+    return p[2]+'/'+p[1]+'/'+p[0];
+  }
+  return raw;
+}
+function _msMovBanc(l){
+  const ts=l && l.ts;
+  try{
+    if(ts && typeof ts.toMillis==='function') return ts.toMillis();
+    if(ts && typeof ts.toDate==='function') return ts.toDate().getTime();
+    if(ts instanceof Date) return ts.getTime();
+    if(typeof ts==='number' && ts>0) return ts;
+  }catch(e){}
+  const f=String((l&&l.fecha)||'');
+  const m=f.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return Date.parse(m[1]+'-'+m[2]+'-'+m[3]+'T00:00:00');
+  return 0;
+}
 function _lineasMovimientosDesdeDatos(){
   const lineas=[];
+  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
   (_pedidosRaw||[]).forEach(p=>{
     const asesor=p.empleado || 'Sin asignar';
+    if(asesorSel && asesor!==asesorSel) return;
+    const fecha=p.fecha||'';
+    const ts=p.creadoEn||null;
     if (p.pagos !== null && p.pagos !== undefined) {
       (p.pagos||[]).forEach(pg=>{
         const metodo=_esMetodoBancario(pg.forma);
         const monto=parseFloat(pg.monto||0)||0;
-        if(metodo && monto>0) lineas.push({asesor, valor:monto, metodo});
+        if(metodo && monto>0) lineas.push({asesor, valor:monto, metodo, fecha, ts});
       });
     } else {
       const metodo=_esMetodoBancario(p.formapago);
       const tot=parseFloat(p.total||0)||0;
-      if(metodo && tot>0) lineas.push({asesor, valor:tot, metodo});
+      if(metodo && tot>0) lineas.push({asesor, valor:tot, metodo, fecha, ts});
     }
   });
   (_pagosRaw||[]).forEach(p=>{
+    if(asesorSel && (p.empleado||'')!==asesorSel) return;
     const metodo=_esMetodoBancario(p.forma);
     const monto=parseFloat(p.monto||0)||0;
-    if(metodo && monto>0) lineas.push({asesor:p.empleado||'Sin asignar', valor:monto, metodo});
+    if(metodo && monto>0) lineas.push({asesor:p.empleado||'Sin asignar', valor:monto, metodo, fecha:p.fecha||'', ts:p.creadoEn||null});
   });
   return lineas;
 }
@@ -1190,22 +1232,26 @@ async function renderMovimientosBancarios(){
           return {nombre, data: snap.exists ? snap.data() : {}};
         }catch(err){ return {nombre, data:{}}; }
       }));
+      const asesorSelDep = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
       entregas.forEach(({nombre,data})=>{
+        if(asesorSelDep && nombre!==asesorSelDep) return;
         const deps=Array.isArray(data.depositos)&&data.depositos.length?data.depositos:null;
         if(deps){
           deps.forEach(dep=>{
             const monto=dep && dep.marcado ? (Number(dep.monto)||0) : 0;
-            if(monto>0) lineas.push({asesor:nombre, valor:monto, metodo:'Depósito'});
+            if(monto>0) lineas.push({asesor:nombre, valor:monto, metodo:'Depósito', fecha:data.desde||data.fecha||'', ts:data.actualizadoEn||null});
           });
         } else {
           const dep=data.deposito;
           const monto=dep && dep.marcado ? (Number(dep.monto)||0) : 0;
-          if(monto>0) lineas.push({asesor:nombre, valor:monto, metodo:'Depósito'});
+          if(monto>0) lineas.push({asesor:nombre, valor:monto, metodo:'Depósito', fecha:data.desde||data.fecha||'', ts:data.actualizadoEn||null});
         }
       });
     }
   }catch(err){ console.warn('movimientosBancarios depositos:', err); }
   lineas.sort((a,b)=>{
+    const ta=_msMovBanc(b)-_msMovBanc(a);
+    if(ta!==0) return ta;
     const na=_nombreCortoAsesor(a.asesor).localeCompare(_nombreCortoAsesor(b.asesor),'es');
     if(na!==0) return na;
     return String(a.metodo).localeCompare(String(b.metodo),'es');
@@ -1232,7 +1278,7 @@ async function renderMovimientosBancarios(){
   const total=lineas.reduce((s,l)=>s+(Number(l.valor)||0),0);
   if(totalEl) totalEl.textContent='$'+total.toFixed(2);
   if(!lineas.length){
-    tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:#888;font-style:italic;padding:18px">No hay transferencias, cheques ni depósitos en este período.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:#888;font-style:italic;padding:18px">No hay transferencias, cheques ni depósitos en este período.</td></tr>';
   } else {
     tbody.innerHTML=lineas.map((l,idx)=>{
       const id=_idFilaMovBanc(l,idx);
@@ -1240,7 +1286,9 @@ async function renderMovimientosBancarios(){
       const cuenta=saved.cuenta||'';
       const banco=saved.banco||'';
       const dis=_mbBloqueado?'disabled':'';
-      return `<tr data-mb-id="${escHTML(id)}" data-asesor="${escHTML(l.asesor)}" data-valor="${Number(l.valor).toFixed(2)}" data-metodo="${escHTML(l.metodo)}">
+      const fechaTxt=_fmtFechaHoraMB(l.fecha, l.ts);
+      return `<tr data-mb-id="${escHTML(id)}" data-asesor="${escHTML(l.asesor)}" data-valor="${Number(l.valor).toFixed(2)}" data-metodo="${escHTML(l.metodo)}" data-fecha="${escHTML(fechaTxt)}">
+        <td style="font-size:12px;white-space:nowrap;color:var(--navy)">${escHTML(fechaTxt)}</td>
         <td style="font-weight:800;color:var(--navy)">${escHTML(_nombreCortoAsesor(l.asesor))}</td>
         <td style="text-align:right;font-weight:700">$${Number(l.valor).toFixed(2)}</td>
         <td>${escHTML(l.metodo)}</td>
@@ -1253,11 +1301,26 @@ async function renderMovimientosBancarios(){
     btn.style.display=_mbBloqueado?'none':'inline-flex';
     btn.disabled=_mbBloqueado;
   }
+  const btnEd=document.getElementById('mbBtnEditar');
+  if(btnEd){
+    btnEd.style.display=_mbBloqueado?'inline-flex':'none';
+  }
   if(st){
     st.textContent=_mbBloqueado
-      ? ('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — ya no se puede editar.')
-      : 'Elige la cuenta y el banco (o escribe otro banco). Al guardar se bloquea la hoja.';
+      ? ('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — pulsa Editar para cambiar cuenta o banco.')
+      : 'Elige la cuenta y el banco (o escribe otro banco). Respeta el filtro de fecha de arriba.';
   }
+}
+function habilitarEdicionMovimientosBancarios(){
+  if(!_mbBloqueado) return;
+  _mbBloqueado=false;
+  document.querySelectorAll('#mbTbody select, #mbTbody input').forEach(el=>{ el.disabled=false; });
+  const btn=document.getElementById('mbBtnGuardar');
+  if(btn){ btn.style.display='inline-flex'; btn.disabled=false; }
+  const btnEd=document.getElementById('mbBtnEditar');
+  if(btnEd) btnEd.style.display='none';
+  const st=document.getElementById('mbStatus');
+  if(st) st.textContent='Modo edición. Cambia cuenta o banco y pulsa Guardar información.';
 }
 async function guardarMovimientosBancarios(){
   if(_mbBloqueado){ alert('Esta hoja ya fue guardada y no se puede editar.'); return; }
@@ -1268,7 +1331,8 @@ async function guardarMovimientosBancarios(){
     valor: parseFloat(tr.dataset.valor||0)||0,
     metodo: tr.dataset.metodo||'',
     cuenta: (tr.querySelector('.mb-cuenta')?.value||'').trim(),
-    banco: _valorBancoFilaMB(tr)
+    banco: _valorBancoFilaMB(tr),
+    fecha: tr.dataset.fecha||''
   }));
   if(!filas.length){ alert('No hay movimientos para guardar en este período.'); return; }
   const incompletas=filas.filter(f=>!f.cuenta || !f.banco);
@@ -1317,17 +1381,19 @@ async function guardarMovimientosBancarios(){
 
 function imprimirMovimientosBancarios(){
   const filas=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].map(tr=>{
-    const asesor=tr.cells[0]?.textContent.trim()||_nombreCortoAsesor(tr.dataset.asesor||'');
+    const fecha=tr.dataset.fecha||tr.cells[0]?.textContent.trim()||'—';
+    const asesor=_nombreCortoAsesor(tr.dataset.asesor||'')||tr.cells[1]?.textContent.trim()||'';
     const valor=parseFloat(tr.dataset.valor||0)||0;
     const metodo=tr.dataset.metodo||'';
     const cuenta=(tr.querySelector('.mb-cuenta')?.value||'').trim()||'—';
     const banco=_valorBancoFilaMB(tr)||'—';
-    return {asesor, valor, metodo, cuenta, banco};
+    return {fecha, asesor, valor, metodo, cuenta, banco};
   });
   if(!filas.length){ alert('No hay movimientos bancarios para imprimir en este período.'); return; }
   const fecha=_textoRangoFecha();
   const total=filas.reduce((s,f)=>s+(Number(f.valor)||0),0);
   const filasHtml=filas.map(f=>`<tr>
+    <td>${escHTML(f.fecha||'—')}</td>
     <td>${escHTML(f.asesor)}</td>
     <td style="text-align:right">$${Number(f.valor).toFixed(2)}</td>
     <td>${escHTML(f.metodo)}</td>
@@ -1365,10 +1431,10 @@ function imprimirMovimientosBancarios(){
     </div>
   </div>
   <table>
-    <thead><tr><th>Asesor</th><th>Valor</th><th>Método de pago</th><th>Nombre de cuenta</th><th>Banco</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Asesor</th><th>Valor</th><th>Método de pago</th><th>Nombre de cuenta</th><th>Banco</th></tr></thead>
     <tbody>
       ${filasHtml}
-      <tr class="total-row"><td>TOTAL</td><td style="text-align:right">$${total.toFixed(2)}</td><td colspan="3"></td></tr>
+      <tr class="total-row"><td>TOTAL</td><td></td><td style="text-align:right">$${total.toFixed(2)}</td><td colspan="3"></td></tr>
     </tbody>
   </table>
   <div class="firmas">
