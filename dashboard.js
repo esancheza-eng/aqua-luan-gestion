@@ -56,13 +56,57 @@ function escHTML(str) {
 }
 /* [NEW] Instancia secundaria de Firebase — permite crear la cuenta de Secretaria sin
    cerrar la sesión del admin (crear un usuario normalmente inicia sesión con él). */
-function _textoDesgloseFila(r){
+const FORMAS_PAGO_FIJAS = ['Contado', 'Crédito', 'Transferencia', 'Cheque'];
+function _normFormaPago(s){
+  const t = String(s||'').trim().toLowerCase();
+  if (!t || t === 'mixto' || t === 'sin especificar') return '';
+  if (t.includes('contad') || t === 'efectivo') return 'Contado';
+  if (t.includes('crédit') || t.includes('credit')) return 'Crédito';
+  if (t.includes('transfer')) return 'Transferencia';
+  if (t.includes('cheque')) return 'Cheque';
+  return '';
+}
+function _formasDelPedido(r){
+  const set = new Set();
+  const des = r['PAGOS_DESGLOSE'];
+  if (des && des.length) {
+    des.forEach(pg => {
+      const f = _normFormaPago(pg.forma);
+      if (f && (parseFloat(pg.monto)||0) > 0.004) set.add(f);
+    });
+  }
+  const fCampo = _normFormaPago(r['FORMA DE PAGO']);
+  if (fCampo) set.add(fCampo);
+  if (parseFloat(r['CREDITO_PENDIENTE']||0) > 0.004) set.add('Crédito');
+  return set;
+}
+function _filtrosPagoActivos(){
+  return FORMAS_PAGO_FIJAS.filter(f => !_pagoFiltroExcluidos.has(f));
+}
+function _desgloseRealPago(r){
   const cred=parseFloat(r['CREDITO_PENDIENTE']||0);
   if (r['PAGOS_DESGLOSE'] && r['PAGOS_DESGLOSE'].length) {
     const partes=r['PAGOS_DESGLOSE'].map(pg => `${pg.forma} $${(parseFloat(pg.monto)||0).toFixed(2)}`).join(' + ');
     return cred>0.004 ? partes + ' + Crédito $' + cred.toFixed(2) : partes;
   }
-  return r['FORMA DE PAGO'] || '-';
+  const f = r['FORMA DE PAGO'] || '';
+  if (String(f).toLowerCase() === 'mixto') {
+    const formas = [..._formasDelPedido(r)];
+    if (formas.length) {
+      return cred>0.004 && !formas.includes('Crédito')
+        ? formas.join(' + ') + ' + Crédito $' + cred.toFixed(2)
+        : formas.join(' + ');
+    }
+  }
+  return f || '-';
+}
+function _etiquetaPagoDetalle(r){
+  const activos = _filtrosPagoActivos();
+  if (activos.length === 1) return activos[0];
+  return _desgloseRealPago(r);
+}
+function _textoDesgloseFila(r){
+  return _etiquetaPagoDetalle(r);
 }
 const _secondaryAppDash = firebase.initializeApp(firebaseConfig, 'secondaryDash');
 const _secondaryAuthDash = _secondaryAppDash.auth();
@@ -2332,29 +2376,32 @@ function renderGPS(pedidos) {
 }
 
 /* [NEW] Filtro tipo checklist para "Pago" en Detalle de Pedidos.
-   Se guarda como un Set de formas de pago DESMARCADAS (ocultas) -- vacío significa
-   "sin filtro, mostrar todo". Así, cualquier forma de pago nueva que aparezca
-   (ej. al importar datos) se muestra por defecto, sin tener que "agregarla" al filtro. */
+   Opciones FIJAS: Contado, Crédito, Transferencia, Cheque.
+   Se guarda como un Set de formas DESMARCADAS. Vacío = mostrar todo.
+   Un pedido con varias formas aparece en cada filtro que le corresponda. */
 let _pagoFiltroExcluidos = new Set();
 function _opcionesPagoDisponibles(pedidos) {
-  const set = new Set();
-  pedidos.forEach(r => { set.add(r['FORMA DE PAGO'] || 'Sin especificar'); });
-  return [...set].sort((a,b) => a.localeCompare(b,'es'));
+  return FORMAS_PAGO_FIJAS.slice();
 }
 function _filtrarPorPagoChecklist(pedidos) {
-  if (_pagoFiltroExcluidos.size === 0) return pedidos;
-  return pedidos.filter(r => !_pagoFiltroExcluidos.has(r['FORMA DE PAGO'] || 'Sin especificar'));
+  const activos = _filtrosPagoActivos();
+  if (activos.length === FORMAS_PAGO_FIJAS.length) return pedidos;
+  if (!activos.length) return [];
+  return pedidos.filter(r => {
+    const formas = _formasDelPedido(r);
+    return activos.some(f => formas.has(f));
+  });
 }
 function renderFiltroPagoDropdown(pedidosSinFiltrarPago) {
   const cont = document.getElementById('filtroPagoOpciones');
   if (!cont) return;
-  const opciones = _opcionesPagoDisponibles(pedidosSinFiltrarPago);
-  cont.innerHTML = opciones.length ? opciones.map(o => `
+  const opciones = FORMAS_PAGO_FIJAS;
+  cont.innerHTML = opciones.map(o => `
     <label class="filtro-pago-item">
-      <input type="checkbox" ${_pagoFiltroExcluidos.has(o) ? '' : 'checked'} onchange="toggleFiltroPago('${escHTML(o).replace(/'/g,"\\'")}', this.checked)">
-      ${escHTML(o)}
+      <input type="checkbox" ${_pagoFiltroExcluidos.has(o) ? '' : 'checked'} onchange="toggleFiltroPago('${o}', this.checked)">
+      ${o}
     </label>
-  `).join('') : '<div style="font-size:12px;color:var(--muted);padding:6px 8px">No hay pedidos en este período</div>';
+  `).join('');
   const contador = document.getElementById('filtroPagoContador');
   if (contador) {
     if (_pagoFiltroExcluidos.size > 0) { contador.textContent = `(${opciones.length - _pagoFiltroExcluidos.size}/${opciones.length})`; contador.style.display = 'inline'; }
@@ -2367,7 +2414,7 @@ function toggleFiltroPago(valor, marcado) {
 }
 function marcarTodosFiltroPago(marcarTodo) {
   if (marcarTodo) { _pagoFiltroExcluidos.clear(); }
-  else { _opcionesPagoDisponibles(pedidosDetalleActuales || []).forEach(o => _pagoFiltroExcluidos.add(o)); }
+  else { FORMAS_PAGO_FIJAS.forEach(o => _pagoFiltroExcluidos.add(o)); }
   renderDashboard();
 }
 function toggleDropdownPago(ev) {
@@ -2398,16 +2445,20 @@ function renderTabla(pedidos) {
     const creditoPend = parseFloat(r['CREDITO_PENDIENTE']||0);
     const totalVal = parseFloat(r['TOTAL PEDIDO ($)']||0);
     const tieneSaldo = creditoPend > 0.004 && totalVal > 0;
+    const etiquetaPago = _etiquetaPagoDetalle(r);
+    const unSoloFiltro = _filtrosPagoActivos().length === 1;
     let detallePago = '';
-    if (r['PAGOS_DESGLOSE'] && r['PAGOS_DESGLOSE'].length) {
-      const partes = r['PAGOS_DESGLOSE'].map(pg => `${pg.forma} $${(parseFloat(pg.monto)||0).toFixed(2)}`).join(' + ');
-      detallePago = `<div style="font-size:10px;color:var(--muted);margin-top:2px;white-space:nowrap">${partes}</div>`;
-      if (tieneSaldo) detallePago += `<div style="font-size:10px;color:var(--red);white-space:nowrap">Saldo crédito $${creditoPend.toFixed(2)}</div>`;
-    } else if (tieneSaldo) {
-      const abonoVal = parseFloat(r['ABONO']||0);
-      detallePago = `<div style="font-size:10px;color:var(--red);margin-top:2px;white-space:nowrap">Abono $${abonoVal.toFixed(2)} · Saldo $${creditoPend.toFixed(2)}</div>`;
+    if (!unSoloFiltro) {
+      if (r['PAGOS_DESGLOSE'] && r['PAGOS_DESGLOSE'].length) {
+        const partes = r['PAGOS_DESGLOSE'].map(pg => `${pg.forma} $${(parseFloat(pg.monto)||0).toFixed(2)}`).join(' + ');
+        detallePago = `<div style="font-size:10px;color:var(--muted);margin-top:2px;white-space:nowrap">${partes}</div>`;
+        if (tieneSaldo) detallePago += `<div style="font-size:10px;color:var(--red);white-space:nowrap">Saldo crédito $${creditoPend.toFixed(2)}</div>`;
+      } else if (tieneSaldo) {
+        const abonoVal = parseFloat(r['ABONO']||0);
+        detallePago = `<div style="font-size:10px;color:var(--red);margin-top:2px;white-space:nowrap">Abono $${abonoVal.toFixed(2)} · Saldo $${creditoPend.toFixed(2)}</div>`;
+      }
     }
-    const pago  = r['FORMA DE PAGO'] ? `<span class="badge badge-teal">${r['FORMA DE PAGO']}</span>${detallePago}` : '';
+    const pago  = etiquetaPago ? `<span class="badge badge-teal">${escHTML(etiquetaPago)}</span>${detallePago}` : '';
     /* [NEW] Botón Editar — solo funciona si la fila trae el id real del pedido en Firestore
        (las filas de pagos/gastos no lo traen, pero renderTabla solo recibe pedidos con producto) */
     const puedeAB = r['_pedidoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
