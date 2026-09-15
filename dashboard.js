@@ -690,7 +690,7 @@ function _htmlTablaCierreDelDia(tablaNum, asesoresId, nombresDisplay, datos, fil
       const guardadoVal = guardado?.[f.etiqueta]?.[id];
       const v = (guardadoVal !== undefined && guardadoVal !== null && guardadoVal !== '') ? (Number(guardadoVal)||0) : (f.valor(datos[rowIdx]) || 0);
       colTotales[fi] += v;
-      return `<td class="${f.destacado?'cierre-matriz-destacado':''}"><input type="text" class="cdd-input" inputmode="decimal" data-etiqueta="${escHTML(f.etiqueta)}" data-asesor="${escHTML(id)}" value="${v.toFixed(2)}" oninput="_filtrarInputMontoLiq(this);_recalcularFilaCierreDelDia(this)"></td>`;
+      return `<td class="${f.destacado?'cierre-matriz-destacado':''}"><input type="text" class="cdd-input" inputmode="decimal" data-etiqueta="${escHTML(f.etiqueta)}" data-asesor="${escHTML(id)}" value="${v.toFixed(2)}" disabled oninput="_filtrarInputMontoLiq(this);_recalcularFilaCierreDelDia(this)"></td>`;
     }).join('');
     return `<tr><td class="cdd-nombre">${escHTML(nombresDisplay[rowIdx]||id)}</td>${celdas}</tr>`;
   }).join('');
@@ -719,9 +719,9 @@ function _recalcularFilaCierreDelDia(input){
   });
 }
 function _setCierreDelDiaEditable(on){
-  /* El Cierre del Día ya no tiene modo Editar: los campos quedan siempre
-     habilitados y el botón Guardar permanece visible. */
-  document.querySelectorAll('.cdd-input').forEach(el => el.disabled = false);
+  /* Sin modo Editar: los montos se muestran bloqueados (solo lectura).
+     Guardar e Imprimir PDF siguen disponibles. */
+  document.querySelectorAll('.cdd-input').forEach(el => el.disabled = true);
   const gu=document.getElementById('cddBtnGuardar');
   if(gu) gu.style.display = '';
 }
