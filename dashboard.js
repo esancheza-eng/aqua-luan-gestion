@@ -3994,8 +3994,6 @@ function exportarExcel() {
    (todo dashboard.html ya está protegido por el login que exige
    esAdmin === true, así que llegar hasta aquí ya implica ser admin)
 ════════════════════════════════════════════════════════════ */
-const FORMAS_PAGO_FIJAS = ['Contado','Crédito','Transferencia','Cheque'];
-
 function abrirEditarPedido(pedidoId){
   const p = _pedidosRaw.find(x => x._id === pedidoId);
   if(p && !_esRegistroDeHoy(p.fecha||p.FECHA)){ alert('Solo se pueden editar pedidos del día de hoy.'); return; }
