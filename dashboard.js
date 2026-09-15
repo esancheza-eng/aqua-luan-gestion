@@ -1079,6 +1079,12 @@ function imprimirNotasAdicionalesDash(){
 }
 
 
+function _mbPeriodoEsHoy(){
+  const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+  const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
+  const desde=document.getElementById('filtroFecha')?.value||hasta;
+  return !!hoy && desde===hoy && hasta===hoy;
+}
 function _idMovimientosBancarios(){
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
   const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
@@ -1420,7 +1426,7 @@ async function renderMovimientosBancarios(){
       const saved=porId[id] || porId[flex] || {};
       const cuenta=saved.cuenta||'';
       const banco=saved.banco||'';
-      const dis=_mbBloqueado?'disabled':'';
+      const dis=(!_mbPeriodoEsHoy() || _mbBloqueado)?'disabled':'';
       const fechaTxt=_fmtFechaHoraMB(l.fecha, l.ts);
       return `<tr data-mb-id="${escHTML(id)}" data-asesor="${escHTML(l.asesor)}" data-valor="${Number(l.valor).toFixed(2)}" data-metodo="${escHTML(l.metodo)}" data-fecha="${escHTML(fechaTxt)}">
         <td style="font-size:12px;white-space:nowrap;color:var(--navy)">${escHTML(fechaTxt)}</td>
@@ -1432,21 +1438,32 @@ async function renderMovimientosBancarios(){
       </tr>`;
     }).join('');
   }
+  const esHoy=_mbPeriodoEsHoy();
   if(btn){
-    btn.style.display=_mbBloqueado?'none':'inline-flex';
-    btn.disabled=_mbBloqueado;
+    btn.style.display=(esHoy && !_mbBloqueado)?'inline-flex':'none';
+    btn.disabled=!esHoy || _mbBloqueado;
   }
   const btnEd=document.getElementById('mbBtnEditar');
   if(btnEd){
-    btnEd.style.display=_mbBloqueado?'inline-flex':'none';
+    btnEd.style.display=(esHoy && _mbBloqueado)?'inline-flex':'none';
+    btnEd.disabled=!esHoy;
+    btnEd.title=esHoy?'Editar cuenta y banco del día de hoy':'Solo se puede editar el día de hoy';
   }
   if(st){
-    st.textContent=_mbBloqueado
-      ? ('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — pulsa Editar para cambiar cuenta o banco.')
-      : 'Elige la cuenta y el banco (o escribe otro banco). Respeta el filtro de fecha de arriba.';
+    if(!esHoy){
+      st.textContent='Consulta de fechas anteriores: cuenta y banco están bloqueados. Solo el día de hoy se puede editar.';
+    } else if(_mbBloqueado){
+      st.textContent=('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — pulsa Editar para cambiar cuenta o banco (solo hoy).');
+    } else {
+      st.textContent='Elige la cuenta y el banco. Solo el día de hoy se puede guardar o editar.';
+    }
   }
 }
 function habilitarEdicionMovimientosBancarios(){
+  if(!_mbPeriodoEsHoy()){
+    alert('Solo se puede editar Movimientos Bancarios del día de hoy.\nLas fechas anteriores quedan bloqueadas.');
+    return;
+  }
   if(!_mbBloqueado) return;
   _mbBloqueado=false;
   document.querySelectorAll('#mbTbody select, #mbTbody input').forEach(el=>{ el.disabled=false; });
@@ -1455,9 +1472,13 @@ function habilitarEdicionMovimientosBancarios(){
   const btnEd=document.getElementById('mbBtnEditar');
   if(btnEd) btnEd.style.display='none';
   const st=document.getElementById('mbStatus');
-  if(st) st.textContent='Modo edición. Cambia cuenta o banco y pulsa Guardar información.';
+  if(st) st.textContent='Modo edición (solo hoy). Cambia cuenta o banco y pulsa Guardar información.';
 }
 async function guardarMovimientosBancarios(){
+  if(!_mbPeriodoEsHoy()){
+    alert('Solo se puede guardar Movimientos Bancarios del día de hoy.\nLas fechas anteriores están bloqueadas.');
+    return;
+  }
   if(_mbBloqueado){ alert('Esta hoja ya fue guardada y no se puede editar.'); return; }
   if(typeof db==='undefined'){ alert('No hay conexión para guardar.'); return; }
   const filas=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].map(tr=>({
