@@ -1641,8 +1641,13 @@ function _htmlEntregaAsesorBox(nombre, total){
   </div>`;
 }
 
+function _filtroLiquidacionEsHoy(){
+  return (typeof _mbPeriodoEsHoy==='function') ? _mbPeriodoEsHoy() : false;
+}
 function _setEntregaEditable(box, on){
   if(!box) return;
+  const permitido=_filtroLiquidacionEsHoy();
+  if(on && !permitido) on=false;
   box.dataset.editando = on ? '1' : '0';
   box.querySelectorAll('input').forEach(el => { el.disabled = !on; });
   const add=box.querySelector('.liq-btn-add-falt');
@@ -1655,11 +1660,18 @@ function _setEntregaEditable(box, on){
     const n=box.querySelectorAll('.liq-deposito-row').length;
     addDep.style.display = (on && n<3) ? '' : 'none';
   }
-  if(ed) ed.style.display = on ? 'none' : '';
+  if(ed){
+    ed.style.display = (permitido && !on) ? '' : 'none';
+    ed.title = permitido ? 'Editar entrega de hoy' : 'Solo se puede editar la liquidación del día de hoy';
+  }
   if(gu) gu.style.display = on ? '' : 'none';
   if(ca) ca.style.display = on ? '' : 'none';
 }
 function _editarEntregaAsesor(nombre){
+  if(!_filtroLiquidacionEsHoy()){
+    alert('Solo se puede editar la liquidación del día de hoy.\nLas fechas anteriores quedan bloqueadas.');
+    return;
+  }
   const box=_boxEntregaAsesor(nombre);
   _setEntregaEditable(box, true);
 }
@@ -1667,6 +1679,10 @@ function _cancelarEntregaAsesor(nombre){
   _cargarEntregaAsesor(nombre);
 }
 function _confirmarGuardarEntregaAsesor(nombre){
+  if(!_filtroLiquidacionEsHoy()){
+    alert('Solo se puede guardar la liquidación del día de hoy.\nLas fechas anteriores están bloqueadas.');
+    return;
+  }
   if(!confirm('¿Está seguro que desea guardar la entrega de liquidación de '+nombre+'?')) return;
   _guardarEntregaAsesor(nombre).then(()=>{
     const box=_boxEntregaAsesor(nombre);
@@ -1844,7 +1860,13 @@ async function _cargarEntregaAsesor(nombre){
     const list=box.querySelector('.liq-faltantes-lista');
     if(list) list.innerHTML=(filas.length?filas:[{monto:'',motivo:''}]).map((f,i)=>_htmlFilaFaltanteAsesor(i,f.monto,f.motivo)).join('');
     const st=box.querySelector('.liq-entrega-status');
-    if(st) st.textContent=snap.exists?'Entrega guardada de este asesor.':'Sin entrega registrada aún.';
+    if(st){
+      if(!_filtroLiquidacionEsHoy()){
+        st.textContent=(snap.exists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+'Consulta de fechas anteriores: no se puede editar.';
+      } else {
+        st.textContent=snap.exists?'Entrega guardada de este asesor.':'Sin entrega registrada aún.';
+      }
+    }
     _setEntregaEditable(box, false);
     _actualizarCuadreBox(box);
   }catch(err){
@@ -1861,6 +1883,11 @@ function _guardarEntregaAsesorDebounced(nombre){
 async function _guardarEntregaAsesor(nombre){
   const box=_boxEntregaAsesor(nombre);
   if(!box || typeof db==='undefined') return;
+  if(!_filtroLiquidacionEsHoy()){
+    const st0=box.querySelector('.liq-entrega-status');
+    if(st0) st0.textContent='Fechas anteriores bloqueadas: no se guarda.';
+    return;
+  }
   const u=_leerEntregaDesdeBox(box);
   if(u.invalido) return;
   const st=box.querySelector('.liq-entrega-status');
