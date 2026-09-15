@@ -106,7 +106,7 @@ function _etiquetaPagoDetalle(r){
   return _desgloseRealPago(r);
 }
 function _textoDesgloseFila(r){
-  return _etiquetaPagoDetalle(r);
+  return _desgloseRealPago(r);
 }
 const _secondaryAppDash = firebase.initializeApp(firebaseConfig, 'secondaryDash');
 const _secondaryAuthDash = _secondaryAppDash.auth();
@@ -3908,7 +3908,7 @@ function exportarDetallePDF() {
       <td style="text-align:right">${precioUnit}</td>
       <td style="text-align:right">$${parseFloat(r['SUBTOTAL']||0).toFixed(2)}</td>
       <td style="text-align:right;font-weight:700">${total}</td>
-      <td>${escHTML(_textoDesgloseFila(r))}</td>
+      <td>${escHTML(_etiquetaPagoDetalle(r))}</td>
     </tr>`;
     const este = String(r['CLIENTE']||'').trim().toLowerCase();
     const sig = String(datos[idx+1]?.['CLIENTE']||'').trim().toLowerCase();
