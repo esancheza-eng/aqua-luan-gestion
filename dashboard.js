@@ -1080,8 +1080,9 @@ function imprimirNotasAdicionalesDash(){
 
 
 function _idMovimientosBancarios(){
-  const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
-  const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+  const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+  const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
+  const desde=document.getElementById('filtroFecha')?.value||hasta;
   return desde+'_'+hasta;
 }
 function _nombreCortoAsesor(nombre){
@@ -1279,9 +1280,28 @@ function _lineasMovimientosDesdeDatos(){
   });
   return lineas;
 }
+function _isoDiaMB(fecha, ts){
+  try{
+    if(ts && typeof ts.toDate==='function') return ts.toDate().toISOString().slice(0,10);
+    if(ts && typeof ts.toMillis==='function') return new Date(ts.toMillis()).toISOString().slice(0,10);
+  }catch(e){}
+  const raw=String(fecha||'');
+  const m=raw.match(/(\d{4}-\d{2}-\d{2})/);
+  if(m) return m[1];
+  const dmy=raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if(dmy) return dmy[3]+'-'+dmy[2]+'-'+dmy[1];
+  return '';
+}
 function _idFilaMovBanc(l, idx){
   const sl=String(l.asesor||'').toLowerCase().replace(/[^a-z0-9]+/g,'-');
-  return sl+'__'+String(l.metodo||'').toLowerCase()+'__'+Number(l.valor||0).toFixed(2)+'__'+idx;
+  const dia=_isoDiaMB(l.fecha, l.ts) || String(idx||0);
+  return sl+'__'+String(l.metodo||'').toLowerCase()+'__'+Number(l.valor||0).toFixed(2)+'__'+dia;
+}
+function _claveFlexibleMB(f){
+  const sl=String(f.asesor||f.nombre||'').toLowerCase().replace(/[^a-z0-9]+/g,'-');
+  const met=String(f.metodo||'').toLowerCase();
+  const val=Number(f.valor||0).toFixed(2);
+  return sl+'__'+met+'__'+val;
 }
 let _mbBloqueado=false;
 async function renderMovimientosBancarios(){
@@ -1348,25 +1368,47 @@ async function renderMovimientosBancarios(){
     if(na!==0) return na;
     return String(a.metodo).localeCompare(String(b.metodo),'es');
   });
-  let guardado={};
-  try{
-    if(typeof db!=='undefined'){
-      const id=_idMovimientosBancarios();
+  let guardado={ filas:[] };
+  async function _leerGuardadoMB(id){
+    const out={};
+    try{
       const snapCierre=await db.collection('cierresDelDia').doc(id).get();
       const dataCierre=snapCierre.exists ? (snapCierre.data()||{}) : {};
       if(dataCierre.movimientosBancarios && typeof dataCierre.movimientosBancarios==='object'){
-        guardado=dataCierre.movimientosBancarios||{};
-      } else {
-        try{
-          const snap=await db.collection('movimientosBancarios').doc(id).get();
-          if(snap.exists) guardado=snap.data()||{};
-        }catch(errCol){ console.warn('movimientosBancarios lectura coleccion:', errCol); }
+        return dataCierre.movimientosBancarios||{};
       }
+    }catch(e){}
+    try{
+      const snap=await db.collection('movimientosBancarios').doc(id).get();
+      if(snap.exists) return snap.data()||{};
+    }catch(e){}
+    return out;
+  }
+  try{
+    if(typeof db!=='undefined'){
+      const ids=new Set([_idMovimientosBancarios()]);
+      _diasDelRangoFiltroMB().forEach(dia=>ids.add(dia+'_'+dia));
+      const bloques=await Promise.all([...ids].map(_leerGuardadoMB));
+      const filasMerge=[];
+      bloques.forEach(b=>{
+        if(b && b.bloqueado) guardado.bloqueado=true;
+        if(b && b.actualizadoPor) guardado.actualizadoPor=b.actualizadoPor;
+        (b.filas||[]).forEach(f=>filasMerge.push(f));
+      });
+      guardado.filas=filasMerge;
     }
   }catch(err){ console.warn('movimientosBancarios lectura:', err); }
   _mbBloqueado=!!guardado.bloqueado;
   const porId={};
-  (guardado.filas||[]).forEach(f=>{ if(f && f.id) porId[f.id]=f; });
+  (guardado.filas||[]).forEach(f=>{
+    if(!f) return;
+    if(f.id) porId[f.id]=f;
+    porId[_claveFlexibleMB(f)]=f;
+    if(f.asesor && f.metodo){
+      const alt=_idFilaMovBanc(f,0);
+      if(!porId[alt]) porId[alt]=f;
+    }
+  });
   const total=lineas.reduce((s,l)=>s+(Number(l.valor)||0),0);
   if(totalEl) totalEl.textContent='$'+total.toFixed(2);
   if(!lineas.length){
@@ -1374,7 +1416,8 @@ async function renderMovimientosBancarios(){
   } else {
     tbody.innerHTML=lineas.map((l,idx)=>{
       const id=_idFilaMovBanc(l,idx);
-      const saved=porId[id]||{};
+      const flex=_claveFlexibleMB({asesor:l.asesor, metodo:l.metodo, valor:l.valor});
+      const saved=porId[id] || porId[flex] || {};
       const cuenta=saved.cuenta||'';
       const banco=saved.banco||'';
       const dis=_mbBloqueado?'disabled':'';
