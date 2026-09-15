@@ -464,20 +464,23 @@
           <div class="table-header">
             <div class="table-title">🏦 Movimientos Bancarios</div>
             <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn-filter" id="mbBtnEditar" style="background:#0b5fff;display:none" onclick="habilitarEdicionMovimientosBancarios()">Editar</button>
               <button class="btn-filter" id="mbBtnGuardar" style="background:#0f7c38" onclick="guardarMovimientosBancarios()">Guardar información</button>
               <button class="btn-filter" id="mbBtnImprimir" style="background:#0f7c38;display:flex;align-items:center;gap:6px" onclick="imprimirMovimientosBancarios()">Imprimir PDF</button>
             </div>
           </div>
-          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Valor y método salen solos de Liquidación. Cuenta: Angel Fonseca, Ana Luisa o Grupo Fonseca. Banco: Pichincha, Guayaquil u “Otro banco…” para escribir el nombre. Al guardar se bloquea.</div>
+          <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Valor, método y fecha-hora salen de pedidos, pagos y depósitos de Liquidación, según el filtro de fecha/asesor de arriba. Cuenta: Angel Fonseca, Ana Luisa o Grupo Fonseca. Banco: Pichincha, Guayaquil u “Otro banco…”. Tras guardar puedes pulsar Editar.</div>
           <datalist id="mbListaBancos">
             <option value="Pichincha"></option>
             <option value="Guayaquil"></option>
           </datalist>
           <div id="mbStatus" style="font-size:12px;padding:0 1.25rem 10px;color:var(--muted)"></div>
+          <div id="mbFiltroPagoBar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:0 1.25rem 12px;font-size:12px"></div>
           <div style="padding:0 1.25rem 1.25rem;overflow-x:auto">
             <table class="cierre-prod-table" id="mbTabla">
               <thead>
                 <tr>
+                  <th>Fecha</th>
                   <th>Asesor</th>
                   <th style="text-align:right">Valor</th>
                   <th>Método de pago</th>
@@ -489,6 +492,7 @@
               <tfoot>
                 <tr>
                   <td style="font-weight:800">TOTAL</td>
+                  <td></td>
                   <td id="mbTotal" style="text-align:right;font-weight:800">$0.00</td>
                   <td colspan="3"></td>
                 </tr>
