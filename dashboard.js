@@ -1094,6 +1094,66 @@ function _esMetodoBancario(forma){
   if(f==='depósito' || f==='deposito') return 'Depósito';
   return '';
 }
+function _normMetodoMB(forma){
+  const f=String(forma||'').trim().toLowerCase();
+  if(!f || f==='mixto') return '';
+  if(f.includes('contad') || f==='efectivo') return 'Contado';
+  if(f.includes('crédit') || f.includes('credit')) return 'Crédito';
+  if(f.includes('transfer')) return 'Transferencia';
+  if(f.includes('cheque')) return 'Cheque';
+  if(f.includes('dep')) return 'Depósito';
+  return '';
+}
+const MB_FILTRO_FORMAS = ['Contado','Crédito','Transferencia','Cheque','Depósito'];
+let _mbFiltroExcluidos = new Set();
+function _mbFormasActivas(){
+  return MB_FILTRO_FORMAS.filter(f => !_mbFiltroExcluidos.has(f));
+}
+function _asesorMatchMB(nombre, sel){
+  if(!sel) return true;
+  const n=_nombreCortoAsesor(nombre).toLowerCase();
+  const s=_nombreCortoAsesor(sel).toLowerCase();
+  const full=String(nombre||'').trim().toLowerCase();
+  const selv=String(sel||'').trim().toLowerCase();
+  return full===selv || n===s || full.includes(s) || selv.includes(n);
+}
+function _diasDelRangoFiltroMB(){
+  const hoy = (typeof fechaHoy==='function') ? fechaHoy() : new Date().toISOString().slice(0,10);
+  let desde = document.getElementById('filtroFecha')?.value || '';
+  let hasta = document.getElementById('filtroFechaHasta')?.value || hoy;
+  if(!hasta || hasta>hoy) hasta=hoy;
+  if(!desde){
+    const d=new Date(hasta+'T00:00:00');
+    d.setDate(d.getDate()-40);
+    desde=d.toISOString().slice(0,10);
+  }
+  const out=[];
+  const cur=new Date(desde+'T00:00:00');
+  const end=new Date(hasta+'T00:00:00');
+  let guard=0;
+  while(cur<=end && guard<62){
+    out.push(cur.toISOString().slice(0,10));
+    cur.setDate(cur.getDate()+1);
+    guard++;
+  }
+  return out;
+}
+function renderFiltroPagoMovBanc(){
+  const bar=document.getElementById('mbFiltroPagoBar');
+  if(!bar) return;
+  const activos=_mbFormasActivas();
+  bar.innerHTML = '<span style="font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-right:4px">Forma de pago</span>' +
+    MB_FILTRO_FORMAS.map(f=>{
+      const on=activos.includes(f);
+      return `<label style="display:inline-flex;align-items:center;gap:6px;background:${on?'#e8f6f3':'#f3f4f6'};border:1.5px solid ${on?'#0a7c6e':'#d5dbe3'};border-radius:999px;padding:4px 10px;cursor:pointer;font-weight:700;color:#1a3a5c">
+        <input type="checkbox" ${on?'checked':''} onchange="toggleFiltroPagoMB('${f}', this.checked)" style="accent-color:#0a7c6e"> ${f}
+      </label>`;
+    }).join('');
+}
+function toggleFiltroPagoMB(valor, marcado){
+  if(marcado) _mbFiltroExcluidos.delete(valor); else _mbFiltroExcluidos.add(valor);
+  renderMovimientosBancarios();
+}
 const MB_CUENTAS = ['Angel Fonseca','Ana Luisa','Grupo Fonseca'];
 const MB_BANCOS = ['Pichincha','Guayaquil'];
 function _htmlSelectCuentaMB(valor, dis){
@@ -1186,28 +1246,36 @@ function _msMovBanc(l){
 function _lineasMovimientosDesdeDatos(){
   const lineas=[];
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
+  const activas = new Set(_mbFormasActivas());
+  function pushLinea(asesor, valor, metodo, fecha, ts){
+    if(!metodo || !(Number(valor)>0)) return;
+    if(!_asesorMatchMB(asesor, asesorSel)) return;
+    if(activas.size && !activas.has(metodo)) return;
+    lineas.push({asesor, valor:Number(valor), metodo, fecha:fecha||'', ts:ts||null});
+  }
   (_pedidosRaw||[]).forEach(p=>{
     const asesor=p.empleado || 'Sin asignar';
-    if(asesorSel && asesor!==asesorSel) return;
     const fecha=p.fecha||'';
     const ts=p.creadoEn||null;
     if (p.pagos !== null && p.pagos !== undefined) {
       (p.pagos||[]).forEach(pg=>{
-        const metodo=_esMetodoBancario(pg.forma);
-        const monto=parseFloat(pg.monto||0)||0;
-        if(metodo && monto>0) lineas.push({asesor, valor:monto, metodo, fecha, ts});
+        const metodo=_normMetodoMB(pg.forma) || _esMetodoBancario(pg.forma);
+        pushLinea(asesor, parseFloat(pg.monto||0)||0, metodo, fecha, ts);
       });
+      const cred=parseFloat(p.creditoPendiente||0)||0;
+      if(cred>0.004) pushLinea(asesor, cred, 'Crédito', fecha, ts);
     } else {
-      const metodo=_esMetodoBancario(p.formapago);
+      const metodo=_normMetodoMB(p.formapago) || _esMetodoBancario(p.formapago);
       const tot=parseFloat(p.total||0)||0;
-      if(metodo && tot>0) lineas.push({asesor, valor:tot, metodo, fecha, ts});
+      if(metodo) pushLinea(asesor, tot, metodo, fecha, ts);
+      else if(String(p.formapago||'').toLowerCase()==='mixto' && tot>0){
+        /* sin desglose: no inventar */
+      }
     }
   });
   (_pagosRaw||[]).forEach(p=>{
-    if(asesorSel && (p.empleado||'')!==asesorSel) return;
-    const metodo=_esMetodoBancario(p.forma);
-    const monto=parseFloat(p.monto||0)||0;
-    if(metodo && monto>0) lineas.push({asesor:p.empleado||'Sin asignar', valor:monto, metodo, fecha:p.fecha||'', ts:p.creadoEn||null});
+    const metodo=_normMetodoMB(p.forma) || _esMetodoBancario(p.forma);
+    pushLinea(p.empleado||'Sin asignar', parseFloat(p.monto||0)||0, metodo, p.fecha||'', p.creadoEn||null);
   });
   return lineas;
 }
@@ -1218,34 +1286,58 @@ function _idFilaMovBanc(l, idx){
 let _mbBloqueado=false;
 async function renderMovimientosBancarios(){
   const tbody=document.getElementById('mbTbody');
-  const totalEl=document.getElementById('mbTotal');
+  let totalEl=document.getElementById('mbTotal');
   const st=document.getElementById('mbStatus');
   const btn=document.getElementById('mbBtnGuardar');
   if(!tbody) return;
+  renderFiltroPagoMovBanc();
+  const theadRow=document.querySelector('#mbTabla thead tr');
+  if(theadRow){
+    theadRow.innerHTML='<th>Fecha</th><th>Asesor</th><th style="text-align:right">Valor</th><th>Método de pago</th><th>Nombre de cuenta</th><th>Banco</th>';
+  }
+  const tfootRow=document.querySelector('#mbTabla tfoot tr');
+  if(tfootRow){
+    tfootRow.innerHTML='<td style="font-weight:800">TOTAL</td><td></td><td id="mbTotal" style="text-align:right;font-weight:800">$0.00</td><td colspan="3"></td>';
+  }
+  const totalEl2=document.getElementById('mbTotal');
+  if(totalEl2) totalEl=totalEl2;
   let lineas=_lineasMovimientosDesdeDatos();
   try{
     if(typeof db!=='undefined'){
       const rutasSet=new Set([...(Array.isArray(_asesoresCache)?_asesoresCache:[]), ...(_pedidosRaw||[]).map(p=>p.empleado||''), ...(_pagosRaw||[]).map(p=>p.empleado||'')].filter(Boolean));
-      const entregas=await Promise.all([...rutasSet].map(async nombre=>{
-        try{
-          const snap=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
-          return {nombre, data: snap.exists ? snap.data() : {}};
-        }catch(err){ return {nombre, data:{}}; }
-      }));
       const asesorSelDep = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-      entregas.forEach(({nombre,data})=>{
-        if(asesorSelDep && nombre!==asesorSelDep) return;
+      const dias=_diasDelRangoFiltroMB();
+      const ids=[];
+      [...rutasSet].forEach(nombre=>{
+        if(!_asesorMatchMB(nombre, asesorSelDep)) return;
+        const sl=_slugAsesorLiq(nombre);
+        dias.forEach(dia=> ids.push({nombre, id: dia+'_'+dia+'__'+sl, dia}));
+        const rangoId=_idEntregaLiquidacion(nombre);
+        ids.push({nombre, id: rangoId, dia: document.getElementById('filtroFecha')?.value||''});
+      });
+      const seenId=new Set();
+      const uniq=ids.filter(x=>{ if(seenId.has(x.id)) return false; seenId.add(x.id); return true; });
+      const entregas=await Promise.all(uniq.map(async item=>{
+        try{
+          const snap=await db.collection('cierresLiquidacion').doc(item.id).get();
+          return {nombre:item.nombre, dia:item.dia, data: snap.exists ? snap.data() : {}};
+        }catch(err){ return {nombre:item.nombre, dia:item.dia, data:{}}; }
+      }));
+      const activasDep=new Set(_mbFormasActivas());
+      const seenDep=new Set();
+      entregas.forEach(({nombre,dia,data})=>{
+        if(!data || !Object.keys(data).length) return;
         const deps=Array.isArray(data.depositos)&&data.depositos.length?data.depositos:null;
-        if(deps){
-          deps.forEach(dep=>{
-            const monto=dep && dep.marcado ? (Number(dep.monto)||0) : 0;
-            if(monto>0) lineas.push({asesor:nombre, valor:monto, metodo:'Depósito', fecha:data.desde||data.fecha||'', ts:data.actualizadoEn||null});
-          });
-        } else {
-          const dep=data.deposito;
+        const lista=deps || (data.deposito ? [data.deposito] : []);
+        lista.forEach((dep,ix)=>{
           const monto=dep && dep.marcado ? (Number(dep.monto)||0) : 0;
-          if(monto>0) lineas.push({asesor:nombre, valor:monto, metodo:'Depósito', fecha:data.desde||data.fecha||'', ts:data.actualizadoEn||null});
-        }
+          if(!(monto>0)) return;
+          if(activasDep.size && !activasDep.has('Depósito')) return;
+          const key=nombre+'|'+monto.toFixed(2)+'|'+(dia||data.desde||'')+'|'+ix;
+          if(seenDep.has(key)) return;
+          seenDep.add(key);
+          lineas.push({asesor:nombre, valor:monto, metodo:'Depósito', fecha:dia||data.desde||data.fecha||'', ts:data.actualizadoEn||null});
+        });
       });
     }
   }catch(err){ console.warn('movimientosBancarios depositos:', err); }
