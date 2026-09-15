@@ -2402,7 +2402,7 @@ async function cargarDatos(mostrarSpinner = true) {
    FILTROS DASHBOARD
 ════════════════════════════════════════ */
 function filtrarHoy() { const hoy = fechaHoy(); document.getElementById('filtroFecha').value = hoy; document.getElementById('filtroFechaHasta').value = hoy; iniciarListenersDashboard(); }
-function limpiarFiltro() { document.getElementById('filtroFecha').value = ''; document.getElementById('filtroFechaHasta').value = fechaHoy(); if (document.getElementById('filtroAsesor')) document.getElementById('filtroAsesor').value = ''; iniciarListenersDashboard(); }
+function limpiarFiltro() { document.getElementById('filtroFecha').value = ''; document.getElementById('filtroFechaHasta').value = fechaHoy(); if (document.getElementById('filtroAsesor')) document.getElementById('filtroAsesor').value = ''; _productoFiltroSeleccionado = ''; iniciarListenersDashboard(); }
 /* [NEW] Texto legible del rango de fecha actualmente filtrado, para usar en encabezados de PDF */
 function _textoRangoFecha() {
   const desde = document.getElementById('filtroFecha').value;
@@ -2481,7 +2481,8 @@ function renderDashboard() {
   const seccionResumenVisible = document.getElementById('seccion-resumen')?.classList.contains('active');
   if (seccionResumenVisible) renderCharts(pedidos, pedidosConTotal);
   pedidosDetalleActuales = pedidos;
-  _pedidosTablaFiltrados = _filtrarPorPagoChecklist(pedidos);
+  renderFiltroProductoSelect(pedidos); // [NEW] filtro por producto en Detalle de Pedidos
+  _pedidosTablaFiltrados = _filtrarPorPagoChecklist(_filtrarPorProducto(pedidos));
   renderFiltroPagoDropdown(pedidos);
   renderTabla(_pedidosTablaFiltrados);
   // [FIX] LA PANTALLA SE CONGELABA con muchos clientes acumulados: renderResumenPorCliente()
@@ -2677,6 +2678,29 @@ document.addEventListener('click', (ev) => {
     dd.classList.remove('open');
   }
 });
+
+/* [NEW] Filtro por Producto en Detalle de Pedidos.
+   Se arma dinámicamente desde los productos presentes en el rango de fecha/asesor
+   ya filtrado (igual alcance que "Pago": solo afecta la tabla y el PDF, no los
+   KPIs ni los gráficos de Resumen General). '' = todos los productos. */
+let _productoFiltroSeleccionado = '';
+function _filtrarPorProducto(pedidos) {
+  if (!_productoFiltroSeleccionado) return pedidos;
+  return pedidos.filter(r => (r['PRODUCTO']||'') === _productoFiltroSeleccionado);
+}
+function renderFiltroProductoSelect(pedidos) {
+  const sel = document.getElementById('filtroProducto');
+  if (!sel) return;
+  const valorActual = sel.value;
+  const productos = Array.from(new Set(pedidos.map(r => r['PRODUCTO']).filter(Boolean))).sort((a,b) => a.localeCompare(b));
+  sel.innerHTML = '<option value="">📦 Todos los productos</option>' + productos.map(p => `<option value="${escHTML(p)}">${escHTML(p)}</option>`).join('');
+  if (productos.includes(valorActual)) sel.value = valorActual; else _productoFiltroSeleccionado = ''; // [NEW] si el producto seleccionado ya no está en el rango filtrado, vuelve a "Todos"
+}
+function onChangeFiltroProducto() {
+  const sel = document.getElementById('filtroProducto');
+  _productoFiltroSeleccionado = sel ? sel.value : '';
+  renderDashboard();
+}
 
 function renderTabla(pedidos) {
   const tbody = document.getElementById('tablaPedidos');
