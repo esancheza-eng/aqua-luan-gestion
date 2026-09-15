@@ -690,7 +690,7 @@ function _htmlTablaCierreDelDia(tablaNum, asesoresId, nombresDisplay, datos, fil
       const guardadoVal = guardado?.[f.etiqueta]?.[id];
       const v = (guardadoVal !== undefined && guardadoVal !== null && guardadoVal !== '') ? (Number(guardadoVal)||0) : (f.valor(datos[rowIdx]) || 0);
       colTotales[fi] += v;
-      return `<td class="${f.destacado?'cierre-matriz-destacado':''}"><input type="text" class="cdd-input" inputmode="decimal" data-etiqueta="${escHTML(f.etiqueta)}" data-asesor="${escHTML(id)}" value="${v.toFixed(2)}" disabled oninput="_filtrarInputMontoLiq(this);_recalcularFilaCierreDelDia(this)"></td>`;
+      return `<td class="${f.destacado?'cierre-matriz-destacado':''}"><input type="text" class="cdd-input" inputmode="decimal" data-etiqueta="${escHTML(f.etiqueta)}" data-asesor="${escHTML(id)}" value="${v.toFixed(2)}" oninput="_filtrarInputMontoLiq(this);_recalcularFilaCierreDelDia(this)"></td>`;
     }).join('');
     return `<tr><td class="cdd-nombre">${escHTML(nombresDisplay[rowIdx]||id)}</td>${celdas}</tr>`;
   }).join('');
@@ -719,16 +719,12 @@ function _recalcularFilaCierreDelDia(input){
   });
 }
 function _setCierreDelDiaEditable(on){
-  document.querySelectorAll('.cdd-input').forEach(el => el.disabled = !on);
-  const ed=document.getElementById('cddBtnEditar');
+  /* El Cierre del Día ya no tiene modo Editar: los campos quedan siempre
+     habilitados y el botón Guardar permanece visible. */
+  document.querySelectorAll('.cdd-input').forEach(el => el.disabled = false);
   const gu=document.getElementById('cddBtnGuardar');
-  const ca=document.getElementById('cddBtnCancelar');
-  if(ed) ed.style.display = on ? 'none' : '';
-  if(gu) gu.style.display = on ? '' : 'none';
-  if(ca) ca.style.display = on ? '' : 'none';
+  if(gu) gu.style.display = '';
 }
-function _editarCierreDelDia(){ _setCierreDelDiaEditable(true); }
-function _cancelarCierreDelDia(){ renderCierreDelDia(); }
 function _confirmarGuardarCierreDelDia(){
   if(!confirm('¿Está seguro que desea guardar el Cierre del Día?')) return;
   _guardarCierreDelDia();
