@@ -980,9 +980,7 @@ async function renderCierreDelDia(){
   // Tabla 2 — Forma de Entrega de Dinero (lee lo guardado por cada asesor en Liquidación)
   const entregas = await Promise.all(rutasFull.map(async nombre=>{
     try{
-      if(typeof db==='undefined') return {};
-      const snap = await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
-      return snap.exists ? snap.data() : {};
+      return await _cargarEntregaCierreAsesor(nombre);
     }catch(err){ console.warn('cierreDelDia lectura entrega:', err); return {}; }
   }));
   const _montoEfectivo = e => (e.efectivo?.marcado ? (Number(e.efectivo.monto)||0) : 0);
@@ -1745,6 +1743,63 @@ function _idEntregaLiquidacion(asesor){
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
   const sl=_slugAsesorLiq(asesor||document.getElementById('filtroAsesor')?.value||'general');
   return desde+'_'+hasta+'__'+sl;
+}
+function _diasISOInclusive(desde, hasta){
+  const out=[];
+  if(!desde || !hasta) return out;
+  const a=new Date(desde+'T12:00:00');
+  const b=new Date(hasta+'T12:00:00');
+  if(isNaN(a.getTime()) || isNaN(b.getTime()) || a>b) return out;
+  for(let d=new Date(a); d<=b; d.setDate(d.getDate()+1)){
+    out.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+  }
+  return out;
+}
+function _fusionarEntregasLiq(docs){
+  const acc={
+    efectivo:{marcado:false, monto:0},
+    depositos:[],
+    transferencia:{marcado:false, monto:0},
+    faltantes:[{monto:0},{monto:0},{monto:0}]
+  };
+  (docs||[]).forEach(e=>{
+    if(!e) return;
+    const ef=(e.efectivo && e.efectivo.marcado) ? (Number(e.efectivo.monto)||0) : 0;
+    if(ef>0){ acc.efectivo.marcado=true; acc.efectivo.monto+=ef; }
+    let deps=[];
+    if(Array.isArray(e.depositos) && e.depositos.length) deps=e.depositos;
+    else if(e.deposito) deps=[e.deposito];
+    deps.forEach(d=>{
+      const m=d && d.marcado ? (Number(d.monto)||0) : 0;
+      if(m>0) acc.depositos.push({marcado:true, monto:m});
+    });
+    const tr=(e.transferencia && e.transferencia.marcado) ? (Number(e.transferencia.monto)||0) : 0;
+    if(tr>0){ acc.transferencia.marcado=true; acc.transferencia.monto+=tr; }
+    (e.faltantes||[]).forEach((f,i)=>{
+      if(i>2) return;
+      acc.faltantes[i].monto += Number(f && f.monto)||0;
+    });
+  });
+  return acc;
+}
+async function _cargarEntregaCierreAsesor(nombre){
+  const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
+  const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+  const sl=_slugAsesorLiq(nombre);
+  if(typeof db==='undefined') return {};
+  const dias=_diasISOInclusive(desde, hasta);
+  const diarios=[];
+  for(const dia of dias){
+    try{
+      const snap=await db.collection('cierresLiquidacion').doc(dia+'_'+dia+'__'+sl).get();
+      if(snap.exists) diarios.push(snap.data()||{});
+    }catch(err){}
+  }
+  if(diarios.length) return _fusionarEntregasLiq(diarios);
+  try{
+    const snap=await db.collection('cierresLiquidacion').doc(desde+'_'+hasta+'__'+sl).get();
+    return snap.exists ? (snap.data()||{}) : {};
+  }catch(err){ return {}; }
 }
 function _boxEntregaAsesor(nombre){
   const boxes=[...document.querySelectorAll('.liq-entrega-asesor')];
