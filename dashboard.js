@@ -789,11 +789,11 @@ async function renderLiquidacionDash(){
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
           <span class="liq-total-verde" style="font-weight:800;font-size:16px;color:${totalEntregar>=0?'#0f7c38':'#a93226'}">$${totalEntregar.toFixed(2)}</span>
-          <input type="text" class="liq-ajuste-saldos" inputmode="decimal" placeholder="0.00" value="${ajusteVal}"
+          <input type="text" class="liq-ajuste-saldos" inputmode="decimal" placeholder="0.00" value="${ajusteVal}" disabled
             style="width:88px;height:34px;border:1.5px solid var(--border);border-radius:8px;padding:0 8px;text-align:right;font-weight:700;background:#fff"
             oninput="_filtrarInputMontoLiq(this);_onAjusteSaldosInput(this)">
           <button type="button" class="liq-btn-guardar-ajuste" onclick="_guardarAjusteSaldosDesdeInput(this)"
-            style="padding:6px 12px;border:none;border-radius:8px;background:#0f7c38;color:#fff;font-weight:700;cursor:pointer;font-size:12px">Guardar</button>
+            style="display:none;padding:6px 12px;border:none;border-radius:8px;background:#0f7c38;color:#fff;font-weight:700;cursor:pointer;font-size:12px">Guardar</button>
         </div>
       </div>
       <div style="padding:10px 16px;font-size:13px">
@@ -1909,8 +1909,13 @@ function _htmlEntregaAsesorBox(nombre, total){
 }
 
 function _filtroLiquidacionEsHoy(){
-  /* Solo Administración, un solo día (Desde=Hasta) y no futuro. Secretaria no edita. */
-  return (typeof _mbPeriodoEditable==='function') ? _mbPeriodoEditable() : false;
+  /* Administración y Secretaria pueden editar liquidación y ajuste de saldos. */
+  if(ROL_ACTUAL!=='admin' && ROL_ACTUAL!=='secretaria') return false;
+  const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+  const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
+  const desde=document.getElementById('filtroFecha')?.value||hasta;
+  if(!hoy) return false;
+  return (!hasta || hasta<=hoy) && (!desde || desde<=hoy);
 }
 function _setEntregaEditable(box, on){
   if(!box) return;
@@ -1918,6 +1923,11 @@ function _setEntregaEditable(box, on){
   if(on && !permitido) on=false;
   box.dataset.editando = on ? '1' : '0';
   box.querySelectorAll('input').forEach(el => { el.disabled = !on; });
+  const card=box.closest('.liq-card-asesor');
+  const aj=card&&card.querySelector('.liq-ajuste-saldos');
+  const btnAj=card&&card.querySelector('.liq-btn-guardar-ajuste');
+  if(aj) aj.disabled=!on;
+  if(btnAj) btnAj.style.display=on?'':'none';
   const add=box.querySelector('.liq-btn-add-falt');
   const addDep=box.querySelector('.liq-btn-add-dep');
   const ed=box.querySelector('.liq-btn-editar');
@@ -1930,8 +1940,9 @@ function _setEntregaEditable(box, on){
   }
   if(ed){
     const esAdmin = (typeof _esAdminMovBanc==='function') ? _esAdminMovBanc() : false;
-    ed.style.display = (esAdmin && !on) ? '' : 'none';
-    ed.title = esAdmin ? 'Editar entrega de liquidación (días anteriores incluidos)' : 'Solo Administración puede editar la liquidación';
+    const puede = (ROL_ACTUAL==='admin' || ROL_ACTUAL==='secretaria');
+    ed.style.display = (puede && !on) ? '' : 'none';
+    ed.title = puede ? 'Editar entrega y ajuste de saldos' : 'Sin permiso para editar';
   }
   if(gu) gu.style.display = on ? '' : 'none';
   if(ca) ca.style.display = on ? '' : 'none';
@@ -2165,8 +2176,12 @@ async function _guardarEntregaAsesor(nombre){
     const depositos=(u.depositos||[]).map(d=>({marcado:!!d.marcado, monto:d.montoOk?Number(d.monto)||0:0}));
     const depSuma=_sumaDepositosEntrega(u);
     const tot=parseFloat(box.dataset.total||0)||0;
+    const card=box.closest('.liq-card-asesor');
+    const ajusteInp=card&&card.querySelector('.liq-ajuste-saldos');
+    const ajusteVal=parseFloat(String((ajusteInp&&ajusteInp.value)||'0').replace(',','.'))||0;
     await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).set({
       asesor:nombre,
+      ajusteSaldos:ajusteVal,
       efectivo:u.efectivo,
       deposito:{marcado:depSuma>0, monto:depSuma},
       depositos,
