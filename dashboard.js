@@ -1085,9 +1085,10 @@ function _mbPeriodoEsHoy(){
   const desde=document.getElementById('filtroFecha')?.value||hasta;
   return !!hoy && desde===hoy && hasta===hoy;
 }
-/* Excepción puntual: permitir editar también el 15-sep-2026 (ayer).
-   El resto de fechas anteriores sigue bloqueado. */
-const MB_FECHA_EDITABLE_EXTRA='2026-09-15';
+/* Guardar / editar habilitado desde el 15-sep-2026 inclusive hasta hoy.
+   Fechas anteriores al 15 siguen bloqueadas. Imprimir no se bloquea. */
+const MB_FECHA_EDITABLE_DESDE='2026-09-15';
+const MB_FECHA_EDITABLE_EXTRA=MB_FECHA_EDITABLE_DESDE;
 function _mbDiaFiltroUnico(){
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
   const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
@@ -1095,11 +1096,15 @@ function _mbDiaFiltroUnico(){
   if(!desde || !hasta || desde!==hasta) return '';
   return desde;
 }
-function _mbPeriodoEditable(){
+function _periodoEditableDesde15(){
   const dia=_mbDiaFiltroUnico();
   if(!dia) return false;
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
-  return dia===hoy || dia===MB_FECHA_EDITABLE_EXTRA;
+  if(!hoy) return false;
+  return dia>=MB_FECHA_EDITABLE_DESDE && dia<=hoy;
+}
+function _mbPeriodoEditable(){
+  return _periodoEditableDesde15();
 }
 function _idMovimientosBancarios(){
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
@@ -1479,21 +1484,21 @@ async function renderMovimientosBancarios(){
   if(btnEd){
     btnEd.style.display=(esEditable && _mbBloqueado)?'inline-flex':'none';
     btnEd.disabled=!esEditable;
-    btnEd.title=esEditable?(esExtra?'Editar cuenta y banco del 15 de septiembre':'Editar cuenta y banco del día de hoy'):'Solo se puede editar hoy o el 15 de septiembre';
+    btnEd.title=esEditable?'Editar cuenta y banco (habilitado desde el 15 de septiembre)':'Solo se puede editar desde el 15 de septiembre hasta hoy';
   }
   if(st){
     if(!esEditable){
-      st.textContent='Consulta de fechas anteriores: cuenta y banco están bloqueados. Solo se puede editar hoy o el 15 de septiembre.';
+      st.textContent='Consulta de fechas anteriores al 15 de septiembre: cuenta y banco están bloqueados. Guardar/editar habilitado desde el 15/09 hasta hoy.';
     } else if(_mbBloqueado){
-      st.textContent=('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — pulsa Editar para cambiar cuenta o banco'+(esExtra?' (15 de septiembre).':' (solo hoy).'));
+      st.textContent=('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — pulsa Editar para cambiar cuenta o banco (desde el 15/09).');
     } else {
-      st.textContent=esExtra?'Elige la cuenta y el banco. Edición habilitada para el 15 de septiembre.':'Elige la cuenta y el banco. Solo el día de hoy se puede guardar o editar.';
+      st.textContent='Elige la cuenta y el banco. Guardar e imprimir habilitados desde el 15 de septiembre hasta hoy.';
     }
   }
 }
 function habilitarEdicionMovimientosBancarios(){
   if(!_mbPeriodoEditable()){
-    alert('Solo se puede editar Movimientos Bancarios del día de hoy o del 15 de septiembre.\nLas demás fechas quedan bloqueadas.');
+    alert('Solo se puede editar Movimientos Bancarios desde el 15 de septiembre hasta hoy.\nLas fechas anteriores al 15 quedan bloqueadas.');
     return;
   }
   if(!_mbBloqueado) return;
@@ -1504,11 +1509,11 @@ function habilitarEdicionMovimientosBancarios(){
   const btnEd=document.getElementById('mbBtnEditar');
   if(btnEd) btnEd.style.display='none';
   const st=document.getElementById('mbStatus');
-  if(st) st.textContent=(_mbDiaFiltroUnico()===MB_FECHA_EDITABLE_EXTRA)?'Modo edición (15 de septiembre). Cambia cuenta o banco y pulsa Guardar información.':'Modo edición (solo hoy). Cambia cuenta o banco y pulsa Guardar información.';
+  if(st) st.textContent='Modo edición (desde el 15/09). Cambia cuenta o banco y pulsa Guardar información.';
 }
 async function guardarMovimientosBancarios(){
   if(!_mbPeriodoEditable()){
-    alert('Solo se puede guardar Movimientos Bancarios del día de hoy o del 15 de septiembre.\nLas demás fechas están bloqueadas.');
+    alert('Solo se puede guardar Movimientos Bancarios desde el 15 de septiembre hasta hoy.\nLas fechas anteriores al 15 están bloqueadas.');
     return;
   }
   if(_mbBloqueado){ alert('Esta hoja ya fue guardada y no se puede editar.'); return; }
@@ -1674,7 +1679,7 @@ function _htmlEntregaAsesorBox(nombre, total){
 }
 
 function _filtroLiquidacionEsHoy(){
-  return (typeof _mbPeriodoEsHoy==='function') ? _mbPeriodoEsHoy() : false;
+  return (typeof _periodoEditableDesde15==='function') ? _periodoEditableDesde15() : false;
 }
 function _setEntregaEditable(box, on){
   if(!box) return;
@@ -1694,14 +1699,14 @@ function _setEntregaEditable(box, on){
   }
   if(ed){
     ed.style.display = (permitido && !on) ? '' : 'none';
-    ed.title = permitido ? 'Editar entrega de hoy' : 'Solo se puede editar la liquidación del día de hoy';
+    ed.title = permitido ? 'Editar entrega (desde el 15/09)' : 'Solo se puede editar la liquidación desde el 15 de septiembre hasta hoy';
   }
   if(gu) gu.style.display = on ? '' : 'none';
   if(ca) ca.style.display = on ? '' : 'none';
 }
 function _editarEntregaAsesor(nombre){
   if(!_filtroLiquidacionEsHoy()){
-    alert('Solo se puede editar la liquidación del día de hoy.\nLas fechas anteriores quedan bloqueadas.');
+    alert('Solo se puede editar la liquidación desde el 15 de septiembre hasta hoy.\nLas fechas anteriores al 15 quedan bloqueadas.');
     return;
   }
   const box=_boxEntregaAsesor(nombre);
@@ -1712,7 +1717,7 @@ function _cancelarEntregaAsesor(nombre){
 }
 function _confirmarGuardarEntregaAsesor(nombre){
   if(!_filtroLiquidacionEsHoy()){
-    alert('Solo se puede guardar la liquidación del día de hoy.\nLas fechas anteriores están bloqueadas.');
+    alert('Solo se puede guardar la liquidación desde el 15 de septiembre hasta hoy.\nLas fechas anteriores al 15 están bloqueadas.');
     return;
   }
   if(!confirm('¿Está seguro que desea guardar la entrega de liquidación de '+nombre+'?')) return;
@@ -1894,7 +1899,7 @@ async function _cargarEntregaAsesor(nombre){
     const st=box.querySelector('.liq-entrega-status');
     if(st){
       if(!_filtroLiquidacionEsHoy()){
-        st.textContent=(snap.exists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+'Consulta de fechas anteriores: no se puede editar.';
+        st.textContent=(snap.exists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+'Consulta de fechas anteriores al 15/09: no se puede editar.';
       } else {
         st.textContent=snap.exists?'Entrega guardada de este asesor.':'Sin entrega registrada aún.';
       }
@@ -1917,7 +1922,7 @@ async function _guardarEntregaAsesor(nombre){
   if(!box || typeof db==='undefined') return;
   if(!_filtroLiquidacionEsHoy()){
     const st0=box.querySelector('.liq-entrega-status');
-    if(st0) st0.textContent='Fechas anteriores bloqueadas: no se guarda.';
+    if(st0) st0.textContent='Fechas anteriores al 15/09 bloqueadas: no se guarda.';
     return;
   }
   const u=_leerEntregaDesdeBox(box);
