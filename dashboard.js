@@ -1131,10 +1131,12 @@ function _periodoEditableDesde15(){
 }
 function _mbPeriodoEditable(){
   if(typeof _esAdminMovBanc==='function' && !_esAdminMovBanc()) return false;
-  const dia=_mbDiaFiltroUnico();
-  if(!dia) return false;
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
-  return !!hoy && dia<=hoy;
+  const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
+  const desde=document.getElementById('filtroFecha')?.value||hasta;
+  if(!hoy) return false;
+  if(!desde && !hasta) return true;
+  return (!hasta || hasta<=hoy) && (!desde || desde<=hoy);
 }
 function _esAdminMovBanc(){
   return ROL_ACTUAL === 'admin';
@@ -1267,7 +1269,15 @@ function _valorBancoFilaMB(tr){
   if(sel && sel.value) return sel.value.trim();
   return (tr.querySelector('.mb-banco')?.value||'').trim();
 }
-function _fmtFechaHoraMB(fecha, ts){
+function _diaLocalDesdeFecha(fecha){
+  const raw=String(fecha||'').trim();
+  const iso=raw.match(/(\d{4}-\d{2}-\d{2})/);
+  if(iso) return iso[1];
+  const dmy=raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if(dmy) return dmy[3]+'-'+dmy[2]+'-'+dmy[1];
+  return '';
+}
+function _horaLocalDesdeTs(ts){
   let d=null;
   try{
     if(ts && typeof ts.toDate==='function') d=ts.toDate();
@@ -1275,21 +1285,28 @@ function _fmtFechaHoraMB(fecha, ts){
     else if(ts instanceof Date) d=ts;
     else if(typeof ts==='number' && ts>0) d=new Date(ts);
   }catch(e){}
-  if(d && !isNaN(d.getTime())){
-    const dd=String(d.getDate()).padStart(2,'0');
-    const mm=String(d.getMonth()+1).padStart(2,'0');
-    const yy=d.getFullYear();
-    const hh=String(d.getHours()).padStart(2,'0');
-    const mi=String(d.getMinutes()).padStart(2,'0');
-    return dd+'/'+mm+'/'+yy+' '+hh+':'+mi;
+  if(!d || isNaN(d.getTime())) return '';
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function _fmtFechaHoraMB(fecha, ts){
+  /* La columna FECHA debe respetar p.fecha (día del pedido), no creadoEn en UTC.
+     Si no, un pedido del 04 guardado a las 08:45 del 05 aparece como 05. */
+  let dia=_diaLocalDesdeFecha(fecha);
+  if(!dia){
+    let d=null;
+    try{
+      if(ts && typeof ts.toDate==='function') d=ts.toDate();
+      else if(ts && typeof ts.toMillis==='function') d=new Date(ts.toMillis());
+    }catch(e){}
+    if(d && !isNaN(d.getTime())){
+      dia=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    }
   }
-  const raw=String(fecha||'').trim();
-  if(!raw) return '—';
-  if(/^\d{4}-\d{2}-\d{2}/.test(raw)){
-    const p=raw.slice(0,10).split('-');
-    return p[2]+'/'+p[1]+'/'+p[0];
-  }
-  return raw;
+  if(!dia) return '—';
+  const p=dia.split('-');
+  const base=p[2]+'/'+p[1]+'/'+p[0];
+  const hh=_horaLocalDesdeTs(ts);
+  return hh ? (base+' '+hh) : base;
 }
 function _msMovBanc(l){
   const ts=l && l.ts;
@@ -1338,18 +1355,31 @@ function _lineasMovimientosDesdeDatos(){
     const metodo=_normMetodoMB(p.forma) || _esMetodoBancario(p.forma);
     pushLinea(p.empleado||'Sin asignar', parseFloat(p.monto||0)||0, metodo, p.fecha||'', p.creadoEn||null);
   });
+  const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+  const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
+  const desde=document.getElementById('filtroFecha')?.value||hasta;
+  if(desde || hasta){
+    return lineas.filter(l=>{
+      const dia=_diaLocalDesdeFecha(l.fecha) || _isoDiaMB(l.fecha, null);
+      if(!dia) return false;
+      if(desde && dia<desde) return false;
+      if(hasta && dia>hasta) return false;
+      return true;
+    });
+  }
   return lineas;
 }
 function _isoDiaMB(fecha, ts){
+  const dia=_diaLocalDesdeFecha(fecha);
+  if(dia) return dia;
   try{
-    if(ts && typeof ts.toDate==='function') return ts.toDate().toISOString().slice(0,10);
-    if(ts && typeof ts.toMillis==='function') return new Date(ts.toMillis()).toISOString().slice(0,10);
+    let d=null;
+    if(ts && typeof ts.toDate==='function') d=ts.toDate();
+    else if(ts && typeof ts.toMillis==='function') d=new Date(ts.toMillis());
+    if(d && !isNaN(d.getTime())){
+      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    }
   }catch(e){}
-  const raw=String(fecha||'');
-  const m=raw.match(/(\d{4}-\d{2}-\d{2})/);
-  if(m) return m[1];
-  const dmy=raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-  if(dmy) return dmy[3]+'-'+dmy[2]+'-'+dmy[1];
   return '';
 }
 function _idFilaMovBanc(l, idx){
@@ -1537,7 +1567,7 @@ function habilitarEdicionMovimientosBancarios(){
     return;
   }
   if(!_mbPeriodoEditable()){
-    alert('Para editar Movimientos Bancarios elige un solo día en Desde y Hasta (el mismo).');
+    alert('Solo Administración puede editar Movimientos Bancarios.');
     return;
   }
   _mbBloqueado=false;
@@ -1555,7 +1585,7 @@ async function guardarMovimientosBancarios(){
     return;
   }
   if(!_mbPeriodoEditable()){
-    alert('Para guardar Movimientos Bancarios elige un solo día en Desde y Hasta (el mismo).');
+    alert('Solo Administración puede guardar Movimientos Bancarios.');
     return;
   }
   if(_mbBloqueado){ alert('Esta hoja está bloqueada. Pulsa Editar para modificar cuenta o banco.'); return; }
@@ -1750,7 +1780,7 @@ function _setEntregaEditable(box, on){
 }
 function _editarEntregaAsesor(nombre){
   if(!_filtroLiquidacionEsHoy()){
-    alert('Solo Administración puede editar la liquidación.\nFiltra un solo día (Desde y Hasta iguales).');
+    alert('Solo Administración puede editar la liquidación.');
     return;
   }
   const box=_boxEntregaAsesor(nombre);
@@ -1761,7 +1791,7 @@ function _cancelarEntregaAsesor(nombre){
 }
 function _confirmarGuardarEntregaAsesor(nombre){
   if(!_filtroLiquidacionEsHoy()){
-    alert('Solo Administración puede guardar la liquidación.\nFiltra un solo día (Desde y Hasta iguales).');
+    alert('Solo Administración puede guardar la liquidación.');
     return;
   }
   if(!confirm('¿Está seguro que desea guardar la entrega de liquidación de '+nombre+'?')) return;
