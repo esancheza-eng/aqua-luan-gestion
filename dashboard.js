@@ -4350,14 +4350,18 @@ function renderCobranzasClientes(){
       <div class="kpi-card red"><div class="kpi-label">Saldo pendiente</div><div class="kpi-value">$${totSaldo.toFixed(2)}</div><div class="kpi-sub">deuda − cobros (>0)</div></div>`;
   }
   if(!rows.length){
-    tbody.innerHTML='<tr><td colspan="8"><div class="empty-state"><div class="icon">💰</div>No hay cobranzas en este período</div></td></tr>';
+    tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="icon">💰</div>No hay cobranzas en este período</div></td></tr>';
     return;
   }
+  if(typeof _cobranzasSeleccion==='undefined') window._cobranzasSeleccion=new Set();
   tbody.innerHTML=rows.map(c=>{
     const saldoTxt=c.saldo>0.004 ? ('$'+c.saldo.toFixed(2)) : (c.saldo<-0.004 ? ('-$'+Math.abs(c.saldo).toFixed(2)) : '$0.00');
     const color=c.saldo>0.004 ? 'var(--red)' : (c.saldo<-0.004 ? '#0a7c6e' : 'var(--muted)');
-    const key=escHTML(_normNombreCliente(c.nombre));
-    return `<tr style="cursor:pointer" onclick="verDetalleCobranzaCliente('${key.replace(/'/g,'&#39;')}')">
+    const key=_normNombreCliente(c.nombre);
+    const keyEsc=escHTML(key);
+    const checked=(_cobranzasSeleccion&&_cobranzasSeleccion.has(key))?'checked':'';
+    return `<tr style="cursor:pointer" data-cob-key="${keyEsc}" onclick="verDetalleCobranzaCliente('${keyEsc.replace(/'/g,'&#39;')}')">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="cob-chk" data-cob-key="${keyEsc}" ${checked} onchange="toggleCobranzaSeleccion(this)"></td>
       <td style="font-weight:700">${escHTML(c.nombre)}</td>
       <td style="color:var(--muted)">${escHTML(c.telefono||'—')}</td>
       <td>${escHTML(c.asesorCorto)}</td>
@@ -4368,6 +4372,92 @@ function renderCobranzasClientes(){
       <td style="text-align:right;font-weight:800;color:${color}">${saldoTxt}</td>
     </tr>`;
   }).join('');
+}
+
+let _cobranzasSeleccion=new Set();
+function toggleCobranzaSeleccion(el){
+  if(!_cobranzasSeleccion) _cobranzasSeleccion=new Set();
+  const key=el.getAttribute('data-cob-key')||'';
+  if(!key) return;
+  if(el.checked) _cobranzasSeleccion.add(key); else _cobranzasSeleccion.delete(key);
+}
+function toggleTodosCobranzas(el){
+  if(!_cobranzasSeleccion) _cobranzasSeleccion=new Set();
+  document.querySelectorAll('#tablaCobranzasClientes .cob-chk').forEach(chk=>{
+    chk.checked=!!el.checked;
+    const key=chk.getAttribute('data-cob-key')||'';
+    if(!key) return;
+    if(el.checked) _cobranzasSeleccion.add(key); else _cobranzasSeleccion.delete(key);
+  });
+}
+function imprimirCobranzasSeleccionadas(){
+  const keys=_cobranzasSeleccion && _cobranzasSeleccion.size ? _cobranzasSeleccion : null;
+  if(!keys || !keys.size){
+    alert('Selecciona uno o más clientes para imprimir.');
+    return;
+  }
+  let rows=_datosCobranzasClientes();
+  const q=_normNombreCliente(document.getElementById('cobranzasBusqueda')?.value||'');
+  const filtro=document.getElementById('cobranzasFiltroSaldo')?.value||'';
+  if(q){
+    rows=rows.filter(c=>_normNombreCliente(c.nombre).includes(q) || _normNombreCliente(c.telefono).includes(q) || _normNombreCliente(c.asesorCorto).includes(q));
+  }
+  if(filtro==='con_deuda') rows=rows.filter(c=>c.saldo>0.004);
+  if(filtro==='al_dia') rows=rows.filter(c=>Math.abs(c.saldo)<=0.004);
+  if(filtro==='sobrepago') rows=rows.filter(c=>c.saldo<-0.004);
+  rows=rows.filter(c=>keys.has(_normNombreCliente(c.nombre)));
+  if(!rows.length){ alert('No hay filas seleccionadas visibles para imprimir.'); return; }
+  const fecha=(typeof _textoRangoFecha==='function')?_textoRangoFecha():'';
+  const totDeuda=rows.reduce((s,c)=>s+c.deuda,0);
+  const totCobros=rows.reduce((s,c)=>s+c.cobros,0);
+  const totSaldo=rows.reduce((s,c)=>s+c.saldo,0);
+  const filas=rows.map(c=>{
+    const saldoTxt=c.saldo>0.004 ? ('$'+c.saldo.toFixed(2)) : (c.saldo<-0.004 ? ('-$'+Math.abs(c.saldo).toFixed(2)) : '$0.00');
+    return `<tr>
+      <td>${escHTML(c.nombre)}</td>
+      <td>${escHTML(c.telefono||'—')}</td>
+      <td>${escHTML(c.asesorCorto||'—')}</td>
+      <td style="text-align:right">$${c.ventas.toFixed(2)}</td>
+      <td style="text-align:right">$${c.pagadoVenta.toFixed(2)}</td>
+      <td style="text-align:right">$${c.deuda.toFixed(2)}</td>
+      <td style="text-align:right">$${c.cobros.toFixed(2)}</td>
+      <td style="text-align:right">${saldoTxt}</td>
+    </tr>`;
+  }).join('');
+  const logoUrl=location.origin+'/logo-luanaqua.png';
+  const v=window.open('','_blank','width=1000,height=900');
+  v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Consulta Cobranzas — Aqua Luan</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
+    .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:16px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
+    .print-header img{height:46px;width:auto;}
+    .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#1a3a5c;}
+    .print-header p{font-size:11px;color:#888;margin-top:3px;}
+    table{width:100%;border-collapse:collapse;font-size:11px;}
+    th{text-align:left;font-size:9px;letter-spacing:0.04em;text-transform:uppercase;padding:6px 8px;border-bottom:1px solid #d2dae2;color:#888;}
+    td{padding:6px 8px;border-bottom:1px solid #eee;}
+    .total-row{font-weight:800;background:#e6f4f2;}
+    @media print{body{padding:12px;} thead{display:table-header-group;}}
+  </style></head><body>
+  <div class="print-header">
+    <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
+    <div>
+      <h1>Consulta Cobranzas — Clientes</h1>
+      <p>Período: ${escHTML(fecha)} · ${rows.length} cliente(s) · ${escHTML((typeof lineaImpresoPor==='function')?lineaImpresoPor():'')}</p>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Cliente</th><th>Teléfono</th><th>Asesor</th><th style="text-align:right">Ventas</th><th style="text-align:right">Pagado en venta</th><th style="text-align:right">Deuda generada</th><th style="text-align:right">Cobros</th><th style="text-align:right">Saldo</th></tr></thead>
+    <tbody>
+      ${filas}
+      <tr class="total-row"><td colspan="5" style="text-align:right">TOTAL</td><td style="text-align:right">$${totDeuda.toFixed(2)}</td><td style="text-align:right">$${totCobros.toFixed(2)}</td><td style="text-align:right">$${totSaldo.toFixed(2)}</td></tr>
+    </tbody>
+  </table>
+  <script>window.onload=function(){window.print();};<\/script>
+  </body></html>`);
+  v.document.close();
+  if(typeof _dispararImpresion==='function') _dispararImpresion(v);
 }
 function verDetalleCobranzaCliente(key){
   const rows=_datosCobranzasClientes();
