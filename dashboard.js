@@ -1130,7 +1130,11 @@ function _periodoEditableDesde15(){
   return dia>=MB_FECHA_EDITABLE_DESDE && dia<=hoy;
 }
 function _mbPeriodoEditable(){
-  return _periodoEditableDesde15();
+  if(typeof _esAdminMovBanc==='function' && !_esAdminMovBanc()) return false;
+  const dia=_mbDiaFiltroUnico();
+  if(!dia) return false;
+  const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+  return !!hoy && dia<=hoy;
 }
 function _esAdminMovBanc(){
   return ROL_ACTUAL === 'admin';
@@ -1513,13 +1517,13 @@ async function renderMovimientosBancarios(){
   if(btnEd){
     btnEd.style.display=(esEditable && _mbBloqueado)?'inline-flex':'none';
     btnEd.disabled=!esEditable;
-    btnEd.title=esAdmin?(esEditable?'Editar cuenta y banco de registros ya guardados':'Fuera del período editable (desde el 15/09)'):'Solo Administración puede editar Movimientos Bancarios';
+    btnEd.title=esAdmin?(esEditable?'Editar cuenta y banco de registros ya guardados':'Elige un solo día (Desde = Hasta) para editar'):'Solo Administración puede editar Movimientos Bancarios';
   }
   if(st){
     if(!esAdmin){
       st.textContent='Consulta e impresión. Solo Administración puede editar o guardar cuenta y banco.';
     } else if(!esEditable){
-      st.textContent='Consulta de fechas anteriores al 15 de septiembre: cuenta y banco están bloqueados. Guardar/editar habilitado desde el 15/09 hasta hoy.';
+      st.textContent='Para editar, filtra un solo día (Desde y Hasta iguales). Secretaria solo consulta e imprime.';
     } else if(_mbBloqueado){
       st.textContent=('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — pulsa Editar para cambiar cuenta o banco.');
     } else {
@@ -1533,7 +1537,7 @@ function habilitarEdicionMovimientosBancarios(){
     return;
   }
   if(!_mbPeriodoEditable()){
-    alert('Solo se puede editar Movimientos Bancarios desde el 15 de septiembre hasta hoy.\nLas fechas anteriores al 15 quedan bloqueadas.');
+    alert('Para editar Movimientos Bancarios elige un solo día en Desde y Hasta (el mismo).');
     return;
   }
   if(!_mbBloqueado) return;
@@ -1544,7 +1548,7 @@ function habilitarEdicionMovimientosBancarios(){
   const btnEd=document.getElementById('mbBtnEditar');
   if(btnEd) btnEd.style.display='none';
   const st=document.getElementById('mbStatus');
-  if(st) st.textContent='Modo edición (desde el 15/09). Cambia cuenta o banco y pulsa Guardar información.';
+  if(st) st.textContent='Modo edición. Cambia cuenta o banco y pulsa Guardar información.';
 }
 async function guardarMovimientosBancarios(){
   if(!_esAdminMovBanc()){
@@ -1552,7 +1556,7 @@ async function guardarMovimientosBancarios(){
     return;
   }
   if(!_mbPeriodoEditable()){
-    alert('Solo se puede guardar Movimientos Bancarios desde el 15 de septiembre hasta hoy.\nLas fechas anteriores al 15 están bloqueadas.');
+    alert('Para guardar Movimientos Bancarios elige un solo día en Desde y Hasta (el mismo).');
     return;
   }
   if(_mbBloqueado){ alert('Esta hoja está bloqueada. Pulsa Editar para modificar cuenta o banco.'); return; }
