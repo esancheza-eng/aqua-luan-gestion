@@ -565,6 +565,30 @@ function detenerListenerAuditoria(){ if(_unsubAuditoria){_unsubAuditoria();_unsu
    filtro de fecha/asesor activo arriba, en vez de depender de la sesión del día
    de un asesor en particular. Misma fórmula exacta, para que el número coincida
    siempre con lo que ve el asesor en su propia app. */
+
+function _totalVentasRuta(d){
+  return (Number(d.ventasContado)||0)+(Number(d.ventasCredito)||0)+(Number(d.ventasTransferencia)||0)+(Number(d.ventasCheque)||0)+(Number(d.ventasOtras)||0);
+}
+function _totalPagosRuta(d){
+  return (Number(d.pagosEfectivo)||0)+(Number(d.pagosTransferencia)||0)+(Number(d.pagosCheque)||0)+(Number(d.pagosOtros)||0);
+}
+function _totalIngresosRuta(d){
+  return _totalVentasRuta(d)+_totalPagosRuta(d);
+}
+function _valorAEntregarRuta(d){
+  /* Misma fórmula del recuadro "TOTAL A ENTREGAR — PASO A PASO" de Liquidación:
+     Valor/Liquidación (todas las ventas)
+     + Pagos
+     − Créditos − Gastos − Transferencias − Cheques
+     = Valor total del día */
+  const liq=_totalVentasRuta(d);
+  const pagos=_totalPagosRuta(d);
+  const creditos=Number(d.ventasCredito)||0;
+  const gastos=Number(d.gastos)||0;
+  const transf=(Number(d.ventasTransferencia)||0)+(Number(d.pagosTransferencia)||0);
+  const cheques=(Number(d.ventasCheque)||0)+(Number(d.pagosCheque)||0);
+  return liq + pagos - creditos - gastos - transf - cheques;
+}
 function _calcularLiquidacionDash(){
   const porAsesor = {};
   const getAsesor = nombre => { if(!porAsesor[nombre]) porAsesor[nombre] = {
@@ -669,7 +693,7 @@ function renderLiquidacionDash(){
   let totalGeneral = 0;
   cont.innerHTML = asesores.map(nombre=>{
     const d = porAsesor[nombre];
-    const totalEntregar = d.ventasContado + d.pagosEfectivo - d.gastos;
+    const totalEntregar = _valorAEntregarRuta(d);
     totalGeneral += totalEntregar;
     const totalRuta = d.ventasContado+d.ventasCredito+d.ventasTransferencia+d.ventasCheque+d.ventasOtras;
     const totalPagosAsesor = d.pagosEfectivo+d.pagosTransferencia+d.pagosCheque+d.pagosOtros;
@@ -944,13 +968,13 @@ async function renderCierreDelDia(){
   // Tabla 1 — Cierre del Día (mismos campos que ya calcula la Liquidación)
   const datosAsesores = rutasFull.map(r => porAsesor[r] || _asesorVacio);
   const filas1 = [
-    { etiqueta:'Valor/Liquidación', valor: n => n.ventasContado },
-    { etiqueta:'Pagos', valor: n => n.pagosEfectivo },
+    { etiqueta:'Valor/Liquidación', valor: n => _totalVentasRuta(n) },
+    { etiqueta:'Pagos', valor: n => _totalPagosRuta(n) },
     { etiqueta:'Créditos', valor: n => n.ventasCredito },
     { etiqueta:'Gastos', valor: n => n.gastos },
     { etiqueta:'Transferencias', valor: n => n.ventasTransferencia + n.pagosTransferencia },
     { etiqueta:'Cheques', valor: n => n.ventasCheque + n.pagosCheque },
-    { etiqueta:'Valor a Entregar', valor: n => n.ventasContado + n.pagosEfectivo - n.gastos, destacado:true }
+    { etiqueta:'Valor total del día', valor: n => _valorAEntregarRuta(n), destacado:true }
   ];
 
   // Tabla 2 — Forma de Entrega de Dinero (lee lo guardado por cada asesor en Liquidación)
@@ -2059,7 +2083,7 @@ function imprimirLiquidacionDash(){
   let totalGeneral = 0;
   const bloques = asesores.map(nombre=>{
     const d = porAsesor[nombre];
-    const totalEntregar = d.ventasContado + d.pagosEfectivo - d.gastos;
+    const totalEntregar = _valorAEntregarRuta(d);
     totalGeneral += totalEntregar;
     const totalRuta = d.ventasContado+d.ventasCredito+d.ventasTransferencia+d.ventasCheque+d.ventasOtras;
     const totalPagosAsesor = d.pagosEfectivo+d.pagosTransferencia+d.pagosCheque+d.pagosOtros;
@@ -2579,7 +2603,7 @@ function renderDashboard() {
   // de abonos parciales) sumado entre todos los asesores, para que ambas
   // pantallas coincidan siempre.
   const totalCajaReal = Object.values(_calcularLiquidacionDash())
-    .reduce((s,d) => s + d.ventasContado + d.pagosEfectivo - d.gastos, 0);
+    .reduce((s,d) => s + _valorAEntregarRuta(d), 0);
   document.getElementById('kpiGrid').innerHTML = `
     <div class="kpi-card teal"><div class="kpi-icon">💰</div><div class="kpi-label">Total ventas</div><div class="kpi-value">$${totalReal.toFixed(2)}</div><div class="kpi-sub">${pedidosUnicos} pedido(s)</div></div>
     <div class="kpi-card blue"><div class="kpi-icon">💳</div><div class="kpi-label">Total cobrado</div><div class="kpi-value">$${totalPagos.toFixed(2)}</div><div class="kpi-sub">${pagos.length} pago(s)</div></div>
