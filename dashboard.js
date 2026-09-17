@@ -1240,7 +1240,7 @@ function _mbPeriodoEditable(){
   return (!hasta || hasta<=hoy) && (!desde || desde<=hoy);
 }
 function _esAdminMovBanc(){
-  return ROL_ACTUAL === 'admin';
+  return ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria';
 }
 function _idMovimientosBancarios(){
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
@@ -1648,13 +1648,13 @@ async function renderMovimientosBancarios(){
   if(btnEd){
     btnEd.style.display=esEditable?'inline-flex':'none';
     btnEd.disabled=!esEditable;
-    btnEd.title=esAdmin?(esEditable?'Editar cuenta y banco (también de días ya guardados)':'Elige un solo día (Desde = Hasta) para editar'):'Solo Administración puede editar Movimientos Bancarios';
+    btnEd.title=esEditable?'Editar cuenta y banco':'No se puede editar en este período';
   }
   if(st){
     if(!esAdmin){
-      st.textContent='Consulta e impresión. Solo Administración puede editar o guardar cuenta y banco.';
+      st.textContent='Consulta e impresión.';
     } else if(!esEditable){
-      st.textContent='Para editar, filtra un solo día (Desde y Hasta iguales). Secretaria solo consulta e imprime.';
+      st.textContent='No se puede editar en este período.';
     } else if(_mbBloqueado){
       st.textContent=('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — pulsa Editar para cambiar cuenta o banco.');
     } else {
@@ -1664,11 +1664,11 @@ async function renderMovimientosBancarios(){
 }
 function habilitarEdicionMovimientosBancarios(){
   if(!_esAdminMovBanc()){
-    alert('Solo Administración puede editar Movimientos Bancarios.');
+    alert('No se puede editar Movimientos Bancarios.');
     return;
   }
   if(!_mbPeriodoEditable()){
-    alert('Solo Administración puede editar Movimientos Bancarios.');
+    alert('No se puede editar Movimientos Bancarios.');
     return;
   }
   _mbBloqueado=false;
@@ -1682,11 +1682,11 @@ function habilitarEdicionMovimientosBancarios(){
 }
 async function guardarMovimientosBancarios(){
   if(!_esAdminMovBanc()){
-    alert('Solo Administración puede guardar Movimientos Bancarios.');
+    alert('No se puede guardar Movimientos Bancarios.');
     return;
   }
   if(!_mbPeriodoEditable()){
-    alert('Solo Administración puede guardar Movimientos Bancarios.');
+    alert('No se puede guardar Movimientos Bancarios.');
     return;
   }
   if(_mbBloqueado){ alert('Esta hoja está bloqueada. Pulsa Editar para modificar cuenta o banco.'); return; }
@@ -1949,7 +1949,7 @@ function _setEntregaEditable(box, on){
 }
 function _editarEntregaAsesor(nombre){
   if(!_filtroLiquidacionEsHoy()){
-    alert('Solo Administración puede editar la liquidación.');
+    alert('No se puede editar la liquidación en este período.');
     return;
   }
   const box=_boxEntregaAsesor(nombre);
@@ -1960,7 +1960,7 @@ function _cancelarEntregaAsesor(nombre){
 }
 function _confirmarGuardarEntregaAsesor(nombre){
   if(!_filtroLiquidacionEsHoy()){
-    alert('Solo Administración puede guardar la liquidación.');
+    alert('No se puede guardar la liquidación en este período.');
     return;
   }
   if(!confirm('¿Está seguro que desea guardar la entrega de liquidación de '+nombre+'?')) return;
@@ -2142,7 +2142,7 @@ async function _cargarEntregaAsesor(nombre){
     const st=box.querySelector('.liq-entrega-status');
     if(st){
       if(!_filtroLiquidacionEsHoy()){
-        st.textContent=(snap.exists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+((typeof _esAdminMovBanc==='function' && _esAdminMovBanc())?'Filtra un solo día para editar.':'Solo Administración puede editar.');
+        st.textContent=(snap.exists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+'Pulsa Editar para cambiar entrega o ajuste de saldos.';
       } else {
         st.textContent=snap.exists?'Entrega guardada de este asesor.':'Sin entrega registrada aún.';
       }
@@ -2165,7 +2165,7 @@ async function _guardarEntregaAsesor(nombre){
   if(!box || typeof db==='undefined') return;
   if(!_filtroLiquidacionEsHoy()){
     const st0=box.querySelector('.liq-entrega-status');
-    if(st0) st0.textContent='No se guarda: solo Administración y un solo día filtrado.';
+    if(st0) st0.textContent='No se guarda en este período.';
     return;
   }
   const u=_leerEntregaDesdeBox(box);
@@ -2420,10 +2420,7 @@ function aplicarRestriccionesRol(){
   });
   const btnPass = document.getElementById('btnMiPassword');
   if (btnPass) btnPass.style.display = esSecretaria ? 'none' : '';
-  const mbEd=document.getElementById('mbBtnEditar');
-  const mbGu=document.getElementById('mbBtnGuardar');
-  if(mbEd) mbEd.style.display = esSecretaria ? 'none' : mbEd.style.display;
-  if(mbGu) mbGu.style.display = esSecretaria ? 'none' : mbGu.style.display;
+  /* Secretaria sí puede Editar/Guardar Movimientos Bancarios, igual que Administración. */
   pintarUsuarioHeader();
   if (esSecretaria) {
     switchTab('dashboard');
