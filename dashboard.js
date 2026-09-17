@@ -1515,9 +1515,9 @@ async function renderMovimientosBancarios(){
   }
   const btnEd=document.getElementById('mbBtnEditar');
   if(btnEd){
-    btnEd.style.display=(esEditable && _mbBloqueado)?'inline-flex':'none';
+    btnEd.style.display=esEditable?'inline-flex':'none';
     btnEd.disabled=!esEditable;
-    btnEd.title=esAdmin?(esEditable?'Editar cuenta y banco de registros ya guardados':'Elige un solo día (Desde = Hasta) para editar'):'Solo Administración puede editar Movimientos Bancarios';
+    btnEd.title=esAdmin?(esEditable?'Editar cuenta y banco (también de días ya guardados)':'Elige un solo día (Desde = Hasta) para editar'):'Solo Administración puede editar Movimientos Bancarios';
   }
   if(st){
     if(!esAdmin){
@@ -1540,7 +1540,6 @@ function habilitarEdicionMovimientosBancarios(){
     alert('Para editar Movimientos Bancarios elige un solo día en Desde y Hasta (el mismo).');
     return;
   }
-  if(!_mbBloqueado) return;
   _mbBloqueado=false;
   document.querySelectorAll('#mbTbody select, #mbTbody input').forEach(el=>{ el.disabled=false; });
   const btn=document.getElementById('mbBtnGuardar');
@@ -1722,7 +1721,8 @@ function _htmlEntregaAsesorBox(nombre, total){
 }
 
 function _filtroLiquidacionEsHoy(){
-  return (typeof _periodoEditableDesde15==='function') ? _periodoEditableDesde15() : false;
+  /* Solo Administración, un solo día (Desde=Hasta) y no futuro. Secretaria no edita. */
+  return (typeof _mbPeriodoEditable==='function') ? _mbPeriodoEditable() : false;
 }
 function _setEntregaEditable(box, on){
   if(!box) return;
@@ -1741,15 +1741,16 @@ function _setEntregaEditable(box, on){
     addDep.style.display = (on && n<3) ? '' : 'none';
   }
   if(ed){
-    ed.style.display = (permitido && !on) ? '' : 'none';
-    ed.title = permitido ? 'Editar entrega (desde el 15/09)' : 'Solo se puede editar la liquidación desde el 15 de septiembre hasta hoy';
+    const esAdmin = (typeof _esAdminMovBanc==='function') ? _esAdminMovBanc() : false;
+    ed.style.display = (esAdmin && !on) ? '' : 'none';
+    ed.title = esAdmin ? 'Editar entrega de liquidación (días anteriores incluidos)' : 'Solo Administración puede editar la liquidación';
   }
   if(gu) gu.style.display = on ? '' : 'none';
   if(ca) ca.style.display = on ? '' : 'none';
 }
 function _editarEntregaAsesor(nombre){
   if(!_filtroLiquidacionEsHoy()){
-    alert('Solo se puede editar la liquidación desde el 15 de septiembre hasta hoy.\nLas fechas anteriores al 15 quedan bloqueadas.');
+    alert('Solo Administración puede editar la liquidación.\nFiltra un solo día (Desde y Hasta iguales).');
     return;
   }
   const box=_boxEntregaAsesor(nombre);
@@ -1760,7 +1761,7 @@ function _cancelarEntregaAsesor(nombre){
 }
 function _confirmarGuardarEntregaAsesor(nombre){
   if(!_filtroLiquidacionEsHoy()){
-    alert('Solo se puede guardar la liquidación desde el 15 de septiembre hasta hoy.\nLas fechas anteriores al 15 están bloqueadas.');
+    alert('Solo Administración puede guardar la liquidación.\nFiltra un solo día (Desde y Hasta iguales).');
     return;
   }
   if(!confirm('¿Está seguro que desea guardar la entrega de liquidación de '+nombre+'?')) return;
@@ -1942,7 +1943,7 @@ async function _cargarEntregaAsesor(nombre){
     const st=box.querySelector('.liq-entrega-status');
     if(st){
       if(!_filtroLiquidacionEsHoy()){
-        st.textContent=(snap.exists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+'Consulta de fechas anteriores al 15/09: no se puede editar.';
+        st.textContent=(snap.exists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+((typeof _esAdminMovBanc==='function' && _esAdminMovBanc())?'Filtra un solo día para editar.':'Solo Administración puede editar.');
       } else {
         st.textContent=snap.exists?'Entrega guardada de este asesor.':'Sin entrega registrada aún.';
       }
@@ -1965,7 +1966,7 @@ async function _guardarEntregaAsesor(nombre){
   if(!box || typeof db==='undefined') return;
   if(!_filtroLiquidacionEsHoy()){
     const st0=box.querySelector('.liq-entrega-status');
-    if(st0) st0.textContent='Fechas anteriores al 15/09 bloqueadas: no se guarda.';
+    if(st0) st0.textContent='No se guarda: solo Administración y un solo día filtrado.';
     return;
   }
   const u=_leerEntregaDesdeBox(box);
