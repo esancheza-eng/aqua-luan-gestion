@@ -265,6 +265,31 @@ function switchSeccionDash(sec){
   if (sec === 'resumen' && typeof renderResumenPorCliente === 'function') renderResumenPorCliente(_resumenClientesPedidosCache);
   if (sec === 'cliente' && typeof poblarClienteSelect === 'function') poblarClienteSelect(_clienteSelectPedidosCache);
 }
+function _fechaRutasDesdeDashboard(){
+  const desde=(document.getElementById('filtroFecha')?.value||'').trim();
+  const hasta=(document.getElementById('filtroFechaHasta')?.value||'').trim();
+  return hasta || desde || ((typeof fechaHoy==='function')?fechaHoy():'');
+}
+function _sincronizarFechaRutasConDashboard(){
+  const el=document.getElementById('rutasFecha');
+  if(!el) return;
+  const f=_fechaRutasDesdeDashboard();
+  if(f) el.value=f;
+  const ra=document.getElementById('rutasAsesor');
+  const fa=document.getElementById('filtroAsesor');
+  if(ra && fa){
+    const v=fa.value||'';
+    if(!v){ ra.value=''; }
+    else {
+      const opts=[...ra.options].map(o=>o.value);
+      if(opts.includes(v)) ra.value=v;
+      else {
+        const hit=opts.find(o=>o && (o.toLowerCase()===v.toLowerCase() || o.toLowerCase().includes(v.toLowerCase()) || v.toLowerCase().includes((o.split(':')[1]||o).trim().toLowerCase())));
+        ra.value=hit||'';
+      }
+    }
+  }
+}
 function switchTab(tab) {
   if (ROL_ACTUAL === 'secretaria' && tab === 'rutas') tab = 'dashboard';
   document.getElementById('viewDashboard').classList.toggle('active', tab === 'dashboard');
@@ -274,7 +299,8 @@ function switchTab(tab) {
   if (tab === 'rutas') {
     cargarLeaflet(() => {
       if (!leafletMap) initLeafletMap();
-      rutasHoy();
+      // [FIX] No forzar "hoy": copiar la fecha/asesor del dashboard (ej. 16/09).
+      _sincronizarFechaRutasConDashboard();
       aplicarRutas();
     });
   }
@@ -2438,7 +2464,7 @@ async function cargarDatos(mostrarSpinner = true) {
 /* ════════════════════════════════════════
    FILTROS DASHBOARD
 ════════════════════════════════════════ */
-function filtrarHoy() { const hoy = fechaHoy(); document.getElementById('filtroFecha').value = hoy; document.getElementById('filtroFechaHasta').value = hoy; iniciarListenersDashboard(); }
+function filtrarHoy() { const hoy = fechaHoy(); document.getElementById('filtroFecha').value = hoy; document.getElementById('filtroFechaHasta').value = hoy; if(typeof _sincronizarFechaRutasConDashboard==='function') _sincronizarFechaRutasConDashboard(); iniciarListenersDashboard(); }
 function limpiarFiltro() { document.getElementById('filtroFecha').value = ''; document.getElementById('filtroFechaHasta').value = fechaHoy(); if (document.getElementById('filtroAsesor')) document.getElementById('filtroAsesor').value = ''; _productoFiltroSeleccionado = ''; iniciarListenersDashboard(); }
 /* [NEW] Texto legible del rango de fecha actualmente filtrado, para usar en encabezados de PDF */
 function _textoRangoFecha() {
@@ -4888,6 +4914,19 @@ async function guardarRolPago(i){
    se agrupan en un solo pedido, igual que hace el resto del dashboard.
 ════════════════════════════════════════════════════════════ */
 let _pedidosParaImportar = [];
+function actualizarEstadoArchivoImportar(){
+  const input=document.getElementById('importarArchivo');
+  const btn=document.getElementById('btnQuitarArchivoImportar');
+  if(btn) btn.style.display=(input && input.files && input.files.length)?'inline-flex':'none';
+}
+function limpiarArchivoImportado(){
+  const input=document.getElementById('importarArchivo');
+  if(input) input.value='';
+  const preview=document.getElementById('importarPreview');
+  if(preview) preview.innerHTML='';
+  if(typeof _pedidosParaImportar!=='undefined') _pedidosParaImportar=[];
+  actualizarEstadoArchivoImportar();
+}
 function procesarArchivoImportado(){
   const input = document.getElementById('importarArchivo');
   const file = input.files[0];
