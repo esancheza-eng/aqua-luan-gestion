@@ -2408,6 +2408,11 @@ function _recalcularTodosLosDatos() {
   if (seccionCobranzasVisible && typeof renderCobranzasClientes === 'function') renderCobranzasClientes();
   if (typeof renderTablaEliminados === 'function') renderTablaEliminados();
   if (typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
+  if (document.getElementById('viewRutas')?.classList.contains('active') && typeof aplicarRutas === 'function') {
+    const fecha = document.getElementById('rutasFecha')?.value || '';
+    const asesor = document.getElementById('rutasAsesor')?.value || '';
+    if (typeof renderRutasDia === 'function') renderRutasDia(fecha, asesor);
+  }
   document.getElementById('lastUpdate').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit' });
 }
 function iniciarListenersDashboard() {
@@ -3010,11 +3015,27 @@ function setTile(tipo) {
 /* ════════════════════════════════════════
    RUTAS DEL DÍA
 ════════════════════════════════════════ */
-function rutasHoy() { document.getElementById('rutasFecha').value = fechaHoy(); }
+function rutasHoy() {
+  const el=document.getElementById('rutasFecha');
+  if(el) el.value = fechaHoy();
+  aplicarRutas();
+}
 function aplicarRutas() {
   const fecha  = document.getElementById('rutasFecha').value;
   const asesor = document.getElementById('rutasAsesor').value;
-  document.getElementById('rutasLastUpdate').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'});
+  const lu=document.getElementById('rutasLastUpdate');
+  if(lu) lu.textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'});
+  /* [FIX] El mapa solo ve lo que ya está en memoria (filtro del Dashboard).
+     Si pones el 16 en Rutas pero el Dashboard sigue en el 17, todosLosDatos
+     no trae el 16 y el diagnóstico sale en 0. Igualamos el rango y recargamos. */
+  const fDash=document.getElementById('filtroFecha');
+  const hDash=document.getElementById('filtroFechaHasta');
+  if(fecha && fDash && hDash && (fDash.value!==fecha || hDash.value!==fecha)){
+    fDash.value=fecha;
+    hDash.value=fecha;
+    if(typeof iniciarListenersDashboard==='function') iniciarListenersDashboard();
+    return;
+  }
   renderRutasDia(fecha, asesor);
 }
 
@@ -3098,7 +3119,19 @@ function renderRutasDia(fecha, asesorFiltro) {
       const key=`${r['CLIENTE']}-${r['HORA REGISTRO']}-${asesorKey}`;
       markerRefs[key]=marker;
     });
-    if(coords.length>1){ const poly=L.polyline(coords,{color:'#1a6fd4',weight:3.5,opacity:0.88,lineJoin:'round',lineCap:'round'}).addTo(leafletMap); mapPolylines.push(poly); }
+    const coordsUnicas=[];
+    coords.forEach(pt=>{
+      const prev=coordsUnicas[coordsUnicas.length-1];
+      if(!prev || prev[0]!==pt[0] || prev[1]!==pt[1]) coordsUnicas.push(pt);
+    });
+    if(coordsUnicas.length>1){
+      const poly=L.polyline(coordsUnicas,{
+        color:color, weight:5, opacity:0.92, lineJoin:'round', lineCap:'round',
+        dashArray:'10,8'
+      }).addTo(leafletMap);
+      if(poly.bringToBack) poly.bringToBack();
+      mapPolylines.push(poly);
+    }
   });
   if(allBounds.length>0) leafletMap.fitBounds(allBounds,{padding:[40,40]});
   renderMapLegend(Object.keys(rutasMap));
