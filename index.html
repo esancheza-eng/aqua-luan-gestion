@@ -323,7 +323,8 @@
               <code>Fecha | Asesor | Cliente | Telefono | Direccion | Producto | Cantidad | Precio | FormaPago | Notas</code><br>
               La Fecha debe ir en formato AAAA-MM-DD (ej. 2026-03-15).
             </div>
-            <input type="file" id="importarArchivo" accept=".xlsx,.xls,.csv">
+            <input type="file" id="importarArchivo" accept=".xlsx,.xls,.csv" onchange="actualizarEstadoArchivoImportar()">
+            <button type="button" id="btnQuitarArchivoImportar" onclick="limpiarArchivoImportado()" title="Quitar archivo seleccionado" style="display:none;margin-left:8px;padding:7px 10px;border:none;border-radius:8px;background:#fdecea;color:#c0392b;font-weight:800;cursor:pointer">✕</button>
             <button class="btn-filter" style="background:var(--teal);margin-left:10px" onclick="procesarArchivoImportado()">📂 Leer archivo</button>
             <div id="importarPreview" style="margin-top:16px"></div>
             <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
