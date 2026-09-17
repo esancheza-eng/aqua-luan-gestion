@@ -672,7 +672,64 @@ function _calcularLiquidacionDash(){
   gastosF.forEach(g=>{ getAsesor(g.empleado || 'Sin asignar').gastos += (parseFloat(g.monto)||0); });
   return porAsesor;
 }
-function renderLiquidacionDash(){
+async function _leerAjusteSaldosAsesor(nombre){
+  try{
+    if(typeof db==='undefined') return 0;
+    const snap=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
+    return snap.exists ? (Number(snap.data().ajusteSaldos)||0) : 0;
+  }catch(e){ return 0; }
+}
+async function _guardarAjusteSaldosAsesor(nombre, valor){
+  if(typeof _esAdminMovBanc==='function' && !_esAdminMovBanc()) return;
+  if(typeof db==='undefined') return;
+  await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).set({
+    asesor:nombre,
+    ajusteSaldos:Number(valor)||0,
+    actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
+    actualizadoPor: (typeof actorAuditoria==='function')?actorAuditoria():'sistema'
+  }, {merge:true});
+}
+function _onAjusteSaldosInput(el){
+  const card=el.closest('.liq-card-asesor');
+  if(!card) return;
+  const ajuste=parseFloat(String(el.value||'0').replace(',','.'))||0;
+  const base=parseFloat(card.dataset.contadoBase||0)||0;
+  const pagos=parseFloat(card.dataset.pagos||0)||0;
+  const gastos=parseFloat(card.dataset.gastos||0)||0;
+  const credito=parseFloat(card.dataset.credito||0)||0;
+  const transf=parseFloat(card.dataset.transf||0)||0;
+  const cheques=parseFloat(card.dataset.cheques||0)||0;
+  const otras=parseFloat(card.dataset.otras||0)||0;
+  const pagosTot=parseFloat(card.dataset.pagosTot||0)||0;
+  const contado=base+ajuste;
+  const d={ventasContado:contado, pagosEfectivo:pagos, gastos, ventasCredito:credito, ventasTransferencia:0, pagosTransferencia:0, ventasCheque:0, pagosCheque:0, ventasOtras:otras, pagosOtros:0};
+  // transferencias/cheques ya vienen sumados en data-transf / data-cheques
+  const totalRuta=contado+credito+transf+cheques+otras;
+  const totalIngresos=totalRuta+pagosTot;
+  const totalEntregar=(typeof _valorAEntregarRuta==='function')
+    ? (contado + pagos + otras - gastos)
+    : (contado+pagos-gastos);
+  const verde=card.querySelector('.liq-total-verde');
+  if(verde){ verde.textContent='$'+totalEntregar.toFixed(2); verde.style.color=totalEntregar>=0?'#0f7c38':'#a93226'; }
+  const contadoEl=card.querySelector('.liq-val-contado');
+  if(contadoEl) contadoEl.textContent='$'+contado.toFixed(2);
+  const setTxt=(sel,txt)=>{ const n=card.querySelector(sel); if(n) n.textContent=txt; };
+  setTxt('.liq-paso-ruta','$'+totalRuta.toFixed(2));
+  setTxt('.liq-paso-ingresos','$'+totalIngresos.toFixed(2));
+  setTxt('.liq-paso-entregar','$'+totalEntregar.toFixed(2));
+  const ref=card.querySelector('.liq-ref-total');
+  if(ref) ref.textContent='$'+totalEntregar.toFixed(2);
+  const box=card.querySelector('.liq-entrega-asesor');
+  if(box) box.dataset.total=String(totalEntregar);
+}
+function _guardarAjusteSaldosDesdeInput(el){
+  const card=el.closest('.liq-card-asesor');
+  if(!card) return;
+  const nombre=card.dataset.asesor||'';
+  const valor=parseFloat(String(el.value||'0').replace(',','.'))||0;
+  _guardarAjusteSaldosAsesor(nombre, valor).catch(err=>console.warn('ajusteSaldos', err));
+}
+async function renderLiquidacionDash(){
   const cont = document.getElementById('liquidacionDashLista');
   const emptyMsg = document.getElementById('liquidacionDashEmptyMsg');
   if(!cont) return;
@@ -690,9 +747,14 @@ function renderLiquidacionDash(){
     return;
   }
   if(emptyMsg) emptyMsg.style.display='none';
+  const ajustes={};
+  await Promise.all(asesores.map(async n=>{ ajustes[n]=await _leerAjusteSaldosAsesor(n); }));
+  const puedeAjuste = (typeof _esAdminMovBanc==='function') ? _esAdminMovBanc() : false;
   let totalGeneral = 0;
   cont.innerHTML = asesores.map(nombre=>{
-    const d = porAsesor[nombre];
+    const d0 = porAsesor[nombre];
+    const ajuste = Number(ajustes[nombre])||0;
+    const d = Object.assign({}, d0, { ventasContado: (Number(d0.ventasContado)||0) + ajuste });
     const totalEntregar = _valorAEntregarRuta(d);
     totalGeneral += totalEntregar;
     const totalRuta = d.ventasContado+d.ventasCredito+d.ventasTransferencia+d.ventasCheque+d.ventasOtras;
@@ -712,27 +774,37 @@ function renderLiquidacionDash(){
         <td>${p.cantidad % 1 === 0 ? parseInt(p.cantidad) : p.cantidad.toFixed(1)}</td>
         <td>$${p.dolares.toFixed(2)}</td>
       </tr>`).join('');
-    return `<div class="table-card" style="margin-bottom:12px">
-      <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;background:var(--surface2)">
-        <span style="font-weight:800;color:var(--navy)">${escHTML(nombre)}</span>
-        <span style="font-weight:800;font-size:16px;color:${totalEntregar>=0?'#0f7c38':'#a93226'}">$${totalEntregar.toFixed(2)}</span>
+    const safeNom=escHTML(nombre).replace(/"/g,'&quot;');
+    const ajusteVal=ajuste?ajuste.toFixed(2):'';
+    return `<div class="table-card liq-card-asesor" data-asesor="${safeNom}" data-contado-base="${Number(d0.ventasContado)||0}" data-pagos="${Number(d0.pagosEfectivo)||0}" data-gastos="${Number(d0.gastos)||0}" data-credito="${Number(d0.ventasCredito)||0}" data-transf="${(Number(d0.ventasTransferencia)||0)+(Number(d0.pagosTransferencia)||0)}" data-cheques="${(Number(d0.ventasCheque)||0)+(Number(d0.pagosCheque)||0)}" data-otras="${Number(d0.ventasOtras)||0}" data-pagos-tot="${totalPagosAsesor}" style="margin-bottom:12px">
+      <div style="padding:12px 16px;display:flex;align-items:flex-start;justify-content:space-between;background:var(--surface2);gap:12px">
+        <div>
+          <div style="font-weight:800;color:var(--navy)">${escHTML(nombre)}</div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:0.06em;color:var(--muted);margin-top:6px">AJUSTE DE SALDOS</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <span class="liq-total-verde" style="font-weight:800;font-size:16px;color:${totalEntregar>=0?'#0f7c38':'#a93226'}">$${totalEntregar.toFixed(2)}</span>
+          <input type="text" class="liq-ajuste-saldos" inputmode="decimal" placeholder="0.00" value="${ajusteVal}" ${puedeAjuste?'':'disabled'}
+            style="width:88px;height:34px;border:1.5px solid var(--border);border-radius:8px;padding:0 8px;text-align:right;font-weight:700;background:#fff"
+            oninput="_filtrarInputMontoLiq(this);_onAjusteSaldosInput(this)" onchange="_guardarAjusteSaldosDesdeInput(this)">
+        </div>
       </div>
       <div style="padding:10px 16px;font-size:13px">
-        <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Ventas al contado</span><b>$${d.ventasContado.toFixed(2)}</b></div>
+        <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Ventas al contado</span><b class="liq-val-contado">$${d.ventasContado.toFixed(2)}</b></div>
         <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Pagos cobrados en efectivo</span><b>$${d.pagosEfectivo.toFixed(2)}</b></div>
         <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Gastos de la ruta</span><b>-$${d.gastos.toFixed(2)}</b></div>
       </div>
       <div style="margin:0 16px 14px;padding:10px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:8px;font-size:12.5px">
         <div style="font-weight:800;color:#0f7c38;margin-bottom:6px;text-transform:uppercase;font-size:10px;letter-spacing:0.05em">Total a entregar — paso a paso</div>
-        <div style="display:flex;justify-content:space-between;padding:2px 0"><span>${escHTML(nombre)}</span><span>$${totalRuta.toFixed(2)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span>${escHTML(nombre)}</span><span class="liq-paso-ruta">$${totalRuta.toFixed(2)}</span></div>
         <div style="display:flex;justify-content:space-between;padding:2px 0"><span>+ Pagos</span><span>$${totalPagosAsesor.toFixed(2)}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:2px 0;font-weight:700"><span>= Total de Ingresos</span><span>$${totalIngresos.toFixed(2)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0;font-weight:700"><span>= Total de Ingresos</span><span class="liq-paso-ingresos">$${totalIngresos.toFixed(2)}</span></div>
         <div style="display:flex;justify-content:space-between;padding:2px 0"><span>− Créditos</span><span>$${creditos.toFixed(2)}</span></div>
         <div style="display:flex;justify-content:space-between;padding:2px 0"><span>− Gastos</span><span>$${d.gastos.toFixed(2)}</span></div>
         <div style="display:flex;justify-content:space-between;padding:2px 0"><span>− Transferencias</span><span>$${transferencias.toFixed(2)}</span></div>
         <div style="display:flex;justify-content:space-between;padding:2px 0"><span>− Cheques</span><span>$${cheques.toFixed(2)}</span></div>
         ${sinClasificar>0?`<div style="display:flex;justify-content:space-between;padding:2px 0"><span>− Sin clasificar</span><span>$${sinClasificar.toFixed(2)}</span></div>`:''}
-        <div style="display:flex;justify-content:space-between;padding-top:6px;margin-top:4px;border-top:1px solid var(--border);font-weight:800"><span>Total a Entregar</span><span style="color:${totalEntregar>=0?'#0f7c38':'#a93226'}">$${totalEntregar.toFixed(2)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding-top:6px;margin-top:4px;border-top:1px solid var(--border);font-weight:800"><span>Total a Entregar</span><span class="liq-paso-entregar" style="color:${totalEntregar>=0?'#0f7c38':'#a93226'}">$${totalEntregar.toFixed(2)}</span></div>
       </div>
       ${_htmlEntregaAsesorBox(nombre, totalEntregar)}
       ${prodsOrdenados.length ? `
