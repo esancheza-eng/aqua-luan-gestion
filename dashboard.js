@@ -1132,6 +1132,9 @@ function _periodoEditableDesde15(){
 function _mbPeriodoEditable(){
   return _periodoEditableDesde15();
 }
+function _esAdminMovBanc(){
+  return ROL_ACTUAL === 'admin';
+}
 function _idMovimientosBancarios(){
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
   const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
@@ -1488,7 +1491,7 @@ async function renderMovimientosBancarios(){
       const saved=porId[id] || porId[flex] || {};
       const cuenta=saved.cuenta||'';
       const banco=saved.banco||'';
-      const dis=(!_mbPeriodoEditable() || _mbBloqueado)?'disabled':'';
+      const dis=(!_esAdminMovBanc() || !_mbPeriodoEditable() || _mbBloqueado)?'disabled':'';
       const fechaTxt=_fmtFechaHoraMB(l.fecha, l.ts);
       return `<tr data-mb-id="${escHTML(id)}" data-asesor="${escHTML(l.asesor)}" data-valor="${Number(l.valor).toFixed(2)}" data-metodo="${escHTML(l.metodo)}" data-fecha="${escHTML(fechaTxt)}">
         <td style="font-size:12px;white-space:nowrap;color:var(--navy)">${escHTML(fechaTxt)}</td>
@@ -1500,8 +1503,8 @@ async function renderMovimientosBancarios(){
       </tr>`;
     }).join('');
   }
-  const esEditable=_mbPeriodoEditable();
-  const esExtra=_mbDiaFiltroUnico()===MB_FECHA_EDITABLE_EXTRA;
+  const esAdmin=_esAdminMovBanc();
+  const esEditable=esAdmin && _mbPeriodoEditable();
   if(btn){
     btn.style.display=(esEditable && !_mbBloqueado)?'inline-flex':'none';
     btn.disabled=!esEditable || _mbBloqueado;
@@ -1510,19 +1513,25 @@ async function renderMovimientosBancarios(){
   if(btnEd){
     btnEd.style.display=(esEditable && _mbBloqueado)?'inline-flex':'none';
     btnEd.disabled=!esEditable;
-    btnEd.title=esEditable?'Editar cuenta y banco (habilitado desde el 15 de septiembre)':'Solo se puede editar desde el 15 de septiembre hasta hoy';
+    btnEd.title=esAdmin?(esEditable?'Editar cuenta y banco de registros ya guardados':'Fuera del período editable (desde el 15/09)'):'Solo Administración puede editar Movimientos Bancarios';
   }
   if(st){
-    if(!esEditable){
+    if(!esAdmin){
+      st.textContent='Consulta e impresión. Solo Administración puede editar o guardar cuenta y banco.';
+    } else if(!esEditable){
       st.textContent='Consulta de fechas anteriores al 15 de septiembre: cuenta y banco están bloqueados. Guardar/editar habilitado desde el 15/09 hasta hoy.';
     } else if(_mbBloqueado){
-      st.textContent=('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — pulsa Editar para cambiar cuenta o banco (desde el 15/09).');
+      st.textContent=('Guardado'+(guardado.actualizadoPor?' por '+guardado.actualizadoPor:'')+' — pulsa Editar para cambiar cuenta o banco.');
     } else {
-      st.textContent='Elige la cuenta y el banco. Guardar e imprimir habilitados desde el 15 de septiembre hasta hoy.';
+      st.textContent='Elige la cuenta y el banco. Luego pulsa Guardar información.';
     }
   }
 }
 function habilitarEdicionMovimientosBancarios(){
+  if(!_esAdminMovBanc()){
+    alert('Solo Administración puede editar Movimientos Bancarios.');
+    return;
+  }
   if(!_mbPeriodoEditable()){
     alert('Solo se puede editar Movimientos Bancarios desde el 15 de septiembre hasta hoy.\nLas fechas anteriores al 15 quedan bloqueadas.');
     return;
@@ -1538,11 +1547,15 @@ function habilitarEdicionMovimientosBancarios(){
   if(st) st.textContent='Modo edición (desde el 15/09). Cambia cuenta o banco y pulsa Guardar información.';
 }
 async function guardarMovimientosBancarios(){
+  if(!_esAdminMovBanc()){
+    alert('Solo Administración puede guardar Movimientos Bancarios.');
+    return;
+  }
   if(!_mbPeriodoEditable()){
     alert('Solo se puede guardar Movimientos Bancarios desde el 15 de septiembre hasta hoy.\nLas fechas anteriores al 15 están bloqueadas.');
     return;
   }
-  if(_mbBloqueado){ alert('Esta hoja ya fue guardada y no se puede editar.'); return; }
+  if(_mbBloqueado){ alert('Esta hoja está bloqueada. Pulsa Editar para modificar cuenta o banco.'); return; }
   if(typeof db==='undefined'){ alert('No hay conexión para guardar.'); return; }
   const filas=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].map(tr=>({
     id: tr.dataset.mbId||'',
@@ -2199,6 +2212,10 @@ function aplicarRestriccionesRol(){
   });
   const btnPass = document.getElementById('btnMiPassword');
   if (btnPass) btnPass.style.display = esSecretaria ? 'none' : '';
+  const mbEd=document.getElementById('mbBtnEditar');
+  const mbGu=document.getElementById('mbBtnGuardar');
+  if(mbEd) mbEd.style.display = esSecretaria ? 'none' : mbEd.style.display;
+  if(mbGu) mbGu.style.display = esSecretaria ? 'none' : mbGu.style.display;
   pintarUsuarioHeader();
   if (esSecretaria) {
     switchTab('dashboard');
