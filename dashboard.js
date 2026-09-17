@@ -1369,17 +1369,32 @@ async function renderMovimientosBancarios(){
       const seenDep=new Set();
       entregas.forEach(({nombre,dia,data})=>{
         if(!data || !Object.keys(data).length) return;
+        const fechaLiq=dia||data.desde||data.fecha||'';
+        const tsLiq=data.actualizadoEn||null;
         const deps=Array.isArray(data.depositos)&&data.depositos.length?data.depositos:null;
         const lista=deps || (data.deposito ? [data.deposito] : []);
         lista.forEach((dep,ix)=>{
           const monto=dep && dep.marcado ? (Number(dep.monto)||0) : 0;
           if(!(monto>0)) return;
           if(activasDep.size && !activasDep.has('Depósito')) return;
-          const key=nombre+'|'+monto.toFixed(2)+'|'+(dia||data.desde||'')+'|'+ix;
+          const key='dep|'+nombre+'|'+monto.toFixed(2)+'|'+fechaLiq+'|'+ix;
           if(seenDep.has(key)) return;
           seenDep.add(key);
-          lineas.push({asesor:nombre, valor:monto, metodo:'Depósito', fecha:dia||data.desde||data.fecha||'', ts:data.actualizadoEn||null});
+          lineas.push({asesor:nombre, valor:monto, metodo:'Depósito', fecha:fechaLiq, ts:tsLiq});
         });
+        // [FIX] La forma de entrega de liquidación también declara Transferencia
+        // (además de Depósito). Antes solo se copiaban los depósitos, por eso
+        // montos como el $477 de Wilson no aparecían en Movimientos Bancarios.
+        const tr=data.transferencia;
+        const trMarcado = !tr ? false : (typeof tr==='object' ? !!tr.marcado : true);
+        const montoTr = !tr ? 0 : (typeof tr==='object' ? (Number(tr.monto)||0) : (Number(tr)||0));
+        if(trMarcado && montoTr>0 && (!activasDep.size || activasDep.has('Transferencia'))){
+          const key='tr|'+nombre+'|'+montoTr.toFixed(2)+'|'+fechaLiq;
+          if(!seenDep.has(key)){
+            seenDep.add(key);
+            lineas.push({asesor:nombre, valor:montoTr, metodo:'Transferencia', fecha:fechaLiq, ts:tsLiq});
+          }
+        }
       });
     }
   }catch(err){ console.warn('movimientosBancarios depositos:', err); }
