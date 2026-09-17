@@ -680,7 +680,6 @@ async function _leerAjusteSaldosAsesor(nombre){
   }catch(e){ return 0; }
 }
 async function _guardarAjusteSaldosAsesor(nombre, valor){
-  if(typeof _esAdminMovBanc==='function' && !_esAdminMovBanc()) return;
   if(typeof db==='undefined') return;
   await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).set({
     asesor:nombre,
@@ -725,9 +724,16 @@ function _onAjusteSaldosInput(el){
 function _guardarAjusteSaldosDesdeInput(el){
   const card=el.closest('.liq-card-asesor');
   if(!card) return;
+  const inp=card.querySelector('.liq-ajuste-saldos');
   const nombre=card.dataset.asesor||'';
-  const valor=parseFloat(String(el.value||'0').replace(',','.'))||0;
-  _guardarAjusteSaldosAsesor(nombre, valor).catch(err=>console.warn('ajusteSaldos', err));
+  const valor=parseFloat(String((inp&&inp.value)||'0').replace(',','.'))||0;
+  if(!confirm('¿Está seguro de guardar el ajuste de saldos de '+nombre+'?')) return;
+  _guardarAjusteSaldosAsesor(nombre, valor).then(()=>{
+    alert('Ajuste de saldos guardado.');
+  }).catch(err=>{
+    console.warn('ajusteSaldos', err);
+    alert('No se pudo guardar el ajuste de saldos.');
+  });
 }
 async function renderLiquidacionDash(){
   const cont = document.getElementById('liquidacionDashLista');
@@ -749,7 +755,6 @@ async function renderLiquidacionDash(){
   if(emptyMsg) emptyMsg.style.display='none';
   const ajustes={};
   await Promise.all(asesores.map(async n=>{ ajustes[n]=await _leerAjusteSaldosAsesor(n); }));
-  const puedeAjuste = (typeof _esAdminMovBanc==='function') ? _esAdminMovBanc() : false;
   let totalGeneral = 0;
   cont.innerHTML = asesores.map(nombre=>{
     const d0 = porAsesor[nombre];
@@ -784,9 +789,11 @@ async function renderLiquidacionDash(){
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
           <span class="liq-total-verde" style="font-weight:800;font-size:16px;color:${totalEntregar>=0?'#0f7c38':'#a93226'}">$${totalEntregar.toFixed(2)}</span>
-          <input type="text" class="liq-ajuste-saldos" inputmode="decimal" placeholder="0.00" value="${ajusteVal}" ${puedeAjuste?'':'disabled'}
+          <input type="text" class="liq-ajuste-saldos" inputmode="decimal" placeholder="0.00" value="${ajusteVal}"
             style="width:88px;height:34px;border:1.5px solid var(--border);border-radius:8px;padding:0 8px;text-align:right;font-weight:700;background:#fff"
-            oninput="_filtrarInputMontoLiq(this);_onAjusteSaldosInput(this)" onchange="_guardarAjusteSaldosDesdeInput(this)">
+            oninput="_filtrarInputMontoLiq(this);_onAjusteSaldosInput(this)">
+          <button type="button" class="liq-btn-guardar-ajuste" onclick="_guardarAjusteSaldosDesdeInput(this)"
+            style="padding:6px 12px;border:none;border-radius:8px;background:#0f7c38;color:#fff;font-weight:700;cursor:pointer;font-size:12px">Guardar</button>
         </div>
       </div>
       <div style="padding:10px 16px;font-size:13px">
