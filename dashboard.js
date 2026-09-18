@@ -891,18 +891,59 @@ function _recalcularFilaCierreDelDia(input){
     td.textContent = '$'+sums[i].toFixed(2);
   });
 }
+function _cierreDelDiaPuedeEditar(){
+  if(ROL_ACTUAL !== 'admin') return false;
+  const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+  const desde=document.getElementById('filtroFecha')?.value||hoy;
+  const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+  if(!hoy) return false;
+  if(desde && desde>hoy) return false;
+  if(hasta && hasta>hoy) return false;
+  return true;
+}
+function _actualizarBotonesCierreDelDia(editando){
+  const puede=_cierreDelDiaPuedeEditar();
+  const btnEd=document.getElementById('cddBtnEditar');
+  const btnGu=document.getElementById('cddBtnGuardar');
+  if(btnEd){
+    btnEd.style.display=(puede && !editando)?'inline-flex':'none';
+    btnEd.disabled=!puede;
+  }
+  if(btnGu){
+    btnGu.style.display=(puede && editando)?'inline-flex':'none';
+    btnGu.disabled=!puede || !editando;
+  }
+}
 function _setCierreDelDiaEditable(on){
-  /* Sin modo Editar: los montos se muestran bloqueados (solo lectura).
-     Guardar e Imprimir PDF siguen disponibles. */
-  document.querySelectorAll('.cdd-input').forEach(el => el.disabled = true);
-  const gu=document.getElementById('cddBtnGuardar');
-  if(gu) gu.style.display = '';
+  const puede=_cierreDelDiaPuedeEditar();
+  const activo=!!on && puede;
+  document.querySelectorAll('#cierreDelDiaTabla1 .cdd-input, #cierreDelDiaTabla2 .cdd-input').forEach(el => {
+    el.disabled = !activo;
+  });
+  _actualizarBotonesCierreDelDia(activo);
+}
+function habilitarEdicionCierreDelDia(){
+  if(!_cierreDelDiaPuedeEditar()){
+    alert('Solo el administrador puede editar el Cierre del Día en el rango Desde / Hasta.');
+    return;
+  }
+  _setCierreDelDiaEditable(true);
+  const st=document.getElementById('cierreDelDiaStatus');
+  if(st) st.textContent='Modo edición — puedes ajustar los montos del rango Desde / Hasta. Luego pulsa Guardar.';
 }
 function _confirmarGuardarCierreDelDia(){
-  if(!confirm('¿Está seguro que desea guardar el Cierre del Día?')) return;
+  if(!_cierreDelDiaPuedeEditar()){
+    alert('Solo el administrador puede guardar el Cierre del Día.');
+    return;
+  }
+  if(!confirm('¿Está seguro que desea guardar el Cierre del Día de este rango de fechas?')) return;
   _guardarCierreDelDia();
 }
 async function _guardarCierreDelDia(){
+  if(!_cierreDelDiaPuedeEditar()){
+    alert('Solo el administrador puede guardar el Cierre del Día.');
+    return;
+  }
   if(typeof db==='undefined') return;
   const leerTabla=(num)=>{
     const tabla={};
@@ -929,6 +970,8 @@ async function _guardarCierreDelDia(){
     }
     if(st) st.textContent='Guardado correctamente — última actualización por '+(typeof actorAuditoria==='function'?actorAuditoria():'');
     _setCierreDelDiaEditable(false);
+    if(typeof renderLiquidacionDash==='function') renderLiquidacionDash();
+    if(typeof renderMovimientosBancarios==='function') renderMovimientosBancarios();
   }catch(err){
     console.warn('cierresDelDia escritura:', err);
     if(st) st.textContent='No se pudo guardar el Cierre del Día.';
