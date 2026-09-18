@@ -2262,6 +2262,27 @@ function _htmlEntregaLiquidacionPrint(){
 }
 
 
+function _ajusteSaldosDesdeUI(nombre){
+  const cards=[...document.querySelectorAll('.liq-card-asesor')];
+  const card=cards.find(c=>(c.dataset.asesor||'')===nombre);
+  const inp=card&&card.querySelector('.liq-ajuste-saldos');
+  return parseFloat(String((inp&&inp.value)||'0').replace(',','.'))||0;
+}
+function _htmlEntregaPrintDeAsesor(nombre){
+  const box=_boxEntregaAsesor(nombre);
+  if(!box) return '';
+  const u=_leerEntregaDesdeBox(box);
+  const tot=parseFloat(box.dataset.total||0)||0;
+  const fila=(ok,n,monto)=>`<div class="ruta-linea"><span>${ok?'☑':'☐'} ${n}</span><b>$${(monto||0).toFixed(2)}</b></div>`;
+  return `<div class="pasos-box">
+      <div class="pasos-title">FORMA DE ENTREGA — ${escHTML(nombre)}</div>
+      <div class="ruta-linea"><span>Total a entregar</span><b>$${tot.toFixed(2)}</b></div>
+      ${fila(u.efectivo.marcado,'Efectivo',u.efectivo.monto)}
+      ${(u.depositos&&u.depositos.length?u.depositos:[{marcado:u.deposito?.marcado,monto:u.deposito?.monto}]).map((d,i)=>fila(!!d.marcado,'Depósito '+(i+1),d.monto||0)).join('')}
+      ${fila(u.transferencia.marcado,'Transferencia',u.transferencia.monto)}
+      ${(u.faltantes||[]).filter(f=>f.montoOk&&f.monto>0).map((f,i)=>`<div class="ruta-linea"><span>Faltante ${i+1}${f.motivo?' — '+escHTML(f.motivo):''}</span><b>$${f.monto.toFixed(2)}</b></div>`).join('')||'<div class="ruta-linea"><span>Faltantes</span><b>$0.00</b></div>'}
+    </div>`;
+}
 function imprimirLiquidacionDash(){
   const porAsesor = _calcularLiquidacionDash();
   const asesores = Object.keys(porAsesor).sort((a,b)=>a.localeCompare(b,'es'));
@@ -2270,7 +2291,9 @@ function imprimirLiquidacionDash(){
   const asesorLabel = asesorSel.split(':')[1]?.trim() || 'General';
   let totalGeneral = 0;
   const bloques = asesores.map(nombre=>{
-    const d = porAsesor[nombre];
+    const d0 = porAsesor[nombre];
+    const ajuste = _ajusteSaldosDesdeUI(nombre);
+    const d = Object.assign({}, d0, { ventasContado: (Number(d0.ventasContado)||0) + ajuste });
     const totalEntregar = _valorAEntregarRuta(d);
     totalGeneral += totalEntregar;
     const totalRuta = d.ventasContado+d.ventasCredito+d.ventasTransferencia+d.ventasCheque+d.ventasOtras;
@@ -2314,6 +2337,7 @@ function imprimirLiquidacionDash(){
         ${sinClasificar>0?`<div class="ruta-linea"><span>− Sin clasificar</span><span>$${sinClasificar.toFixed(2)}</span></div>`:''}
         <div class="ruta-linea total-entregar"><span>Total a Entregar</span><span style="color:${totalEntregar>=0?'#0f7c38':'#a93226'}">$${totalEntregar.toFixed(2)}</span></div>
       </div>
+      ${_htmlEntregaPrintDeAsesor(nombre)}
       ${bloqueProductos}
     </div>`;
   }).join('');
@@ -2363,7 +2387,6 @@ function imprimirLiquidacionDash(){
     <span>TOTAL EFECTIVO A ENTREGAR HOY</span>
     <span>$${totalGeneral.toFixed(2)}</span>
   </div>
-  ${_htmlEntregaLiquidacionPrint()}
   <div class="firmas-box">
     <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Liquidadora</div>
     <div class="firma-linea"><div class="raya">&nbsp;</div>Firma Asesor</div>
