@@ -1700,39 +1700,78 @@ async function guardarMovimientosBancarios(){
     banco: _valorBancoFilaMB(tr),
     fecha: tr.dataset.fecha||''
   }));
+  filas.forEach(f=>{
+    f.dia=_diaLocalDesdeFecha(f.fecha)||'';
+  });
   if(!filas.length){ alert('No hay movimientos para guardar en este período.'); return; }
-  const incompletas=filas.filter(f=>!f.cuenta || !f.banco);
-  if(incompletas.length){
-    const nombres=[...new Set(incompletas.map(f=>_nombreCortoAsesor(f.asesor)))].join(', ');
-    alert('Completa Nombre de cuenta y Banco en todas las filas antes de guardar.\nFaltan: '+nombres);
+  const filasCompletas=filas.filter(f=>f.cuenta && f.banco);
+  if(!filasCompletas.length){
+    alert('Selecciona Nombre de cuenta y Banco al menos en una fila para guardar.');
     const st0=document.getElementById('mbStatus');
-    if(st0) st0.textContent='Falta cuenta o banco en una o más filas.';
+    if(st0) st0.textContent='Falta cuenta o banco en las filas que quieres guardar.';
     return;
   }
-  if(!confirm('Al guardar, Nombre de cuenta y Banco quedarán bloqueados. ¿Continuar?')) return;
+  if(!confirm('Se guardarán '+filasCompletas.length+' fila(s) con cuenta y banco. Las que estén vacías se dejan para después. ¿Continuar?')) return;
   const st=document.getElementById('mbStatus');
   if(st) st.textContent='Guardando…';
   const periodo=_idMovimientosBancarios();
-  const payload={
-    periodo,
-    bloqueado:true,
-    filas,
-    actualizadoPor: (typeof actorAuditoria==='function') ? actorAuditoria() : 'sistema',
-    actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
-  };
-  try{
-    await db.collection('cierresDelDia').doc(periodo).set({
+  const actor=(typeof actorAuditoria==='function') ? actorAuditoria() : 'sistema';
+  async function _escribirBloqueMB(docId, filasDoc){
+    const payload={
+      periodo: docId,
+      bloqueado:true,
+      filas: filasDoc,
+      actualizadoPor: actor,
+      actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    await db.collection('cierresDelDia').doc(docId).set({
       movimientosBancarios: payload,
       actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
-      actualizadoPor: payload.actualizadoPor
+      actualizadoPor: actor
     }, {merge:true});
     try{
-      await db.collection('movimientosBancarios').doc(periodo).set(payload, {merge:true});
+      await db.collection('movimientosBancarios').doc(docId).set(payload, {merge:true});
     }catch(errCol){
       console.warn('movimientosBancarios coleccion opcional:', errCol);
     }
+  }
+  async function _leerFilasMB(docId){
+    try{
+      const snap=await db.collection('cierresDelDia').doc(docId).get();
+      const data=snap.exists ? (snap.data()||{}) : {};
+      if(data.movimientosBancarios && Array.isArray(data.movimientosBancarios.filas)){
+        return data.movimientosBancarios.filas.slice();
+      }
+    }catch(e){}
+    try{
+      const snap2=await db.collection('movimientosBancarios').doc(docId).get();
+      if(snap2.exists && Array.isArray((snap2.data()||{}).filas)) return snap2.data().filas.slice();
+    }catch(e){}
+    return [];
+  }
+  function _mergeFilasMB(prev, next){
+    const map={};
+    (prev||[]).forEach(f=>{ if(!f) return; if(f.id) map[f.id]=f; });
+    (next||[]).forEach(f=>{ if(!f) return; if(f.id) map[f.id]=f; });
+    return Object.values(map);
+  }
+  try{
+    const prevRango=await _leerFilasMB(periodo);
+    await _escribirBloqueMB(periodo, _mergeFilasMB(prevRango, filasCompletas));
+    const porDia={};
+    filasCompletas.forEach(f=>{
+      const d=f.dia;
+      if(!d) return;
+      if(!porDia[d]) porDia[d]=[];
+      porDia[d].push(f);
+    });
+    await Promise.all(Object.keys(porDia).map(async dia=>{
+      const idDia=dia+'_'+dia;
+      const prevDia=await _leerFilasMB(idDia);
+      await _escribirBloqueMB(idDia, _mergeFilasMB(prevDia, porDia[dia]));
+    }));
     if (typeof _registrarAuditoria === 'function') {
-      _registrarAuditoria('movimientosBancarios', 'edición', periodo, 'Movimientos bancarios guardados por '+payload.actualizadoPor);
+      _registrarAuditoria('movimientosBancarios', 'edición', periodo, 'Movimientos bancarios guardados por '+actor);
     }
     _mbBloqueado=true;
     await renderMovimientosBancarios();
