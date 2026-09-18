@@ -266,7 +266,10 @@
         <div class="dash-section" id="seccion-reporteAsesor">
         <!-- [NEW] Reporte por Asesor — clic en una tarjeta para ver todo el detalle -->
         <div class="table-card">
-          <div class="table-header"><div class="table-title">👤 Selecciona un asesor</div></div>
+          <div class="table-header">
+            <div class="table-title">👤 Selecciona un asesor</div>
+            <button class="btn-filter" style="background:#0f7c38;display:flex;align-items:center;gap:6px" onclick="imprimirReporteTodasLasRutas()">Imprimir todas las rutas</button>
+          </div>
           <div class="asesor-cards-grid" id="reporteAsesorCardsGrid" style="padding:1.25rem"></div>
         </div>
         <div id="reporteAsesorDetalleWrap" style="display:none"></div>
