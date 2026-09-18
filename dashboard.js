@@ -4058,7 +4058,10 @@ function renderReporteAsesorDetalle(){
 
   wrap.innerHTML = `
     <div class="table-card">
-      <div class="table-header"><div class="table-title">👤 ${nombre} — Reporte Detallado</div></div>
+      <div class="table-header">
+        <div class="table-title">👤 ${nombre} — Reporte Detallado</div>
+        <button class="btn-filter" style="background:#0f7c38" onclick="imprimirReporteAsesor('${ruta.replace(/'/g,"\\'")}')">Imprimir esta ruta</button>
+      </div>
       <div class="kpi-grid" style="padding:1rem 1.25rem 0">
         <div class="kpi-card teal"><div class="kpi-icon">💰</div><div class="kpi-label">Total ventas</div><div class="kpi-value">$${totalVentas.toFixed(2)}</div><div class="kpi-sub">${pedidosUnicos} pedido(s)</div></div>
         <div class="kpi-card blue"><div class="kpi-icon">💳</div><div class="kpi-label">Total cobrado</div><div class="kpi-value">$${totalCobrado.toFixed(2)}</div><div class="kpi-sub">${pagos.length} pago(s)</div></div>
@@ -4079,6 +4082,134 @@ function renderReporteAsesorDetalle(){
       <div class="table-header"><div class="table-title">Gastos registrados</div></div>
       <div class="table-wrap"><table><thead><tr><th>Descripción</th><th style="text-align:right">Monto</th><th>Fecha</th></tr></thead><tbody>${filasGastos}</tbody></table></div>
     </div>`;
+}
+
+function _datosReporteAsesor(ruta){
+  const nombre = (ruta||'').split(':')[1]?.trim() || ruta || 'Sin asignar';
+  const datos = getDatosSoloFecha().filter(r => (r['ASESOR / RUTA']||'') === ruta);
+  const pedidos = datos.filter(r => r['PRODUCTO'] && r['PRODUCTO'] !== '');
+  const pagos   = datos.filter(r => !r['PRODUCTO'] && r['TOTAL PEDIDO ($)'] > 0 && String(r['TOTAL PEDIDO ($)']).indexOf('-') === -1);
+  const gastos  = datos.filter(r => String(r['TOTAL PEDIDO ($)']).indexOf('-') !== -1);
+  const pedidosConTotal = pedidos.filter(r => r['TOTAL PEDIDO ($)'] && parseFloat(r['TOTAL PEDIDO ($)']) > 0);
+  const totalVentas  = pedidosConTotal.reduce((s,r) => s + (parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
+  const totalCobrado = pagos.reduce((s,r) => s + (parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
+  const totalGastos  = gastos.reduce((s,r) => s + Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
+  const clientesUnicos = new Set(pedidos.map(r => r['CLIENTE'])).size;
+  const pedidosUnicos  = new Set(pedidos.map(r => r['_pedidoId'] || `${r['CLIENTE']}-${r['FECHA']}`)).size;
+  const pagosEfectivoAsesor = pagos.filter(r => r['FORMA DE PAGO']==='Efectivo').reduce((s,r) => s + (parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
+  const ventasContadoAsesor = pedidosConTotal.reduce((s,r) => {
+    const tot = parseFloat(r['TOTAL PEDIDO ($)']) || 0;
+    if (r['PAGOS_DESGLOSE'] && r['PAGOS_DESGLOSE'].length) {
+      const contadoParte = r['PAGOS_DESGLOSE'].filter(pg => pg.forma === 'Contado').reduce((s2,pg) => s2 + (parseFloat(pg.monto)||0), 0);
+      return s + contadoParte;
+    }
+    const abono = parseFloat(r['ABONO'] || 0);
+    if (abono > 0 && abono < tot) return s;
+    if (abono >= tot && tot > 0) return s + tot;
+    return r['FORMA DE PAGO'] === 'Contado' ? s + tot : s;
+  }, 0);
+  const totalCajaAsesor = ventasContadoAsesor + pagosEfectivoAsesor - totalGastos;
+  const porFormaVentas = {};
+  pedidosConTotal.forEach(r => { const f = r['FORMA DE PAGO']||'Sin especificar'; porFormaVentas[f] = (porFormaVentas[f]||0) + (parseFloat(r['TOTAL PEDIDO ($)'])||0); });
+  const porProducto = {}; const porRegalia = {};
+  pedidos.forEach(r => {
+    const nombreProd = r['PRODUCTO']||'';
+    if (nombreProd.startsWith('🎁 REGALO:')) {
+      const limpio = nombreProd.replace('🎁 REGALO: ','');
+      porRegalia[limpio] = (porRegalia[limpio]||0) + (parseFloat(r['CANTIDAD'])||0);
+    } else if (nombreProd) {
+      if (!porProducto[nombreProd]) porProducto[nombreProd] = { cantidad:0, subtotal:0 };
+      porProducto[nombreProd].cantidad += parseFloat(r['CANTIDAD'])||0;
+      porProducto[nombreProd].subtotal += parseFloat(r['SUBTOTAL'])||0;
+    }
+  });
+  return { nombre, pedidos, pagos, gastos, pedidosConTotal, totalVentas, totalCobrado, totalGastos, clientesUnicos, pedidosUnicos, totalCajaAsesor, porFormaVentas, porProducto, porRegalia };
+}
+function _htmlPrintReporteAsesor(ruta){
+  const d=_datosReporteAsesor(ruta);
+  const formas=Object.entries(d.porFormaVentas).sort(([,a],[,b])=>b-a).map(([f,v])=>`${escHTML(f)}: $${v.toFixed(2)}`).join(' · ') || 'Sin ventas';
+  const filasProd=Object.entries(d.porProducto).sort(([,a],[,b])=>b.subtotal-a.subtotal).map(([n,p])=>`<tr><td>${escHTML(n)}</td><td style="text-align:right">${p.cantidad%1===0?parseInt(p.cantidad):p.cantidad.toFixed(1)}</td><td style="text-align:right">$${p.subtotal.toFixed(2)}</td></tr>`).join('')||'<tr><td colspan="3">Sin productos</td></tr>';
+  const filasReg=Object.entries(d.porRegalia).sort(([,a],[,b])=>b-a).map(([n,c])=>`<tr><td>🎁 ${escHTML(n)}</td><td style="text-align:right">${c%1===0?parseInt(c):c.toFixed(1)}</td></tr>`).join('')||'<tr><td colspan="2">Sin regalías</td></tr>';
+  const filasPed=d.pedidos.slice(0,300).map(r=>`<tr><td>${escHTML(limpiarFecha(r['FECHA']))}</td><td>${escHTML(r['CLIENTE']||'-')}</td><td>${escHTML(r['PRODUCTO']||'-')}</td><td style="text-align:center">${escHTML(String(r['CANTIDAD']||'-'))}</td><td style="text-align:right">${r['TOTAL PEDIDO ($)']?'$'+(parseFloat(r['TOTAL PEDIDO ($)'])||0).toFixed(2):''}</td><td>${escHTML(r['FORMA DE PAGO']||'')}</td></tr>`).join('')||'<tr><td colspan="6">Sin pedidos</td></tr>';
+  const filasPag=d.pagos.map(r=>`<tr><td>${escHTML(r['CLIENTE']||'-')}</td><td style="text-align:right">$${(parseFloat(r['TOTAL PEDIDO ($)'])||0).toFixed(2)}</td><td>${escHTML(r['FORMA DE PAGO']||'-')}</td><td>${escHTML(limpiarFecha(r['FECHA']))}</td></tr>`).join('')||'<tr><td colspan="4">Sin pagos</td></tr>';
+  const filasGas=d.gastos.map(r=>`<tr><td>${escHTML(r['NOTAS']||'-')}</td><td style="text-align:right">$${Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0).toFixed(2)}</td><td>${escHTML(limpiarFecha(r['FECHA']))}</td></tr>`).join('')||'<tr><td colspan="3">Sin gastos</td></tr>';
+  return `<div class="ruta-print">
+    <h2>${escHTML(d.nombre)} — ${escHTML(ruta)}</h2>
+    <div class="kpis">
+      <div><b>Total ventas</b><span>$${d.totalVentas.toFixed(2)}</span><small>${d.pedidosUnicos} pedido(s)</small></div>
+      <div><b>Total cobrado</b><span>$${d.totalCobrado.toFixed(2)}</span><small>${d.pagos.length} pago(s)</small></div>
+      <div><b>Total gastos</b><span>$${d.totalGastos.toFixed(2)}</span><small>${d.gastos.length} gasto(s)</small></div>
+      <div><b>Clientes</b><span>${d.clientesUnicos}</span></div>
+      <div><b>Total en caja</b><span>$${d.totalCajaAsesor.toFixed(2)}</span></div>
+    </div>
+    <p class="formas"><b>Formas de pago:</b> ${formas}</p>
+    <h3>Productos vendidos</h3>
+    <table><thead><tr><th>Producto</th><th style="text-align:right">Cant.</th><th style="text-align:right">Subtotal</th></tr></thead><tbody>${filasProd}</tbody></table>
+    <h3>Regalías entregadas</h3>
+    <table><thead><tr><th>Regalía</th><th style="text-align:right">Cant.</th></tr></thead><tbody>${filasReg}</tbody></table>
+    <h3>Detalle de pedidos</h3>
+    <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th style="text-align:center">Cant.</th><th style="text-align:right">Total</th><th>Pago</th></tr></thead><tbody>${filasPed}</tbody></table>
+    <h3>Pagos cobrados</h3>
+    <table><thead><tr><th>Cliente</th><th style="text-align:right">Monto</th><th>Forma</th><th>Fecha</th></tr></thead><tbody>${filasPag}</tbody></table>
+    <h3>Gastos registrados</h3>
+    <table><thead><tr><th>Descripción</th><th style="text-align:right">Monto</th><th>Fecha</th></tr></thead><tbody>${filasGas}</tbody></table>
+  </div>`;
+}
+function _abrirPrintReporteAsesor(titulo, bloquesHtml){
+  const fecha=_textoRangoFecha();
+  const v=window.open('','_blank','width=900,height=900');
+  if(!v){ alert('Permite ventanas emergentes para imprimir.'); return; }
+  const logoUrl=location.origin+'/logo-luanaqua.png';
+  v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escHTML(titulo)}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:22px;background:#fff;}
+    .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:16px;padding-bottom:14px;border-bottom:2px solid #1a3a5c;}
+    .print-header img{height:46px;}
+    .print-header h1{font-family:Georgia,serif;font-size:20px;}
+    .print-header p{font-size:11px;color:#888;margin-top:3px;}
+    .ruta-print{page-break-after:always;margin-bottom:22px;}
+    .ruta-print:last-child{page-break-after:auto;}
+    h2{font-size:16px;margin:0 0 10px;color:#1a3a5c;}
+    h3{font-size:12px;margin:14px 0 6px;letter-spacing:.04em;text-transform:uppercase;color:#0a7c6e;}
+    .kpis{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+    .kpis div{flex:1;min-width:110px;border:1px solid #d2dae2;border-radius:8px;padding:8px;}
+    .kpis b{display:block;font-size:10px;color:#888;text-transform:uppercase;}
+    .kpis span{display:block;font-weight:800;font-size:16px;margin-top:2px;}
+    .kpis small{color:#888;font-size:10px;}
+    .formas{font-size:12px;margin-bottom:8px;}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px;}
+    th{text-align:left;font-size:9px;color:#888;border-bottom:1px solid #d2dae2;padding:4px;}
+    td{padding:4px;border-bottom:1px solid #eef2f6;}
+    @media print{body{padding:10px;}}
+  </style></head><body>
+  <div class="print-header">
+    <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
+    <div>
+      <h1>${escHTML(titulo)}</h1>
+      <p>Período: ${escHTML(fecha)} · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(typeof lineaImpresoPor==='function'?lineaImpresoPor():'')}</p>
+    </div>
+  </div>
+  ${bloquesHtml}
+  <script>
+    var _ok=false; function _go(){ if(_ok)return; _ok=true; window.print(); }
+    window.onload=_go; setTimeout(_go,180);
+  <\/script>
+  </body></html>`);
+  v.document.close();
+  if(typeof _dispararImpresion==='function') _dispararImpresion(v);
+}
+function imprimirReporteAsesor(ruta){
+  const r=ruta||_asesorReporteSeleccionado;
+  if(!r){ alert('Selecciona una ruta para imprimir.'); return; }
+  const nombre=(r.split(':')[1]||r).trim();
+  _abrirPrintReporteAsesor('Reporte por Asesor — '+nombre, _htmlPrintReporteAsesor(r));
+}
+function imprimirReporteTodasLasRutas(){
+  const rutas=(_asesoresCache&&_asesoresCache.length)?_asesoresCache.slice():[];
+  if(!rutas.length){ alert('No hay rutas para imprimir.'); return; }
+  const html=rutas.map(_htmlPrintReporteAsesor).join('');
+  _abrirPrintReporteAsesor('Reporte por Asesor — Todas las rutas', html);
 }
 
 function limpiarFecha(fecha) {
