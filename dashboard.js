@@ -4975,35 +4975,136 @@ function _totalCalculadoEdicion(){
   return editandoPedidoActual.productos.reduce((s,prod) => s + ((parseFloat(prod.cantidad)||0) * (parseFloat(prod.precio)||0)), 0);
 }
 
+function _parseMontoEditPago(id){
+  const el=document.getElementById(id);
+  const p=(typeof _parseMontoLiq==='function') ? _parseMontoLiq((el&&el.value)||'') : {ok:false,valor:0};
+  return p && p.ok ? p.valor : (parseFloat(String((el&&el.value)||'0').replace(',','.'))||0);
+}
+function _montosPagoDesdePedido(p){
+  const out={Contado:'',Transferencia:'',Cheque:''};
+  if(p && Array.isArray(p.pagos) && p.pagos.length){
+    p.pagos.forEach(pg=>{
+      const f=pg.forma;
+      if(out[f]!==undefined) out[f]=String(Number(pg.monto)||0);
+    });
+    return out;
+  }
+  const tot=Number(p && p.total)||0;
+  const f=String((p&&p.formapago)||'');
+  if(f==='Contado' && tot>0) out.Contado=String(tot);
+  else if(f==='Transferencia' && tot>0) out.Transferencia=String(tot);
+  else if(f==='Cheque' && tot>0) out.Cheque=String(tot);
+  return out;
+}
+let _editPagosAbiertos=new Set();
+function _pintarPagoEdit(){
+  const mapa={Contado:'#0a7c6e',Transferencia:'#1565c0',Cheque:'#e67e22','Crédito':'#c0392b'};
+  document.querySelectorAll('.edit-pago-opt').forEach(btn=>{
+    const v=btn.getAttribute('data-pago');
+    const on=(v==='Crédito') ? (!_editPagosAbiertos.size) : _editPagosAbiertos.has(v);
+    btn.style.borderColor=on?(mapa[v]||'var(--border)'):'var(--border)';
+    btn.style.background=on?'#fff':'#fff';
+    btn.style.boxShadow=on?('0 0 0 3px '+mapa[v]+'22'):'none';
+    btn.style.color=on?(mapa[v]||'var(--navy)'):'var(--navy)';
+  });
+  const box=document.getElementById('editPagoMontos');
+  const rows={Contado:'editRowContado',Transferencia:'editRowTransf',Cheque:'editRowCheque'};
+  let alguno=false;
+  Object.entries(rows).forEach(([forma,id])=>{
+    const el=document.getElementById(id);
+    const show=_editPagosAbiertos.has(forma);
+    if(el) el.style.display=show?'block':'none';
+    if(show) alguno=true;
+  });
+  if(box) box.style.display=alguno?'flex':'none';
+}
+function _elegirFormaPagoEdit(valor){
+  const ids={Contado:'editPagoContado',Transferencia:'editPagoTransf',Cheque:'editPagoCheque'};
+  if(valor==='Crédito'){
+    _editPagosAbiertos.clear();
+    Object.values(ids).forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  } else if(ids[valor]){
+    if(_editPagosAbiertos.has(valor)){
+      _editPagosAbiertos.delete(valor);
+      const inp=document.getElementById(ids[valor]);
+      if(inp) inp.value='';
+    } else {
+      _editPagosAbiertos.add(valor);
+    }
+  }
+  _pintarPagoEdit();
+  _refrescarResumenPagoEdit();
+}
+function _armarPagoEdicion(total){
+  const tot=Number((parseFloat(total)||0).toFixed(2));
+  const c=Number(_parseMontoEditPago('editPagoContado').toFixed(2));
+  const t=Number(_parseMontoEditPago('editPagoTransf').toFixed(2));
+  const q=Number(_parseMontoEditPago('editPagoCheque').toFixed(2));
+  if(c+t+q>tot+0.009) return {error:'La suma de Contado + Transferencia + Cheque no puede ser mayor al total.'};
+  const pagos=[];
+  if(c>0) pagos.push({forma:'Contado',monto:c});
+  if(t>0) pagos.push({forma:'Transferencia',monto:t});
+  if(q>0) pagos.push({forma:'Cheque',monto:q});
+  const creditoPendiente=Number(Math.max(tot-(c+t+q),0).toFixed(2));
+  let formapago;
+  if(!pagos.length) formapago='Crédito';
+  else if(pagos.length>1 || creditoPendiente>0) formapago='Mixto';
+  else formapago=pagos[0].forma;
+  return {formapago,pagos,creditoPendiente,abono:c};
+}
+function _refrescarResumenPagoEdit(){
+  const box=document.getElementById('editPagoResumen');
+  if(!box) return;
+  const tot=_totalCalculadoEdicion();
+  const arm=_armarPagoEdicion(tot);
+  const credEl=document.getElementById('editPagoCreditoMonto');
+  if(credEl) credEl.textContent='$'+(arm.creditoPendiente||0).toFixed(2);
+  if(arm.error){
+    box.style.color='#a93226';
+    box.textContent=arm.error;
+    return;
+  }
+  box.style.color='var(--navy)';
+  const partes=(arm.pagos||[]).map(pg=>pg.forma+' $'+Number(pg.monto).toFixed(2));
+  if(arm.creditoPendiente>0) partes.push('Crédito $'+arm.creditoPendiente.toFixed(2));
+  if(!partes.length) partes.push('Crédito $'+tot.toFixed(2));
+  box.textContent='Desglose: '+partes.join(' + ')+'  ·  Total $'+tot.toFixed(2);
+}
+
 function renderModalEditarPedido(){
   const p = editandoPedidoActual;
   if(!p) return;
 
   const optionsAsesor = _asesoresCache.map(r => `<option value="${r}" ${p.empleado===r?'selected':''}>${r.split(':')[1]?.trim()||r}</option>`).join('');
-  // [FIX] NUEVO FORMATO DE PAGO MÚLTIPLE — este selector solo conocía las 4 formas
-  // fijas (Contado/Crédito/Transferencia/Cheque). Si el pedido se creó con pago
-  // múltiple, su 'formapago' vale 'Mixto', y como esa opción no existía aquí, el
-  // <select> se quedaba sin ninguna marcada — al guardar CUALQUIER otro cambio (ej.
-  // solo el teléfono), esto sobrescribía 'Mixto' por el valor por defecto del
-  // desplegable sin que el admin lo pidiera. Este editor no soporta re-editar el
-  // desglose de pago múltiple en sí (pagos[]/creditoPendiente quedan intactos porque
-  // guardarEdicionPedido() solo actualiza los campos que sí edita este formulario);
-  // esta opción es solo para que 'Mixto' se conserve tal cual si no se toca.
-  const optionsPagoBase = p.formapago === 'Mixto'
-    ? [`<option value="Mixto" selected>Mixto (pago múltiple — no editable aquí)</option>`, ...FORMAS_PAGO_FIJAS.map(f => `<option value="${f}">${f}</option>`)]
-    : FORMAS_PAGO_FIJAS.map(f => `<option value="${f}" ${p.formapago===f?'selected':''}>${f}</option>`);
-  const optionsPago = optionsPagoBase.join('');
+  const montosEdit=_montosPagoDesdePedido(p);
+  _editPagosAbiertos=new Set();
+  if(montosEdit.Contado) _editPagosAbiertos.add('Contado');
+  if(montosEdit.Transferencia) _editPagosAbiertos.add('Transferencia');
+  if(montosEdit.Cheque) _editPagosAbiertos.add('Cheque');
+  if(!_editPagosAbiertos.size && (p.formapago==='Crédito' || Number(p.creditoPendiente)>0)) _editPagosAbiertos=new Set();
 
   document.getElementById('editarBody').innerHTML = `
     <div class="editar-seccion-label">📋 Datos del pedido</div>
     <div class="editar-grid">
       <div class="editar-field"><label>Fecha</label><input type="date" id="editFecha" value="${p.fecha||''}"></div>
       <div class="editar-field"><label>Asesor</label><select id="editAsesor">${optionsAsesor}</select></div>
-      <div class="editar-field"><label>Forma de Pago</label><select id="editFormaPago">${optionsPago}</select></div>
       <div class="editar-field"><label>Cliente</label><input type="text" id="editCliente" value="${escapeAttr(p.cliente||'')}"></div>
       <div class="editar-field"><label>Teléfono</label><input type="text" id="editTelefono" value="${escapeAttr(p.telefono||'')}"></div>
       <div class="editar-field"><label>Dirección</label><input type="text" id="editDireccion" value="${escapeAttr(p.direccion||'')}"></div>
     </div>
+    <div class="editar-seccion-label">💳 Forma de pago (igual que en la app: puedes marcar 2 o más)</div>
+    <div id="editPagoOpts" style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px">
+      <button type="button" class="edit-pago-opt" data-pago="Contado" onclick="_elegirFormaPagoEdit('Contado')" style="border:1.5px solid var(--border);background:#fff;border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer">💵 CONTADO</button>
+      <button type="button" class="edit-pago-opt" data-pago="Transferencia" onclick="_elegirFormaPagoEdit('Transferencia')" style="border:1.5px solid var(--border);background:#fff;border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer">🏦 TRANSFERENCIA</button>
+      <button type="button" class="edit-pago-opt" data-pago="Cheque" onclick="_elegirFormaPagoEdit('Cheque')" style="border:1.5px solid var(--border);background:#fff;border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer">📄 CHEQUE</button>
+      <button type="button" class="edit-pago-opt" data-pago="Crédito" onclick="_elegirFormaPagoEdit('Crédito')" style="border:1.5px solid var(--border);background:#fff;border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer">📋 CRÉDITO <span id="editPagoCreditoMonto">$0.00</span></button>
+    </div>
+    <div id="editPagoMontos" style="display:none;flex-direction:column;gap:8px;margin-bottom:8px">
+      <div class="editar-field" id="editRowContado" style="display:none"><label>💵 Contado ($)</label><input type="text" id="editPagoContado" inputmode="decimal" value="${montosEdit.Contado||''}" oninput="_filtrarInputMontoLiq(this);_refrescarResumenPagoEdit()"></div>
+      <div class="editar-field" id="editRowTransf" style="display:none"><label>🏦 Transferencia ($)</label><input type="text" id="editPagoTransf" inputmode="decimal" value="${montosEdit.Transferencia||''}" oninput="_filtrarInputMontoLiq(this);_refrescarResumenPagoEdit()"></div>
+      <div class="editar-field" id="editRowCheque" style="display:none"><label>📄 Cheque ($)</label><input type="text" id="editPagoCheque" inputmode="decimal" value="${montosEdit.Cheque||''}" oninput="_filtrarInputMontoLiq(this);_refrescarResumenPagoEdit()"></div>
+    </div>
+    <div id="editPagoResumen" style="margin:8px 0 4px;padding:8px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--navy)"></div>
     <div class="editar-grid full" style="margin-top:10px">
       <div class="editar-field"><label>Notas</label><textarea id="editNotas">${escHTML(p.notas||'')}</textarea></div>
     </div>
@@ -5027,6 +5128,8 @@ function renderModalEditarPedido(){
     </div>
   `;
   renderProductosEditor();
+  _pintarPagoEdit();
+  _refrescarResumenPagoEdit();
 }
 
 /* [NEW] Redibuja solo la sección de líneas de producto (y sus regalías) tras cada cambio */
@@ -5072,6 +5175,7 @@ function renderProductosEditor(){
 
   const totalEl = document.getElementById('editTotalCalculado');
   if(totalEl) totalEl.textContent = '$' + _totalCalculadoEdicion().toFixed(2);
+  _refrescarResumenPagoEdit();
 }
 
 function actualizarProductoLinea(i, campo, valor){
@@ -5129,16 +5233,22 @@ async function guardarEdicionPedido(){
   if(!cliente){ alert('El nombre del cliente no puede quedar vacío.'); return; }
   if(!productosLimpios.length){ alert('El pedido debe tener al menos un producto con nombre.'); return; }
 
+  const totalNuevo=+productosLimpios.reduce((s,prod) => s + prod.subtotal, 0).toFixed(2);
+  const pagoArm=_armarPagoEdicion(totalNuevo);
+  if(pagoArm.error){ alert(pagoArm.error); return; }
   const nuevo = {
     fecha: document.getElementById('editFecha').value,
     empleado: document.getElementById('editAsesor').value,
-    formapago: document.getElementById('editFormaPago').value,
+    formapago: pagoArm.formapago,
+    pagos: pagoArm.pagos,
+    creditoPendiente: pagoArm.creditoPendiente,
+    abono: pagoArm.abono,
     cliente,
     telefono: document.getElementById('editTelefono').value.trim(),
     direccion: document.getElementById('editDireccion').value.trim(),
     notas: document.getElementById('editNotas').value.trim(),
     productos: productosLimpios,
-    total: +productosLimpios.reduce((s,prod) => s + prod.subtotal, 0).toFixed(2)
+    total: totalNuevo
   };
 
   // Detectar cambios campo por campo para el historial de auditoría
