@@ -1303,7 +1303,7 @@ function _periodoEditableDesde15(){
   return dia>=MB_FECHA_EDITABLE_DESDE && dia<=hoy;
 }
 function _mbPeriodoEditable(){
-  if(typeof _esAdminMovBanc==='function' && !_esAdminMovBanc()) return false;
+  if(ROL_ACTUAL !== 'admin') return false;
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
   const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
   const desde=document.getElementById('filtroFecha')?.value||hasta;
@@ -1312,7 +1312,7 @@ function _mbPeriodoEditable(){
   return (!hasta || hasta<=hoy) && (!desde || desde<=hoy);
 }
 function _esAdminMovBanc(){
-  return ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria';
+  return ROL_ACTUAL === 'admin';
 }
 function _idMovimientosBancarios(){
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
@@ -1567,6 +1567,7 @@ function _claveFlexibleMB(f){
   return sl+'__'+met+'__'+val;
 }
 let _mbBloqueado=false;
+let _mbOcultos=[];
 async function renderMovimientosBancarios(){
   const tbody=document.getElementById('mbTbody');
   let totalEl=document.getElementById('mbTotal');
@@ -1576,11 +1577,11 @@ async function renderMovimientosBancarios(){
   renderFiltroPagoMovBanc();
   const theadRow=document.querySelector('#mbTabla thead tr');
   if(theadRow){
-    theadRow.innerHTML='<th>Fecha</th><th>Asesor</th><th style="text-align:right">Valor</th><th>Método de pago</th><th>Nombre de cuenta</th><th>Banco</th>';
+    theadRow.innerHTML='<th>Fecha</th><th>Asesor</th><th style="text-align:right">Valor</th><th>Método de pago</th><th>Nombre de cuenta</th><th>Banco</th><th>Acciones</th>';
   }
   const tfootRow=document.querySelector('#mbTabla tfoot tr');
   if(tfootRow){
-    tfootRow.innerHTML='<td style="font-weight:800">TOTAL</td><td></td><td id="mbTotal" style="text-align:right;font-weight:800">$0.00</td><td colspan="3"></td>';
+    tfootRow.innerHTML='<td style="font-weight:800">TOTAL</td><td></td><td id="mbTotal" style="text-align:right;font-weight:800">$0.00</td><td colspan="4"></td>';
   }
   const totalEl2=document.getElementById('mbTotal');
   if(totalEl2) totalEl=totalEl2;
@@ -1668,12 +1669,15 @@ async function renderMovimientosBancarios(){
       _diasDelRangoFiltroMB().forEach(dia=>ids.add(dia+'_'+dia));
       const bloques=await Promise.all([...ids].map(_leerGuardadoMB));
       const filasMerge=[];
+      const ocultosMerge=new Set();
       bloques.forEach(b=>{
         if(b && b.bloqueado) guardado.bloqueado=true;
         if(b && b.actualizadoPor) guardado.actualizadoPor=b.actualizadoPor;
         (b.filas||[]).forEach(f=>filasMerge.push(f));
+        (b.ocultos||[]).forEach(id=>ocultosMerge.add(String(id)));
       });
       guardado.filas=filasMerge;
+      guardado.ocultos=[...ocultosMerge];
     }
   }catch(err){ console.warn('movimientosBancarios lectura:', err); }
   _mbBloqueado=!!guardado.bloqueado;
@@ -1687,10 +1691,17 @@ async function renderMovimientosBancarios(){
       if(!porId[alt]) porId[alt]=f;
     }
   });
+  const ocultos=new Set((guardado.ocultos||[]).map(String));
+  _mbOcultos=[...ocultos];
+  lineas=lineas.filter((l,idx)=>{
+    const id=_idFilaMovBanc(l,idx);
+    const flex=_claveFlexibleMB({asesor:l.asesor, metodo:l.metodo, valor:l.valor});
+    return !ocultos.has(id) && !ocultos.has(flex);
+  });
   const total=lineas.reduce((s,l)=>s+(Number(l.valor)||0),0);
   if(totalEl) totalEl.textContent='$'+total.toFixed(2);
   if(!lineas.length){
-    tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:#888;font-style:italic;padding:18px">No hay transferencias, cheques ni depósitos en este período.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:#888;font-style:italic;padding:18px">No hay transferencias, cheques ni depósitos en este período.</td></tr>';
   } else {
     tbody.innerHTML=lineas.map((l,idx)=>{
       const id=_idFilaMovBanc(l,idx);
@@ -1700,6 +1711,7 @@ async function renderMovimientosBancarios(){
       const banco=saved.banco||'';
       const dis=(!_esAdminMovBanc() || !_mbPeriodoEditable() || _mbBloqueado)?'disabled':'';
       const fechaTxt=_fmtFechaHoraMB(l.fecha, l.ts);
+      const btnDel=_mbPeriodoEditable()?`<button type="button" class="btn-eliminar-fila" onclick="eliminarFilaMovimientoBancario('${escHTML(id).replace(/'/g,"\\'")}')">🗑 Eliminar</button>`:'';
       return `<tr data-mb-id="${escHTML(id)}" data-asesor="${escHTML(l.asesor)}" data-valor="${Number(l.valor).toFixed(2)}" data-metodo="${escHTML(l.metodo)}" data-fecha="${escHTML(fechaTxt)}">
         <td style="font-size:12px;white-space:nowrap;color:var(--navy)">${escHTML(fechaTxt)}</td>
         <td style="font-weight:800;color:var(--navy)">${escHTML(_nombreCortoAsesor(l.asesor))}</td>
@@ -1707,6 +1719,7 @@ async function renderMovimientosBancarios(){
         <td>${escHTML(l.metodo)}</td>
         <td>${_htmlSelectCuentaMB(cuenta, dis)}</td>
         <td>${_htmlInputBancoMB(banco, dis)}</td>
+        <td>${btnDel||'<span style="color:var(--muted);font-size:11px">—</span>'}</td>
       </tr>`;
     }).join('');
   }
@@ -1732,6 +1745,48 @@ async function renderMovimientosBancarios(){
     } else {
       st.textContent='Elige la cuenta y el banco. Luego pulsa Guardar información.';
     }
+  }
+}
+async function eliminarFilaMovimientoBancario(id){
+  if(!_mbPeriodoEditable()){
+    alert('Solo el administrador puede eliminar movimientos en este rango de fechas.');
+    return;
+  }
+  if(!id) return;
+  if(!confirm('¿Eliminar este movimiento bancario del listado?')) return;
+  if(!_mbOcultos) _mbOcultos=[];
+  if(!_mbOcultos.includes(id)) _mbOcultos.push(id);
+  const tr=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].find(r=>r.dataset.mbId===id);
+  if(tr) tr.remove();
+  if(typeof db==='undefined') return;
+  const periodo=_idMovimientosBancarios();
+  const actor=(typeof actorAuditoria==='function') ? actorAuditoria() : 'sistema';
+  async function _persistirOcultosMB(docId){
+    let prev={};
+    try{
+      const snap=await db.collection('cierresDelDia').doc(docId).get();
+      prev=snap.exists ? ((snap.data()||{}).movimientosBancarios||{}) : {};
+    }catch(e){}
+    const payload=Object.assign({}, prev, {
+      periodo: docId,
+      ocultos: _mbOcultos.slice(),
+      actualizadoPor: actor,
+      actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await db.collection('cierresDelDia').doc(docId).set({
+      movimientosBancarios: payload,
+      actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
+      actualizadoPor: actor
+    }, {merge:true});
+  }
+  try{
+    await _persistirOcultosMB(periodo);
+    const dias=_diasDelRangoFiltroMB();
+    await Promise.all(dias.map(dia=>_persistirOcultosMB(dia+'_'+dia)));
+    if(typeof renderMovimientosBancarios==='function') await renderMovimientosBancarios();
+  }catch(err){
+    console.warn('eliminar movimiento bancario:', err);
+    alert('No se pudo eliminar. Intenta de nuevo.');
   }
 }
 function habilitarEdicionMovimientosBancarios(){
@@ -1793,6 +1848,7 @@ async function guardarMovimientosBancarios(){
       periodo: docId,
       bloqueado:true,
       filas: filasDoc,
+      ocultos: (_mbOcultos||[]).slice(),
       actualizadoPor: actor,
       actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
     };
