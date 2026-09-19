@@ -5086,7 +5086,7 @@ function renderModalEditarPedido(){
   document.getElementById('editarBody').innerHTML = `
     <div class="editar-seccion-label">📋 Datos del pedido</div>
     <div class="editar-grid">
-      <div class="editar-field"><label>Fecha</label><input type="date" id="editFecha" value="${p.fecha||''}"></div>
+      <div class="editar-field"><label>Fecha</label><input type="date" id="editFecha" value="${p.fecha||''}" min="${document.getElementById('filtroFecha')?.value||''}" max="${document.getElementById('filtroFechaHasta')?.value||''}"></div>
       <div class="editar-field"><label>Asesor</label><select id="editAsesor">${optionsAsesor}</select></div>
       <div class="editar-field"><label>Cliente</label><input type="text" id="editCliente" value="${escapeAttr(p.cliente||'')}"></div>
       <div class="editar-field"><label>Teléfono</label><input type="text" id="editTelefono" value="${escapeAttr(p.telefono||'')}"></div>
