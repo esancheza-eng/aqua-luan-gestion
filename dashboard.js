@@ -730,6 +730,7 @@ function _guardarAjusteSaldosDesdeInput(el){
   if(!confirm('¿Está seguro de guardar el ajuste de saldos de '+nombre+'?')) return;
   _guardarAjusteSaldosAsesor(nombre, valor).then(()=>{
     alert('Ajuste de saldos guardado.');
+    if(typeof renderCierreDelDia==='function') renderCierreDelDia();
   }).catch(err=>{
     console.warn('ajusteSaldos', err);
     alert('No se pudo guardar el ajuste de saldos.');
@@ -891,15 +892,22 @@ function _recalcularFilaCierreDelDia(input){
     td.textContent = '$'+sums[i].toFixed(2);
   });
 }
+function _cierreDelDiaEsSoloHoy(){
+  const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+  const desde=document.getElementById('filtroFecha')?.value||hoy;
+  const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+  return !!hoy && desde===hoy && hasta===hoy;
+}
 function _cierreDelDiaPuedeEditar(){
-  if(ROL_ACTUAL !== 'admin') return false;
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
   const desde=document.getElementById('filtroFecha')?.value||hoy;
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
   if(!hoy) return false;
   if(desde && desde>hoy) return false;
   if(hasta && hasta>hoy) return false;
-  return true;
+  if(ROL_ACTUAL === 'admin') return true;
+  if(ROL_ACTUAL === 'secretaria') return _cierreDelDiaEsSoloHoy();
+  return false;
 }
 function _actualizarBotonesCierreDelDia(editando){
   const puede=_cierreDelDiaPuedeEditar();
@@ -924,7 +932,9 @@ function _setCierreDelDiaEditable(on){
 }
 function habilitarEdicionCierreDelDia(){
   if(!_cierreDelDiaPuedeEditar()){
-    alert('Solo el administrador puede editar el Cierre del Día en el rango Desde / Hasta.');
+    alert(ROL_ACTUAL==='secretaria'
+      ? 'La secretaria solo puede editar el Cierre del Día del día actual.'
+      : 'Solo el administrador puede editar el Cierre del Día en el rango Desde / Hasta.');
     return;
   }
   _setCierreDelDiaEditable(true);
@@ -933,7 +943,9 @@ function habilitarEdicionCierreDelDia(){
 }
 function _confirmarGuardarCierreDelDia(){
   if(!_cierreDelDiaPuedeEditar()){
-    alert('Solo el administrador puede guardar el Cierre del Día.');
+    alert(ROL_ACTUAL==='secretaria'
+      ? 'La secretaria solo puede guardar el Cierre del Día del día actual.'
+      : 'Solo el administrador puede guardar el Cierre del Día.');
     return;
   }
   if(!confirm('¿Está seguro que desea guardar el Cierre del Día de este rango de fechas?')) return;
@@ -941,7 +953,9 @@ function _confirmarGuardarCierreDelDia(){
 }
 async function _guardarCierreDelDia(){
   if(!_cierreDelDiaPuedeEditar()){
-    alert('Solo el administrador puede guardar el Cierre del Día.');
+    alert(ROL_ACTUAL==='secretaria'
+      ? 'La secretaria solo puede guardar el Cierre del Día del día actual.'
+      : 'Solo el administrador puede guardar el Cierre del Día.');
     return;
   }
   if(typeof db==='undefined') return;
@@ -1087,8 +1101,23 @@ async function renderCierreDelDia(){
   // así no rompe los cálculos, simplemente da $0.00 en todo.
   const _asesorVacio = { ventasContado:0, ventasCredito:0, ventasTransferencia:0, ventasCheque:0, ventasOtras:0, pagosEfectivo:0, pagosTransferencia:0, pagosCheque:0, pagosOtros:0, gastos:0, productos:{} };
 
-  // Tabla 1 — Cierre del Día (mismos campos que ya calcula la Liquidación)
-  const datosAsesores = rutasFull.map(r => porAsesor[r] || _asesorVacio);
+  // Tabla 1 — Cierre del Día (mismos campos que ya calcula la Liquidación,
+  // incluyendo el ajuste de saldos de cada ruta).
+  const ajustes={};
+  await Promise.all(rutasFull.map(async n=>{
+    const card=[...document.querySelectorAll('.liq-card-asesor')].find(c=>(c.dataset.asesor||'')===n);
+    if(card){
+      const inp=card.querySelector('.liq-ajuste-saldos');
+      ajustes[n]=parseFloat(String((inp&&inp.value)||'0').replace(',','.'))||0;
+    }else{
+      ajustes[n]=await _leerAjusteSaldosAsesor(n);
+    }
+  }));
+  const datosAsesores = rutasFull.map(r => {
+    const d0 = porAsesor[r] || _asesorVacio;
+    const ajuste = Number(ajustes[r])||0;
+    return Object.assign({}, d0, { ventasContado: (Number(d0.ventasContado)||0) + ajuste });
+  });
   const filas1 = [
     { etiqueta:'Valor/Liquidación', valor: n => _totalVentasRuta(n) },
     { etiqueta:'Pagos', valor: n => _totalPagosRuta(n) },
@@ -3129,8 +3158,11 @@ function renderTabla(pedidos) {
     const pago  = etiquetaPago ? `<span class="badge badge-teal">${escHTML(etiquetaPago)}</span>${detallePago}` : '';
     /* [NEW] Botón Editar — solo funciona si la fila trae el id real del pedido en Firestore
        (las filas de pagos/gastos no lo traen, pero renderTabla solo recibe pedidos con producto) */
-    const puedeAB = r['_pedidoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
-    const accion = puedeAB ? `<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
+    const puedeEditar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
+    const puedeEliminar = r['_pedidoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
+    const accion = (puedeEditar || puedeEliminar)
+      ? `${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}`
+      : '<span style="color:var(--muted);font-size:11px">—</span>';
     const fila = `<tr>
       <td style="white-space:nowrap;font-size:12px">${limpiarFecha(r['FECHA'])}</td>
       <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${escHTML(r['HORA REGISTRO']||'-')}</td>
@@ -3272,8 +3304,11 @@ function actualizarTablaCentral(datos) {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
     const pago  = r['FORMA DE PAGO'] ? `<span class="badge badge-teal">${r['FORMA DE PAGO']}</span>` : '';
-    const puedeAB = r['_pedidoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
-    const accion = puedeAB ? `<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
+    const puedeEditar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
+    const puedeEliminar = r['_pedidoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
+    const accion = (puedeEditar || puedeEliminar)
+      ? `${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}`
+      : '<span style="color:var(--muted);font-size:11px">—</span>';
     const fila = `<tr>
       <td style="white-space:nowrap;font-size:12px">${limpiarFecha(r['FECHA'])}</td>
       <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${escHTML(r['HORA REGISTRO']||'-')}</td>
@@ -4913,7 +4948,9 @@ function exportarExcel() {
 ════════════════════════════════════════════════════════════ */
 function abrirEditarPedido(pedidoId){
   const p = _pedidosRaw.find(x => x._id === pedidoId);
-  if(p && !_esRegistroDeHoy(p.fecha||p.FECHA)){ alert('Solo se pueden editar pedidos del día de hoy.'); return; }
+  if(ROL_ACTUAL !== 'admin'){
+    if(p && !_esRegistroDeHoy(p.fecha||p.FECHA)){ alert('Solo el administrador puede editar pedidos de fechas anteriores.'); return; }
+  }
   if(!p){ alert('No se encontró el pedido — puede que otro admin lo haya eliminado.'); return; }
   // Copia editable e independiente, para no mutar los datos en vivo del listener mientras se edita
   editandoPedidoActual = JSON.parse(JSON.stringify(p));
@@ -5070,7 +5107,10 @@ function agregarRegaliaLinea(i){
    colección) y registra cada campo que cambió en historialCambios para auditoría. */
 async function guardarEdicionPedido(){
   if(!editandoPedidoActual) return;
-  if(!_esRegistroDeHoy(editandoPedidoActual.fecha||editandoPedidoActual.FECHA)){ alert('Solo se pueden editar pedidos del día de hoy.'); return; }
+  if(ROL_ACTUAL !== 'admin' && !_esRegistroDeHoy(editandoPedidoActual.fecha||editandoPedidoActual.FECHA)){
+    alert('Solo el administrador puede guardar cambios de pedidos de fechas anteriores.');
+    return;
+  }
   if(!confirm('¿Está seguro que desea guardar los cambios de este pedido?')) return;
   const original = _pedidosRaw.find(x => x._id === editandoPedidoActual._id);
   if(!original){ alert('El pedido ya no existe.'); cerrarEditarPedido(); return; }
