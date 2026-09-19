@@ -1146,6 +1146,7 @@ async function renderCierreDelDia(){
   const _montoFaltante1 = e => Number(e.faltantes?.[0]?.monto)||0;
   const _montoFaltante2 = e => Number(e.faltantes?.[1]?.monto)||0;
   const _montoFaltante3 = e => Number(e.faltantes?.[2]?.monto)||0;
+  const _montoSobrante = e => Number(e.sobrante?.monto)||0;
   const filas2 = [
     { etiqueta:'Efectivo', valor: _montoEfectivo },
     { etiqueta:'Depósito', valor: _montoDeposito },
@@ -1153,9 +1154,10 @@ async function renderCierreDelDia(){
     { etiqueta:'Faltante 1', valor: _montoFaltante1 },
     { etiqueta:'Faltante 2', valor: _montoFaltante2 },
     { etiqueta:'Faltante 3', valor: _montoFaltante3 },
+    { etiqueta:'Sobrante', valor: e => -_montoSobrante(e) },
     { etiqueta:'TOTAL GENERAL', destacado:true, valor: e =>
         _montoEfectivo(e) + _montoDeposito(e) + _montoTransferencia(e) +
-        _montoFaltante1(e) + _montoFaltante2(e) + _montoFaltante3(e)
+        _montoFaltante1(e) + _montoFaltante2(e) + _montoFaltante3(e) - _montoSobrante(e)
     }
   ];
 
@@ -1175,7 +1177,7 @@ async function renderCierreDelDia(){
     rutasFull.forEach((id,i)=>{
       const e=entregas[i]||{};
       const deLiq=f.valor(e);
-      const hayLiq=!!(e.efectivo || e.deposito || (Array.isArray(e.depositos)&&e.depositos.length) || e.transferencia || (Array.isArray(e.faltantes)&&e.faltantes.some(x=>Number(x&&x.monto)>0)));
+      const hayLiq=!!(e.efectivo || e.deposito || (Array.isArray(e.depositos)&&e.depositos.length) || e.transferencia || (Array.isArray(e.faltantes)&&e.faltantes.some(x=>Number(x&&x.monto)>0)) || Number(e.sobrante&&e.sobrante.monto)>0);
       const savedVal=guardado.tabla2 && guardado.tabla2[f.etiqueta] ? guardado.tabla2[f.etiqueta][id] : undefined;
       tabla2Liq[f.etiqueta][id]= hayLiq ? deLiq : ((savedVal!==undefined && savedVal!==null && savedVal!=='') ? savedVal : deLiq);
     });
@@ -2088,7 +2090,8 @@ function _fusionarEntregasLiq(docs){
     efectivo:{marcado:false, monto:0},
     depositos:[],
     transferencia:{marcado:false, monto:0},
-    faltantes:[{monto:0},{monto:0},{monto:0}]
+    faltantes:[{monto:0},{monto:0},{monto:0}],
+    sobrante:{monto:0, motivo:''}
   };
   (docs||[]).forEach(e=>{
     if(!e) return;
@@ -2107,6 +2110,8 @@ function _fusionarEntregasLiq(docs){
       if(i>2) return;
       acc.faltantes[i].monto += Number(f && f.monto)||0;
     });
+    const sb=Number(e.sobrante && e.sobrante.monto)||0;
+    if(sb>0) acc.sobrante.monto += sb;
   });
   return acc;
 }
@@ -2149,6 +2154,15 @@ function _htmlEntregaAsesorBox(nombre, total){
     <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><input type="checkbox" class="liq-chk-tr" onchange="_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))"><span style="min-width:130px;font-weight:700">Transferencia</span><input type="text" class="liq-monto-tr" placeholder="0.00" inputmode="decimal" style="flex:1;height:36px;border:1.5px solid var(--border);border-radius:8px;padding:0 10px" oninput="_filtrarInputMontoLiq(this);_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))"></label>
     <div class="liq-faltantes-lista"></div>
     <button type="button" class="liq-btn-add-falt" onclick="_agregarFaltanteAsesor(this)" style="display:none;margin:4px 0 8px;padding:8px 12px;border:1.5px dashed var(--border);background:#fff;border-radius:8px;font-weight:700;cursor:pointer;color:var(--navy)">+ Añadir faltante</button>
+    <button type="button" class="liq-btn-toggle-sob" onclick="_toggleSobranteAsesor(this)" style="display:none;margin:0 0 8px;padding:8px 12px;border:1.5px dashed #0a7c6e;background:#fff;border-radius:8px;font-weight:700;cursor:pointer;color:#0a7c6e">+ Sobrante</button>
+    <div class="liq-sobrante-wrap" style="display:none;margin:0 0 8px;padding:10px;background:#fff;border:1.5px solid #c5e4dc;border-radius:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="min-width:90px;font-weight:700;color:#0a7c6e">Sobrante</span>
+        <input type="text" class="liq-sob-monto" placeholder="0.00" inputmode="decimal" style="width:110px;height:36px;border:1.5px solid var(--border);border-radius:8px;padding:0 10px" oninput="_filtrarInputMontoLiq(this);_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))">
+        <input type="text" class="liq-sob-motivo" placeholder="Motivo del sobrante" maxlength="120" style="flex:1;height:36px;border:1.5px solid var(--border);border-radius:8px;padding:0 10px">
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Se resta del efectivo / entrega para cuadrar el total.</div>
+    </div>
     <div class="liq-entrega-cuadre" style="font-size:12px;margin-top:8px;font-weight:700"></div>
     <div class="liq-entrega-status" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
@@ -2180,11 +2194,13 @@ function _setEntregaEditable(box, on){
   if(aj) aj.disabled=!on;
   if(btnAj) btnAj.style.display=on?'':'none';
   const add=box.querySelector('.liq-btn-add-falt');
+  const addSob=box.querySelector('.liq-btn-toggle-sob');
   const addDep=box.querySelector('.liq-btn-add-dep');
   const ed=box.querySelector('.liq-btn-editar');
   const gu=box.querySelector('.liq-btn-guardar');
   const ca=box.querySelector('.liq-btn-cancelar');
   if(add) add.style.display = on ? '' : 'none';
+  if(addSob) addSob.style.display = on ? '' : 'none';
   if(addDep){
     const n=box.querySelectorAll('.liq-deposito-row').length;
     addDep.style.display = (on && n<3) ? '' : 'none';
@@ -2263,7 +2279,8 @@ function _leerEntregaDesdeBox(box){
     depositos,
     transferencia:{marcado:!!box.querySelector('.liq-chk-tr')?.checked, monto:n('.liq-monto-tr')},
     faltantes,
-    invalido:[n('.liq-monto-ef'),n('.liq-monto-tr')].some(v=>Number.isNaN(v)) || depositos.some(d=>!d.montoOk) || faltantes.some(f=>!f.montoOk)
+    sobrante:(()=>{ const p=_parseMontoLiq(box.querySelector('.liq-sob-monto')?.value); return {monto:p.ok?p.valor:NaN, montoOk:p.ok, motivo:(box.querySelector('.liq-sob-motivo')?.value||'').trim()}; })(),
+    invalido:[n('.liq-monto-ef'),n('.liq-monto-tr')].some(v=>Number.isNaN(v)) || depositos.some(d=>!d.montoOk) || faltantes.some(f=>!f.montoOk) || !_parseMontoLiq(box.querySelector('.liq-sob-monto')?.value).ok
   };
 }
 function _htmlFilaFaltanteAsesor(i,monto,motivo){
@@ -2325,6 +2342,21 @@ function _guardarEntregaDesdeFila(el){
   const box=el.closest('.liq-entrega-asesor');
   if(box) _actualizarCuadreBox(box);
 }
+function _toggleSobranteAsesor(btn){
+  const box=btn.closest('.liq-entrega-asesor');
+  if(!box) return;
+  const wrap=box.querySelector('.liq-sobrante-wrap');
+  if(!wrap) return;
+  const on=wrap.style.display==='none';
+  wrap.style.display=on?'block':'none';
+  if(!on){
+    const m=box.querySelector('.liq-sob-monto');
+    const t=box.querySelector('.liq-sob-motivo');
+    if(m) m.value='';
+    if(t) t.value='';
+    _actualizarCuadreBox(box);
+  }
+}
 function _agregarFaltanteAsesor(btn){
   const box=btn.closest('.liq-entrega-asesor');
   if(!box) return;
@@ -2352,7 +2384,8 @@ function _actualizarCuadreBox(box){
     el.textContent='Hay un monto inválido.';
     return;
   }
-  const suma=(u.efectivo.marcado?u.efectivo.monto:0)+_sumaDepositosEntrega(u)+(u.transferencia.marcado?u.transferencia.monto:0)+(u.faltantes||[]).reduce((s,f)=>s+(f.montoOk?f.monto:0),0);
+  const sob=(u.sobrante && u.sobrante.montoOk)?(Number(u.sobrante.monto)||0):0;
+  const suma=(u.efectivo.marcado?u.efectivo.monto:0)+_sumaDepositosEntrega(u)+(u.transferencia.marcado?u.transferencia.monto:0)+(u.faltantes||[]).reduce((s,f)=>s+(f.montoOk?f.monto:0),0)-sob;
   const hayDep=(u.depositos||[]).some(d=>d.marcado)||u.deposito?.marcado;
   if(suma===0 && !u.efectivo.marcado && !hayDep && !u.transferencia.marcado){
     el.textContent=''; return;
@@ -2390,6 +2423,16 @@ async function _cargarEntregaAsesor(nombre){
     let filas=Array.isArray(d.faltantes)?d.faltantes.map(f=>({monto:f.monto||'',motivo:f.motivo||''})):[];
     const list=box.querySelector('.liq-faltantes-lista');
     if(list) list.innerHTML=(filas.length?filas:[{monto:'',motivo:''}]).map((f,i)=>_htmlFilaFaltanteAsesor(i,f.monto,f.motivo)).join('');
+    const wrapSob=box.querySelector('.liq-sobrante-wrap');
+    const sobMonto=Number(d.sobrante && d.sobrante.monto)||0;
+    const sobMotivo=(d.sobrante && d.sobrante.motivo)||'';
+    if(wrapSob){
+      wrapSob.style.display=sobMonto>0?'block':'none';
+      const sm=box.querySelector('.liq-sob-monto');
+      const stxt=box.querySelector('.liq-sob-motivo');
+      if(sm) sm.value=sobMonto>0?sobMonto.toFixed(2):'';
+      if(stxt) stxt.value=sobMotivo;
+    }
     const st=box.querySelector('.liq-entrega-status');
     if(st){
       if(!_filtroLiquidacionEsHoy()){
@@ -2438,6 +2481,7 @@ async function _guardarEntregaAsesor(nombre){
       depositos,
       transferencia:u.transferencia,
       faltantes,
+      sobrante:{monto:(u.sobrante&&u.sobrante.montoOk)?(Number(u.sobrante.monto)||0):0, motivo:(u.sobrante&&u.sobrante.motivo)||''},
       totalEntregar:tot,
       desde:document.getElementById('filtroFecha')?.value||'',
       hasta:document.getElementById('filtroFechaHasta')?.value||'',
@@ -2477,6 +2521,7 @@ function _htmlEntregaLiquidacionPrint(){
       ${(u.depositos&&u.depositos.length?u.depositos:[{marcado:u.deposito?.marcado,monto:u.deposito?.monto}]).map((d,i)=>fila(!!d.marcado,'Depósito '+(i+1),d.monto||0)).join('')}
       ${fila(u.transferencia.marcado,'Transferencia',u.transferencia.monto)}
       ${(u.faltantes||[]).filter(f=>f.montoOk&&f.monto>0).map((f,i)=>`<div class="ruta-linea"><span>Faltante ${i+1}${f.motivo?' — '+escHTML(f.motivo):''}</span><b>$${f.monto.toFixed(2)}</b></div>`).join('')||'<div class="ruta-linea"><span>Faltantes</span><b>$0.00</b></div>'}
+      ${(u.sobrante&&u.sobrante.montoOk&&u.sobrante.monto>0)?`<div class="ruta-linea"><span>Sobrante${u.sobrante.motivo?' — '+escHTML(u.sobrante.motivo):''}</span><b>-$${Number(u.sobrante.monto).toFixed(2)}</b></div>`:''}
     </div>`;
   }).join('');
 }
@@ -2501,6 +2546,7 @@ function _htmlEntregaPrintDeAsesor(nombre){
       ${(u.depositos&&u.depositos.length?u.depositos:[{marcado:u.deposito?.marcado,monto:u.deposito?.monto}]).map((d,i)=>fila(!!d.marcado,'Depósito '+(i+1),d.monto||0)).join('')}
       ${fila(u.transferencia.marcado,'Transferencia',u.transferencia.monto)}
       ${(u.faltantes||[]).filter(f=>f.montoOk&&f.monto>0).map((f,i)=>`<div class="ruta-linea"><span>Faltante ${i+1}${f.motivo?' — '+escHTML(f.motivo):''}</span><b>$${f.monto.toFixed(2)}</b></div>`).join('')||'<div class="ruta-linea"><span>Faltantes</span><b>$0.00</b></div>'}
+      ${(u.sobrante&&u.sobrante.montoOk&&u.sobrante.monto>0)?`<div class="ruta-linea"><span>Sobrante${u.sobrante.motivo?' — '+escHTML(u.sobrante.motivo):''}</span><b>-$${Number(u.sobrante.monto).toFixed(2)}</b></div>`:''}
     </div>`;
 }
 function imprimirLiquidacionDash(){
