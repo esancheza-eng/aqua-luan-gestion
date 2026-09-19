@@ -4340,6 +4340,11 @@ function _htmlPrintReporteAsesor(ruta){
     <table><thead><tr><th>Cliente</th><th style="text-align:right">Monto</th><th>Forma</th><th>Fecha</th></tr></thead><tbody>${filasPag}</tbody></table>
     <h3>Gastos registrados</h3>
     <table><thead><tr><th>Descripción</th><th style="text-align:right">Monto</th><th>Fecha</th></tr></thead><tbody>${filasGas}</tbody></table>
+    <div class="firmas">
+      <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidador</div></div>
+      <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
+      <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
+    </div>
   </div>`;
 }
 function _abrirPrintReporteAsesor(titulo, bloquesHtml){
@@ -4368,7 +4373,11 @@ function _abrirPrintReporteAsesor(titulo, bloquesHtml){
     table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px;}
     th{text-align:left;font-size:9px;color:#888;border-bottom:1px solid #d2dae2;padding:4px;}
     td{padding:4px;border-bottom:1px solid #eef2f6;}
-    @media print{body{padding:10px;}}
+    .firmas{display:flex;justify-content:space-between;gap:30px;margin-top:70px;page-break-inside:avoid;}
+    .firmas .firma{flex:1;text-align:center;}
+    .firmas .firma-linea{border-top:1.5px solid #1a3a5c;margin-bottom:6px;}
+    .firmas .firma-label{font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#1a3a5c;}
+    @media print{body{padding:10px;} .firmas{margin-top:60px;}}
   </style></head><body>
   <div class="print-header">
     <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
