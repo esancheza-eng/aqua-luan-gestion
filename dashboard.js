@@ -4356,7 +4356,7 @@ function _htmlPrintReporteAsesor(ruta){
     <h3>Gastos registrados</h3>
     <table><thead><tr><th>Descripción</th><th style="text-align:right">Monto</th><th>Fecha</th></tr></thead><tbody>${filasGas}</tbody></table>
     <div class="firmas">
-      <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidador</div></div>
+      <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
       <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
       <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Ayudante</div></div>
     </div>
