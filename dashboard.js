@@ -254,6 +254,7 @@ function switchSeccionDash(sec){
   if (sec === 'auditoria' && typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
   if (sec === 'notasAdicionalesDash' && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash(); // [NEW] sección independiente de Notas Adicionales
   if (sec === 'movimientosBancarios' && typeof renderMovimientosBancarios === 'function') renderMovimientosBancarios();
+  if (sec === 'reporteAsesor' && typeof renderReporteAsesores === 'function') renderReporteAsesores();
   if (sec === 'cobranzasClientes' && typeof renderCobranzasClientes === 'function') renderCobranzasClientes();
   // [FIX] Los gráficos de "Resumen General" ya no se redibujan en cada cambio de
   // Firestore si esta pestaña no está activa (ver comentario en renderDashboard) —
@@ -3074,7 +3075,8 @@ function renderDashboard() {
   document.getElementById('tableCard').style.display = 'block';
   document.getElementById('clienteCard').style.display = 'block';
   document.getElementById('pagosGastosCard').style.display = 'block'; // [NEW]
-  renderReporteAsesores(); // [NEW]
+  const seccionReporteVisible = document.getElementById('seccion-reporteAsesor')?.classList.contains('active');
+  if (seccionReporteVisible) renderReporteAsesores();
 }
 
 /* ════════════════════════════════════════
@@ -4162,10 +4164,23 @@ function renderReporteAsesores(){
 
 function seleccionarAsesorReporte(ruta){
   _asesorReporteSeleccionado = ruta;
-  renderReporteAsesores();
-  renderReporteAsesorDetalle();
+  document.querySelectorAll('#reporteAsesorCardsGrid .asesor-card').forEach(card=>{
+    card.style.boxShadow='';
+  });
+  const grid=document.getElementById('reporteAsesorCardsGrid');
+  if(grid){
+    const idx=(_asesoresCache||[]).indexOf(ruta);
+    const card=grid.children[idx];
+    if(card){
+      const color=colorDeAsesor(ruta);
+      card.style.boxShadow='0 0 0 2px '+color+', var(--shadow)';
+    }
+  }
   const wrap = document.getElementById('reporteAsesorDetalleWrap');
-  if (wrap) wrap.scrollIntoView({ behavior:'smooth', block:'start' });
+  if (wrap) wrap.style.display='block';
+  requestAnimationFrame(()=>{
+    renderReporteAsesorDetalle();
+  });
 }
 
 function renderReporteAsesorDetalle(){
@@ -4404,8 +4419,18 @@ function imprimirReporteAsesor(ruta){
 function imprimirReporteTodasLasRutas(){
   const rutas=(_asesoresCache&&_asesoresCache.length)?_asesoresCache.slice():[];
   if(!rutas.length){ alert('No hay rutas para imprimir.'); return; }
-  const html=rutas.map(_htmlPrintReporteAsesor).join('');
-  _abrirPrintReporteAsesor('Reporte por Asesor — Todas las rutas', html);
+  const html=[];
+  let i=0;
+  function _paso(){
+    const fin=Math.min(i+1, rutas.length);
+    for(;i<fin;i++) html.push(_htmlPrintReporteAsesor(rutas[i]));
+    if(i<rutas.length){
+      setTimeout(_paso,0);
+    }else{
+      _abrirPrintReporteAsesor('Reporte por Asesor — Todas las rutas', html.join(''));
+    }
+  }
+  _paso();
 }
 
 function limpiarFecha(fecha) {
