@@ -1176,10 +1176,7 @@ async function renderCierreDelDia(){
     tabla2Liq[f.etiqueta]={};
     rutasFull.forEach((id,i)=>{
       const e=entregas[i]||{};
-      const deLiq=f.valor(e);
-      const hayLiq=!!(e.efectivo || e.deposito || (Array.isArray(e.depositos)&&e.depositos.length) || e.transferencia || (Array.isArray(e.faltantes)&&e.faltantes.some(x=>Number(x&&x.monto)>0)) || Number(e.sobrante&&e.sobrante.monto)>0);
-      const savedVal=guardado.tabla2 && guardado.tabla2[f.etiqueta] ? guardado.tabla2[f.etiqueta][id] : undefined;
-      tabla2Liq[f.etiqueta][id]= hayLiq ? deLiq : ((savedVal!==undefined && savedVal!==null && savedVal!=='') ? savedVal : deLiq);
+      tabla2Liq[f.etiqueta][id]= f.valor(e);
     });
   });
   cont1.innerHTML = _htmlTablaCierreDelDia(1, rutasFull, nombresDisplay, datosAsesores, filas1, guardado.tabla1||{});
@@ -1512,27 +1509,28 @@ function _lineasMovimientosDesdeDatos(){
   const lineas=[];
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
   const activas = new Set(_mbFormasActivas());
-  function pushLinea(asesor, valor, metodo, fecha, ts){
+  function pushLinea(asesor, valor, metodo, fecha, ts, origen){
     if(!metodo || !(Number(valor)>0)) return;
     if(!_asesorMatchMB(asesor, asesorSel)) return;
     if(activas.size && !activas.has(metodo)) return;
-    lineas.push({asesor, valor:Number(valor), metodo, fecha:fecha||'', ts:ts||null});
+    lineas.push({asesor, valor:Number(valor), metodo, fecha:fecha||'', ts:ts||null, origen:origen||null});
   }
   (_pedidosRaw||[]).forEach(p=>{
     const asesor=p.empleado || 'Sin asignar';
     const fecha=p.fecha||'';
     const ts=p.creadoEn||null;
+    const origenPed={tipo:'pedido', id:p._id||''};
     if (p.pagos !== null && p.pagos !== undefined) {
       (p.pagos||[]).forEach(pg=>{
         const metodo=_normMetodoMB(pg.forma) || _esMetodoBancario(pg.forma);
-        pushLinea(asesor, parseFloat(pg.monto||0)||0, metodo, fecha, ts);
+        pushLinea(asesor, parseFloat(pg.monto||0)||0, metodo, fecha, ts, origenPed);
       });
       const cred=parseFloat(p.creditoPendiente||0)||0;
-      if(cred>0.004) pushLinea(asesor, cred, 'Crédito', fecha, ts);
+      if(cred>0.004) pushLinea(asesor, cred, 'Crédito', fecha, ts, origenPed);
     } else {
       const metodo=_normMetodoMB(p.formapago) || _esMetodoBancario(p.formapago);
       const tot=parseFloat(p.total||0)||0;
-      if(metodo) pushLinea(asesor, tot, metodo, fecha, ts);
+      if(metodo) pushLinea(asesor, tot, metodo, fecha, ts, origenPed);
       else if(String(p.formapago||'').toLowerCase()==='mixto' && tot>0){
         /* sin desglose: no inventar */
       }
@@ -1540,7 +1538,7 @@ function _lineasMovimientosDesdeDatos(){
   });
   (_pagosRaw||[]).forEach(p=>{
     const metodo=_normMetodoMB(p.forma) || _esMetodoBancario(p.forma);
-    pushLinea(p.empleado||'Sin asignar', parseFloat(p.monto||0)||0, metodo, p.fecha||'', p.creadoEn||null);
+    pushLinea(p.empleado||'Sin asignar', parseFloat(p.monto||0)||0, metodo, p.fecha||'', p.creadoEn||null, {tipo:'pago', id:p._id||''});
   });
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
   const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
@@ -1726,7 +1724,7 @@ async function renderMovimientosBancarios(){
       const dis=(!_esAdminMovBanc() || !_mbPeriodoEditable() || _mbBloqueado)?'disabled':'';
       const fechaTxt=_fmtFechaHoraMB(l.fecha, l.ts);
       const btnDel=_mbPeriodoEditable()?`<button type="button" class="btn-eliminar-fila" onclick="eliminarFilaMovimientoBancario('${escHTML(id).replace(/'/g,"\\'")}')">🗑 Eliminar</button>`:'';
-      return `<tr data-mb-id="${escHTML(id)}" data-asesor="${escHTML(l.asesor)}" data-valor="${Number(l.valor).toFixed(2)}" data-metodo="${escHTML(l.metodo)}" data-fecha="${escHTML(fechaTxt)}">
+      return `<tr data-mb-id="${escHTML(id)}" data-asesor="${escHTML(l.asesor)}" data-valor="${Number(l.valor).toFixed(2)}" data-metodo="${escHTML(l.metodo)}" data-fecha="${escHTML(fechaTxt)}" data-origen-tipo="${escHTML((l.origen&&l.origen.tipo)||'')}" data-origen-id="${escHTML((l.origen&&l.origen.id)||'')}">
         <td style="font-size:12px;white-space:nowrap;color:var(--navy)">${escHTML(fechaTxt)}</td>
         <td style="font-weight:800;color:var(--navy)">${escHTML(_nombreCortoAsesor(l.asesor))}</td>
         <td style="text-align:right;font-weight:700">$${Number(l.valor).toFixed(2)}</td>
@@ -1839,9 +1837,15 @@ async function eliminarFilaMovimientoBancario(id){
   const metodo=tr?.dataset.metodo||'';
   const valor=tr?.dataset.valor||'';
   const fechaTxt=tr?.dataset.fecha||'';
+  const origenTipo=tr?.dataset.origenTipo||'';
+  const origenId=tr?.dataset.origenId||'';
   if(tr) tr.remove();
   await _quitarMontoEnEntregaLiq(asesor, metodo, valor);
-  await _quitarPagoOrigenMB(asesor, metodo, valor, fechaTxt);
+  if(origenTipo==='pago' && origenId && typeof db!=='undefined'){
+    try{ await db.collection('pagos').doc(origenId).delete(); }catch(e){ console.warn('MB origen pago:', e); }
+  } else {
+    await _quitarPagoOrigenMB(asesor, metodo, valor, fechaTxt);
+  }
   if(typeof db==='undefined') return;
   const periodo=_idMovimientosBancarios();
   const actor=(typeof actorAuditoria==='function') ? actorAuditoria() : 'sistema';
@@ -2117,11 +2121,6 @@ function _fusionarEntregasLiq(docs){
 }
 async function _cargarEntregaCierreAsesor(nombre){
   if(typeof db==='undefined') return {};
-  const exact=_idEntregaLiquidacion(nombre);
-  try{
-    const snapExact=await db.collection('cierresLiquidacion').doc(exact).get();
-    if(snapExact.exists) return snapExact.data()||{};
-  }catch(err){}
   const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
   const sl=_slugAsesorLiq(nombre);
@@ -2134,6 +2133,10 @@ async function _cargarEntregaCierreAsesor(nombre){
     }catch(err){}
   }
   if(diarios.length) return _fusionarEntregasLiq(diarios);
+  try{
+    const snapExact=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
+    if(snapExact.exists) return snapExact.data()||{};
+  }catch(err){}
   return {};
 }
 function _boxEntregaAsesor(nombre){
