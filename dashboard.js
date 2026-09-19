@@ -3159,7 +3159,7 @@ function renderTabla(pedidos) {
     /* [NEW] Botón Editar — solo funciona si la fila trae el id real del pedido en Firestore
        (las filas de pagos/gastos no lo traen, pero renderTabla solo recibe pedidos con producto) */
     const puedeEditar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
-    const puedeEliminar = r['_pedidoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
+    const puedeEliminar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
     const accion = (puedeEditar || puedeEliminar)
       ? `${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}`
       : '<span style="color:var(--muted);font-size:11px">—</span>';
@@ -3305,7 +3305,7 @@ function actualizarTablaCentral(datos) {
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
     const pago  = r['FORMA DE PAGO'] ? `<span class="badge badge-teal">${r['FORMA DE PAGO']}</span>` : '';
     const puedeEditar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
-    const puedeEliminar = r['_pedidoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
+    const puedeEliminar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
     const accion = (puedeEditar || puedeEliminar)
       ? `${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}`
       : '<span style="color:var(--muted);font-size:11px">—</span>';
@@ -5358,7 +5358,10 @@ async function _registrarAuditoria(tipo, accion, registroId, detalle, motivo){
 async function eliminarPedidoCompleto(pedidoId){
   const p = _pedidosRaw.find(x => x._id === pedidoId);
   if(!p){ alert('No se encontró el pedido — puede que ya se haya eliminado.'); return; }
-  if(!_esRegistroDeHoy(p.fecha||p.FECHA)){ alert('Solo se pueden eliminar pedidos del día de hoy.'); return; }
+  if(ROL_ACTUAL !== 'admin'){
+    alert('Solo el administrador puede eliminar pedidos.');
+    return;
+  }
 
   const clienteNombre = p.cliente || 'Sin nombre';
   const totalPedido = p.total != null ? `$${parseFloat(p.total).toFixed(2)}` : '$0.00';
