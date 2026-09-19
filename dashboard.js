@@ -1758,17 +1758,87 @@ async function renderMovimientosBancarios(){
     }
   }
 }
+function _refrescarDashboardTrasMB(){
+  if(typeof renderMovimientosBancarios==='function') renderMovimientosBancarios();
+  if(typeof renderLiquidacionDash==='function') renderLiquidacionDash();
+  if(typeof renderCierreDelDia==='function') renderCierreDelDia();
+  if(typeof renderReporteAsesores==='function') renderReporteAsesores();
+  if(typeof actualizarTodo==='function') actualizarTodo();
+}
+async function _quitarMontoEnEntregaLiq(nombre, metodo, monto){
+  if(typeof db==='undefined' || !nombre) return;
+  const id=_idEntregaLiquidacion(nombre);
+  try{
+    const snap=await db.collection('cierresLiquidacion').doc(id).get();
+    if(!snap.exists) return;
+    const data=snap.data()||{};
+    const m=Number(monto)||0;
+    const met=String(metodo||'').toLowerCase();
+    if(met.includes('dep')){
+      let deps=Array.isArray(data.depositos)?data.depositos.slice():(data.deposito?[data.deposito]:[]);
+      let quitado=false;
+      deps=deps.filter(d=>{
+        if(quitado) return true;
+        const val=d && d.marcado ? (Number(d.monto)||0) : 0;
+        if(Math.abs(val-m)<0.009){ quitado=true; return false; }
+        return true;
+      });
+      const suma=deps.reduce((s,d)=>s+((d.marcado)?(Number(d.monto)||0):0),0);
+      await db.collection('cierresLiquidacion').doc(id).set({
+        depositos:deps,
+        deposito:{marcado:suma>0, monto:suma},
+        actualizadoEn:firebase.firestore.FieldValue.serverTimestamp()
+      }, {merge:true});
+    } else if(met.includes('transf')){
+      const actual=(data.transferencia && data.transferencia.marcado)?(Number(data.transferencia.monto)||0):0;
+      if(Math.abs(actual-m)<0.009 || actual>=m){
+        const resto=Math.max(0, actual-m);
+        await db.collection('cierresLiquidacion').doc(id).set({
+          transferencia:{marcado:resto>0, monto:resto},
+          actualizadoEn:firebase.firestore.FieldValue.serverTimestamp()
+        }, {merge:true});
+      }
+    }
+  }catch(err){ console.warn('sync liquidacion desde MB:', err); }
+}
+async function _quitarPagoOrigenMB(asesor, metodo, monto, fechaTxt){
+  if(typeof db==='undefined') return;
+  const m=Number(monto)||0;
+  const dia=_diaLocalDesdeFecha(fechaTxt);
+  const forma=String(metodo||'');
+  const cand=(_pagosRaw||[]).filter(p=>{
+    if(!_asesorMatchMB(p.empleado||'', asesor) && (p.empleado||'')!==asesor) return false;
+    if(Math.abs((parseFloat(p.monto)||0)-m)>0.009) return false;
+    const f=_normMetodoMB(p.forma)||p.forma||'';
+    if(String(f).toLowerCase()!==forma.toLowerCase() && !_normMetodoMB(p.forma)) {
+      if(String(p.forma||'').toLowerCase()!==forma.toLowerCase()) return false;
+    }
+    const pd=_diaLocalDesdeFecha(p.fecha||'');
+    if(dia && pd && pd!==dia) return false;
+    return true;
+  });
+  if(cand.length!==1 || !cand[0]._id) return;
+  try{
+    await db.collection('pagos').doc(cand[0]._id).delete();
+  }catch(err){ console.warn('sync pago desde MB:', err); }
+}
 async function eliminarFilaMovimientoBancario(id){
   if(!_mbPeriodoEditable()){
     alert('Solo el administrador puede eliminar movimientos en este rango de fechas.');
     return;
   }
   if(!id) return;
-  if(!confirm('¿Eliminar este movimiento bancario del listado?')) return;
+  if(!confirm('¿Eliminar este movimiento bancario del listado? También se actualizará Liquidación / Cierre si corresponde.')) return;
   if(!_mbOcultos) _mbOcultos=[];
   if(!_mbOcultos.includes(id)) _mbOcultos.push(id);
   const tr=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].find(r=>r.dataset.mbId===id);
+  const asesor=tr?.dataset.asesor||'';
+  const metodo=tr?.dataset.metodo||'';
+  const valor=tr?.dataset.valor||'';
+  const fechaTxt=tr?.dataset.fecha||'';
   if(tr) tr.remove();
+  await _quitarMontoEnEntregaLiq(asesor, metodo, valor);
+  await _quitarPagoOrigenMB(asesor, metodo, valor, fechaTxt);
   if(typeof db==='undefined') return;
   const periodo=_idMovimientosBancarios();
   const actor=(typeof actorAuditoria==='function') ? actorAuditoria() : 'sistema';
@@ -1794,7 +1864,7 @@ async function eliminarFilaMovimientoBancario(id){
     await _persistirOcultosMB(periodo);
     const dias=_diasDelRangoFiltroMB();
     await Promise.all(dias.map(dia=>_persistirOcultosMB(dia+'_'+dia)));
-    if(typeof renderMovimientosBancarios==='function') await renderMovimientosBancarios();
+    _refrescarDashboardTrasMB();
   }catch(err){
     console.warn('eliminar movimiento bancario:', err);
     alert('No se pudo eliminar. Intenta de nuevo.');
@@ -1913,7 +1983,7 @@ async function guardarMovimientosBancarios(){
       _registrarAuditoria('movimientosBancarios', 'edición', periodo, 'Movimientos bancarios guardados por '+actor);
     }
     _mbBloqueado=true;
-    await renderMovimientosBancarios();
+    _refrescarDashboardTrasMB();
     if(st) st.textContent='Guardado correctamente — ya no se puede editar.';
   }catch(err){
     console.warn('movimientosBancarios escritura:', err);
