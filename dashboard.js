@@ -3108,7 +3108,7 @@ function renderPagosGastosDetalle(pagos, gastos) {
   } else {
     const filas = pagos.map(r => {
       const monto = parseFloat(r['TOTAL PEDIDO ($)'])||0;
-      const puedePago = r['_pagoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
+      const puedePago = r['_pagoId'] && ROL_ACTUAL === 'admin';
       const accionesPago = puedePago ? `<button class="btn-editar-fila" onclick="abrirEditarPago('${r['_pagoId']}')" title="Editar este pago">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarPagoDash('${r['_pagoId']}')" title="Eliminar este pago">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
       return `<tr>
         <td style="font-weight:600">${escHTML(r['CLIENTE']||'-')}</td>
@@ -3129,8 +3129,13 @@ function renderPagosGastosDetalle(pagos, gastos) {
     const filas = gastos.map(r => {
       const monto = Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0);
       const desc = r['NOTAS'] || r['CLIENTE'] || r['DIRECCIÓN'] || '-'; // [NOTA] ver aviso más abajo sobre esta columna
-      const puedeGasto = r['_gastoId'] && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && _esRegistroDeHoy(r['FECHA']||r['fecha']);
-      const accionesGasto = puedeGasto ? `<button class="btn-editar-fila" onclick="abrirEditarGasto('${r['_gastoId']}')" title="Editar este gasto">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarGastoDash('${r['_gastoId']}')" title="Eliminar este gasto">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
+      let gid = r['_gastoId'] || '';
+      if(!gid && Array.isArray(_gastosRaw)){
+        const hit=_gastosRaw.find(g => String(g.fecha||'')===String(r['FECHA']||'') && Math.abs((parseFloat(g.monto)||0)-monto)<0.009);
+        if(hit) gid=hit._id||'';
+      }
+      const puedeGasto = gid && ROL_ACTUAL === 'admin';
+      const accionesGasto = puedeGasto ? `<button class="btn-editar-fila" onclick="abrirEditarGasto('${gid}')" title="Editar este gasto">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarGastoDash('${gid}')" title="Eliminar este gasto">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
       return `<tr>
         <td style="font-weight:600">${escHTML(desc)}</td>
         <td style="font-size:12px">${(r['ASESOR / RUTA']||'').split(':')[1]?.trim()||r['ASESOR / RUTA']||'-'}</td>
@@ -5930,7 +5935,7 @@ let _editandoPagoGasto = null; // { tipo:'pago'|'gasto', id:'...' }
 function abrirEditarPago(id){
   const p = _pagosRaw.find(x => x._id === id);
   if(!p){ alert('No se encontró el pago — puede que ya se haya eliminado.'); return; }
-  if(!_esRegistroDeHoy(p.fecha||p.FECHA)){ alert('Solo se pueden editar pagos del día de hoy.'); return; }
+  if(ROL_ACTUAL !== 'admin'){ alert('Solo el administrador puede editar pagos.'); return; }
   _editandoPagoGasto = { tipo:'pago', id };
   document.getElementById('editarPagoGastoTitulo').textContent = '✏ Editar Pago';
   const optionsForma = FORMAS_PAGO_COBRO.map(f => `<option value="${f}" ${p.forma===f?'selected':''}>${f}</option>`).join('');
@@ -5949,7 +5954,7 @@ function abrirEditarPago(id){
 function abrirEditarGasto(id){
   const g = _gastosRaw.find(x => x._id === id);
   if(!g){ alert('No se encontró el gasto — puede que ya se haya eliminado.'); return; }
-  if(!_esRegistroDeHoy(g.fecha||g.FECHA)){ alert('Solo se pueden editar gastos del día de hoy.'); return; }
+  if(ROL_ACTUAL !== 'admin'){ alert('Solo el administrador puede editar gastos.'); return; }
   _editandoPagoGasto = { tipo:'gasto', id };
   document.getElementById('editarPagoGastoTitulo').textContent = '✏ Editar Gasto';
   document.getElementById('editarPagoGastoBody').innerHTML = `
@@ -5997,6 +6002,7 @@ async function guardarEdicionPagoGasto(){
     await _registrarAuditoria(tipo, 'edición', id, (tipo==='pago'?'Pago':'Gasto') + ' editado por ' + actorAuditoria() + ' — monto $' + monto.toFixed(2));
     mostrarToastEdicion(tipo === 'pago' ? '✅ Pago actualizado correctamente.' : '✅ Gasto actualizado correctamente.');
     cerrarEditarPagoGasto();
+    if(typeof _refrescarDashboardTrasMB==='function') _refrescarDashboardTrasMB();
   }catch(err){
     console.error(err);
     alert('❌ Ocurrió un error al guardar: ' + err.message);
@@ -6007,7 +6013,7 @@ async function guardarEdicionPagoGasto(){
 
 async function eliminarPagoDash(id){
   const pagoChk = (_pagosRaw||[]).find(x => x._id === id);
-  if(pagoChk && !_esRegistroDeHoy(pagoChk.fecha||pagoChk.FECHA)){ alert('Solo se pueden eliminar pagos del día de hoy.'); return; }
+  if(ROL_ACTUAL !== 'admin'){ alert('Solo el administrador puede eliminar pagos.'); return; }
 
   const p = _pagosRaw.find(x => x._id === id);
   _pedirMotivoEliminar(`Vas a eliminar el pago de "${p?.cliente||'este cliente'}" ($${(parseFloat(p?.monto)||0).toFixed(2)}). Esta acción no se puede deshacer.`, async (motivo) => {
@@ -6015,18 +6021,20 @@ async function eliminarPagoDash(id){
     await db.collection('pagos').doc(id).delete();
     await _registrarAuditoria('pago', 'eliminación', id, 'Pago eliminado por ' + actorAuditoria(), motivo);
     mostrarToastEdicion('🗑 Pago eliminado correctamente.');
+    if(typeof _refrescarDashboardTrasMB==='function') _refrescarDashboardTrasMB();
   }catch(err){ console.error(err); alert('❌ No se pudo eliminar el pago: ' + err.message); }
   });
 }
 
 async function eliminarGastoDash(id){
   const g = _gastosRaw.find(x => x._id === id);
-  if(g && !_esRegistroDeHoy(g.fecha||g.FECHA)){ alert('Solo se pueden eliminar gastos del día de hoy.'); return; }
+  if(ROL_ACTUAL !== 'admin'){ alert('Solo el administrador puede eliminar gastos.'); return; }
   _pedirMotivoEliminar(`Vas a eliminar el gasto "${g?.desc||g?.categoria||'este gasto'}" ($${(parseFloat(g?.monto)||0).toFixed(2)}). Esta acción no se puede deshacer.`, async (motivo) => {
   try{
     await db.collection('gastos').doc(id).delete();
     await _registrarAuditoria('gasto', 'eliminación', id, 'Gasto eliminado por ' + actorAuditoria(), motivo);
     mostrarToastEdicion('🗑 Gasto eliminado correctamente.');
+    if(typeof _refrescarDashboardTrasMB==='function') _refrescarDashboardTrasMB();
   }catch(err){ console.error(err); alert('❌ No se pudo eliminar el gasto: ' + err.message); }
   });
 }
