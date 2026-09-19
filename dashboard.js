@@ -1168,8 +1168,19 @@ async function renderCierreDelDia(){
     }
   }catch(err){ console.warn('cierresDelDia lectura:', err); }
 
+  const tabla2Liq={};
+  filas2.forEach(f=>{
+    tabla2Liq[f.etiqueta]={};
+    rutasFull.forEach((id,i)=>{
+      const e=entregas[i]||{};
+      const deLiq=f.valor(e);
+      const hayLiq=!!(e.efectivo || e.deposito || (Array.isArray(e.depositos)&&e.depositos.length) || e.transferencia || (Array.isArray(e.faltantes)&&e.faltantes.some(x=>Number(x&&x.monto)>0)));
+      const savedVal=guardado.tabla2 && guardado.tabla2[f.etiqueta] ? guardado.tabla2[f.etiqueta][id] : undefined;
+      tabla2Liq[f.etiqueta][id]= hayLiq ? deLiq : ((savedVal!==undefined && savedVal!==null && savedVal!=='') ? savedVal : deLiq);
+    });
+  });
   cont1.innerHTML = _htmlTablaCierreDelDia(1, rutasFull, nombresDisplay, datosAsesores, filas1, guardado.tabla1||{});
-  cont2.innerHTML = _htmlTablaCierreDelDia(2, rutasFull, nombresDisplay, entregas, filas2, guardado.tabla2||{});
+  cont2.innerHTML = _htmlTablaCierreDelDia(2, rutasFull, nombresDisplay, entregas, filas2, tabla2Liq);
   if(st) st.textContent = guardado && guardado.actualizadoPor ? ('Última vez guardado por '+guardado.actualizadoPor) : 'Aún no se ha guardado este Cierre del Día — mostrando valores calculados automáticamente.';
   _setCierreDelDiaEditable(false);
 }
@@ -2029,10 +2040,15 @@ function _fusionarEntregasLiq(docs){
   return acc;
 }
 async function _cargarEntregaCierreAsesor(nombre){
+  if(typeof db==='undefined') return {};
+  const exact=_idEntregaLiquidacion(nombre);
+  try{
+    const snapExact=await db.collection('cierresLiquidacion').doc(exact).get();
+    if(snapExact.exists) return snapExact.data()||{};
+  }catch(err){}
   const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
   const sl=_slugAsesorLiq(nombre);
-  if(typeof db==='undefined') return {};
   const dias=_diasISOInclusive(desde, hasta);
   const diarios=[];
   for(const dia of dias){
@@ -2042,10 +2058,7 @@ async function _cargarEntregaCierreAsesor(nombre){
     }catch(err){}
   }
   if(diarios.length) return _fusionarEntregasLiq(diarios);
-  try{
-    const snap=await db.collection('cierresLiquidacion').doc(desde+'_'+hasta+'__'+sl).get();
-    return snap.exists ? (snap.data()||{}) : {};
-  }catch(err){ return {}; }
+  return {};
 }
 function _boxEntregaAsesor(nombre){
   const boxes=[...document.querySelectorAll('.liq-entrega-asesor')];
@@ -2346,7 +2359,7 @@ async function _guardarEntregaAsesor(nombre){
     const card=box.closest('.liq-card-asesor');
     const ajusteInp=card&&card.querySelector('.liq-ajuste-saldos');
     const ajusteVal=parseFloat(String((ajusteInp&&ajusteInp.value)||'0').replace(',','.'))||0;
-    await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).set({
+    const payloadEntrega={
       asesor:nombre,
       ajusteSaldos:ajusteVal,
       efectivo:u.efectivo,
@@ -2359,13 +2372,21 @@ async function _guardarEntregaAsesor(nombre){
       hasta:document.getElementById('filtroFechaHasta')?.value||'',
       actualizadoEn:firebase.firestore.FieldValue.serverTimestamp(),
       actualizadoPor: (typeof actorAuditoria==='function') ? actorAuditoria() : ''
-    }, {merge:true});
+    };
+    const idRango=_idEntregaLiquidacion(nombre);
+    await db.collection('cierresLiquidacion').doc(idRango).set(payloadEntrega, {merge:true});
+    const desdeE=payloadEntrega.desde||fechaHoy();
+    const hastaE=payloadEntrega.hasta||desdeE;
+    if(desdeE===hastaE && idRango!==(desdeE+'_'+hastaE+'__'+_slugAsesorLiq(nombre))){
+      await db.collection('cierresLiquidacion').doc(desdeE+'_'+hastaE+'__'+_slugAsesorLiq(nombre)).set(payloadEntrega, {merge:true});
+    }
     if(st) st.textContent='Entrega guardada.';
     if (typeof _registrarAuditoria === 'function') {
       _registrarAuditoria('liquidacion', 'edición', _idEntregaLiquidacion(nombre),
         'Entrega de '+nombre+' por '+actorAuditoria());
     }
     _actualizarCuadreBox(box);
+    if(typeof renderCierreDelDia==='function') renderCierreDelDia();
   }catch(err){
     console.warn('cierresLiquidacion escritura:', err);
     if(st) st.textContent='No se pudo guardar la entrega.';
