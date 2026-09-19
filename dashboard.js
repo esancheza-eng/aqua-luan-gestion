@@ -998,7 +998,8 @@ function _firmaUsuarioActualCierreDia(){
   const nombre = (ADMIN_ACTUAL && (ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario)) || '';
   return rolLabel + (nombre ? ': ' + nombre : '');
 }
-function imprimirCierreDelDia(){
+async function imprimirCierreDelDia(){
+  if(typeof renderCierreDelDia==='function') await renderCierreDelDia();
   const asesores=_cierreDelDiaAsesoresCache||[];
   if(!asesores.length){ alert('No hay datos para imprimir en este período.'); return; }
   const fecha = _textoRangoFecha();
@@ -2000,7 +2001,8 @@ async function guardarMovimientosBancarios(){
   }
 }
 
-function imprimirMovimientosBancarios(){
+async function imprimirMovimientosBancarios(){
+  if(typeof renderMovimientosBancarios==='function') await renderMovimientosBancarios();
   const filas=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].map(tr=>{
     const fecha=tr.dataset.fecha||tr.cells[0]?.textContent.trim()||'—';
     const asesor=_nombreCortoAsesor(tr.dataset.asesor||'')||tr.cells[1]?.textContent.trim()||'';
@@ -2552,7 +2554,8 @@ function _htmlEntregaPrintDeAsesor(nombre){
       ${(u.sobrante&&u.sobrante.montoOk&&u.sobrante.monto>0)?`<div class="ruta-linea"><span>Sobrante${u.sobrante.motivo?' — '+escHTML(u.sobrante.motivo):''}</span><b>-$${Number(u.sobrante.monto).toFixed(2)}</b></div>`:''}
     </div>`;
 }
-function imprimirLiquidacionDash(){
+async function imprimirLiquidacionDash(){
+  if(typeof renderLiquidacionDash==='function') await renderLiquidacionDash();
   const porAsesor = _calcularLiquidacionDash();
   const asesores = Object.keys(porAsesor).sort((a,b)=>a.localeCompare(b,'es'));
   const fecha = _textoRangoFecha();
