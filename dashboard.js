@@ -839,7 +839,7 @@ async function renderLiquidacionDash(){
   _liqTotalEntregarCache=totalGeneral;
   const boxGlobal=document.getElementById('liqEntregaBox');
   if(boxGlobal) boxGlobal.style.display='none';
-  asesores.forEach(nombre=>_cargarEntregaAsesor(nombre));
+  await Promise.all(asesores.map(nombre=>_cargarEntregaAsesor(nombre)));
 }
 /* [NEW] Cierre del Día — vista consolidada en formato matriz (una columna por
    asesor + columna Total), igual a la hoja de papel "Cierre del Día" que se
@@ -999,7 +999,8 @@ function _firmaUsuarioActualCierreDia(){
   return rolLabel + (nombre ? ': ' + nombre : '');
 }
 async function imprimirCierreDelDia(){
-  if(typeof renderCierreDelDia==='function') await renderCierreDelDia();
+  const yaHay=!!document.querySelector('#cierreDelDiaTabla1 tbody tr, #cierreDelDiaTabla1Wrap table tbody tr');
+  if(!yaHay && typeof renderCierreDelDia==='function') await renderCierreDelDia();
   const asesores=_cierreDelDiaAsesoresCache||[];
   if(!asesores.length){ alert('No hay datos para imprimir en este período.'); return; }
   const fecha = _textoRangoFecha();
@@ -2002,7 +2003,8 @@ async function guardarMovimientosBancarios(){
 }
 
 async function imprimirMovimientosBancarios(){
-  if(typeof renderMovimientosBancarios==='function') await renderMovimientosBancarios();
+  const yaHay=!!document.querySelector('#mbTbody tr[data-mb-id]');
+  if(!yaHay && typeof renderMovimientosBancarios==='function') await renderMovimientosBancarios();
   const filas=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].map(tr=>{
     const fecha=tr.dataset.fecha||tr.cells[0]?.textContent.trim()||'—';
     const asesor=_nombreCortoAsesor(tr.dataset.asesor||'')||tr.cells[1]?.textContent.trim()||'';
@@ -2538,21 +2540,46 @@ function _ajusteSaldosDesdeUI(nombre){
   const inp=card&&card.querySelector('.liq-ajuste-saldos');
   return parseFloat(String((inp&&inp.value)||'0').replace(',','.'))||0;
 }
+function _htmlBloqueEntregaPrint(nombre, tot, u){
+  const fila=(ok,n,monto)=>`<div class="ruta-linea"><span>${ok?'☑':'☐'} ${n}</span><b>$${(Number(monto)||0).toFixed(2)}</b></div>`;
+  const deps=(u.depositos&&u.depositos.length)?u.depositos:(u.deposito?[{marcado:!!u.deposito.marcado,monto:u.deposito.monto}]:[]);
+  const falt=(u.faltantes||[]).filter(f=>(Number(f.monto)||0)>0);
+  const sob=Number(u.sobrante&&u.sobrante.monto)||0;
+  return `<div class="pasos-box">
+      <div class="pasos-title">FORMA DE ENTREGA — ${escHTML(nombre)}</div>
+      <div class="ruta-linea"><span>Total a entregar</span><b>$${(Number(tot)||0).toFixed(2)}</b></div>
+      ${fila(!!(u.efectivo&&u.efectivo.marcado),'Efectivo',u.efectivo&&u.efectivo.monto)}
+      ${(deps.length?deps:[{marcado:false,monto:0}]).map((d,i)=>fila(!!d.marcado,'Depósito '+(i+1),d.monto||0)).join('')}
+      ${fila(!!(u.transferencia&&u.transferencia.marcado),'Transferencia',u.transferencia&&u.transferencia.monto)}
+      ${falt.length?falt.map((f,i)=>`<div class="ruta-linea"><span>Faltante ${i+1}${f.motivo?' — '+escHTML(f.motivo):''}</span><b>$${(Number(f.monto)||0).toFixed(2)}</b></div>`).join(''):'<div class="ruta-linea"><span>Faltantes</span><b>$0.00</b></div>'}
+      ${sob>0?`<div class="ruta-linea"><span>Sobrante${u.sobrante.motivo?' — '+escHTML(u.sobrante.motivo):''}</span><b>-$${sob.toFixed(2)}</b></div>`:''}
+    </div>`;
+}
 function _htmlEntregaPrintDeAsesor(nombre){
   const box=_boxEntregaAsesor(nombre);
   if(!box) return '';
   const u=_leerEntregaDesdeBox(box);
   const tot=parseFloat(box.dataset.total||0)||0;
-  const fila=(ok,n,monto)=>`<div class="ruta-linea"><span>${ok?'☑':'☐'} ${n}</span><b>$${(monto||0).toFixed(2)}</b></div>`;
-  return `<div class="pasos-box">
-      <div class="pasos-title">FORMA DE ENTREGA — ${escHTML(nombre)}</div>
-      <div class="ruta-linea"><span>Total a entregar</span><b>$${tot.toFixed(2)}</b></div>
-      ${fila(u.efectivo.marcado,'Efectivo',u.efectivo.monto)}
-      ${(u.depositos&&u.depositos.length?u.depositos:[{marcado:u.deposito?.marcado,monto:u.deposito?.monto}]).map((d,i)=>fila(!!d.marcado,'Depósito '+(i+1),d.monto||0)).join('')}
-      ${fila(u.transferencia.marcado,'Transferencia',u.transferencia.monto)}
-      ${(u.faltantes||[]).filter(f=>f.montoOk&&f.monto>0).map((f,i)=>`<div class="ruta-linea"><span>Faltante ${i+1}${f.motivo?' — '+escHTML(f.motivo):''}</span><b>$${f.monto.toFixed(2)}</b></div>`).join('')||'<div class="ruta-linea"><span>Faltantes</span><b>$0.00</b></div>'}
-      ${(u.sobrante&&u.sobrante.montoOk&&u.sobrante.monto>0)?`<div class="ruta-linea"><span>Sobrante${u.sobrante.motivo?' — '+escHTML(u.sobrante.motivo):''}</span><b>-$${Number(u.sobrante.monto).toFixed(2)}</b></div>`:''}
-    </div>`;
+  const hay=(Number(u.efectivo&&u.efectivo.monto)||0)>0 || (Number(u.transferencia&&u.transferencia.monto)||0)>0 || _sumaDepositosEntrega(u)>0 || (u.faltantes||[]).some(f=>f.monto>0) || (Number(u.sobrante&&u.sobrante.monto)||0)>0;
+  if(!hay) return '';
+  return _htmlBloqueEntregaPrint(nombre, tot, u);
+}
+async function _htmlEntregaPrintDeAsesorAsync(nombre, tot){
+  const box=_boxEntregaAsesor(nombre);
+  if(box){
+    const html=_htmlEntregaPrintDeAsesor(nombre);
+    if(html) return html;
+  }
+  const d=await _cargarEntregaCierreAsesor(nombre);
+  if(!d || !Object.keys(d).length) return box?_htmlBloqueEntregaPrint(nombre, tot, _leerEntregaDesdeBox(box)):'';
+  return _htmlBloqueEntregaPrint(nombre, tot, {
+    efectivo:d.efectivo||{marcado:false,monto:0},
+    deposito:d.deposito||{marcado:false,monto:0},
+    depositos:d.depositos||[],
+    transferencia:d.transferencia||{marcado:false,monto:0},
+    faltantes:d.faltantes||[],
+    sobrante:d.sobrante||{monto:0,motivo:''}
+  });
 }
 async function imprimirLiquidacionDash(){
   if(typeof renderLiquidacionDash==='function') await renderLiquidacionDash();
@@ -2562,7 +2589,7 @@ async function imprimirLiquidacionDash(){
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
   const asesorLabel = asesorSel.split(':')[1]?.trim() || 'General';
   let totalGeneral = 0;
-  const bloques = asesores.map(nombre=>{
+  const bloques = await Promise.all(asesores.map(async nombre=>{
     const d0 = porAsesor[nombre];
     const ajuste = _ajusteSaldosDesdeUI(nombre);
     const d = Object.assign({}, d0, { ventasContado: (Number(d0.ventasContado)||0) + ajuste });
@@ -2609,7 +2636,7 @@ async function imprimirLiquidacionDash(){
         ${sinClasificar>0?`<div class="ruta-linea"><span>− Sin clasificar</span><span>$${sinClasificar.toFixed(2)}</span></div>`:''}
         <div class="ruta-linea total-entregar"><span>Total a Entregar</span><span style="color:${totalEntregar>=0?'#0f7c38':'#a93226'}">$${totalEntregar.toFixed(2)}</span></div>
       </div>
-      ${_htmlEntregaPrintDeAsesor(nombre)}
+      ${await _htmlEntregaPrintDeAsesorAsync(nombre, totalEntregar)}
       ${bloqueProductos}
     </div>`;
   }).join('');
