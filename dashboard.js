@@ -2639,7 +2639,8 @@ async function imprimirLiquidacionDash(){
       ${await _htmlEntregaPrintDeAsesorAsync(nombre, totalEntregar)}
       ${bloqueProductos}
     </div>`;
-  }).join('');
+  }));
+  const bloquesHtml = bloques.join('');
   const v = window.open('', '_blank', 'width=900,height=900');
   // [NEW] URL absoluta del logo — esta ventana se abre en blanco, sin el
   // dashboard como base, así que una ruta relativa no cargaría. Mismo patrón
@@ -2681,7 +2682,7 @@ async function imprimirLiquidacionDash(){
       <p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · Impreso por: Liquidadora${(ADMIN_ACTUAL && (ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario)) ? ' · ' + escHTML(ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario) : ''}</p>
     </div>
   </div>
-  ${bloques || '<p style="color:#888;font-style:italic">No hay ventas, pagos ni gastos registrados en este período.</p>'}
+  ${bloquesHtml || '<p style="color:#888;font-style:italic">No hay ventas, pagos ni gastos registrados en este período.</p>'}
   <div class="total-general">
     <span>TOTAL EFECTIVO A ENTREGAR HOY</span>
     <span>$${totalGeneral.toFixed(2)}</span>
