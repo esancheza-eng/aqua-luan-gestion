@@ -1849,7 +1849,11 @@ async function eliminarFilaMovimientoBancario(id){
     return;
   }
   if(!id) return;
-  if(!confirm('¿Eliminar este movimiento bancario del listado? También se actualizará Liquidación / Cierre si corresponde.')) return;
+  const tr0=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].find(r=>r.dataset.mbId===id);
+  const valor0=tr0?.dataset.valor||'';
+  const metodo0=tr0?.dataset.metodo||'';
+  const asesor0=tr0?.dataset.asesor||'';
+  _pedirMotivoEliminar('Vas a quitar este movimiento bancario ('+(asesor0||'')+' · '+(metodo0||'')+' · $'+(valor0||'0')+'). Escribe el motivo. Quedará en Auditoría.', async (motivo)=>{
   if(!_mbOcultos) _mbOcultos=[];
   if(!_mbOcultos.includes(id)) _mbOcultos.push(id);
   const tr=[...document.querySelectorAll('#mbTbody tr[data-mb-id]')].find(r=>r.dataset.mbId===id);
@@ -1865,6 +1869,10 @@ async function eliminarFilaMovimientoBancario(id){
     try{ await db.collection('pagos').doc(origenId).delete(); }catch(e){ console.warn('MB origen pago:', e); }
   } else {
     await _quitarPagoOrigenMB(asesor, metodo, valor, fechaTxt);
+  }
+  if(typeof _registrarAuditoria==='function'){
+    await _registrarAuditoria('movimientosBancarios','eliminación',id,
+      'Movimiento '+metodo+' $'+valor+' de '+(asesor||'')+' quitado del listado', motivo);
   }
   if(typeof db==='undefined') return;
   const periodo=_idMovimientosBancarios();
@@ -1896,6 +1904,7 @@ async function eliminarFilaMovimientoBancario(id){
     console.warn('eliminar movimiento bancario:', err);
     alert('No se pudo eliminar. Intenta de nuevo.');
   }
+  });
 }
 function habilitarEdicionMovimientosBancarios(){
   if(!_esAdminMovBanc()){
@@ -6150,6 +6159,13 @@ async function eliminarPagoDash(id){
   const p = _pagosRaw.find(x => x._id === id);
   _pedirMotivoEliminar(`Vas a eliminar el pago de "${p?.cliente||'este cliente'}" ($${(parseFloat(p?.monto)||0).toFixed(2)}). Esta acción no se puede deshacer.`, async (motivo) => {
   try{
+    await db.collection('pedidosEliminados').doc('pago_'+id).set({
+      tipoRegistro:'pago', cliente:p?.cliente||'', empleado:p?.empleado||'', fecha:p?.fecha||'',
+      total:parseFloat(p?.monto)||0, formapago:p?.forma||'Pago',
+      pedidoIdOriginal:id, eliminadoPor:actorAuditoria(), motivoEliminacion:motivo,
+      fechaEliminacion:fechaHoy(), horaEliminacion:new Date().toLocaleTimeString('es-EC'),
+      eliminadoEn:firebase.firestore.FieldValue.serverTimestamp()
+    });
     await db.collection('pagos').doc(id).delete();
     await _registrarAuditoria('pago', 'eliminación', id, 'Pago eliminado por ' + actorAuditoria(), motivo);
     mostrarToastEdicion('🗑 Pago eliminado correctamente.');
@@ -6163,6 +6179,13 @@ async function eliminarGastoDash(id){
   if(ROL_ACTUAL !== 'admin'){ alert('Solo el administrador puede eliminar gastos.'); return; }
   _pedirMotivoEliminar(`Vas a eliminar el gasto "${g?.desc||g?.categoria||'este gasto'}" ($${(parseFloat(g?.monto)||0).toFixed(2)}). Esta acción no se puede deshacer.`, async (motivo) => {
   try{
+    await db.collection('pedidosEliminados').doc('gasto_'+id).set({
+      tipoRegistro:'gasto', cliente:g?.desc||g?.categoria||'Gasto', empleado:g?.empleado||'', fecha:g?.fecha||'',
+      total:parseFloat(g?.monto)||0, formapago:'Gasto',
+      pedidoIdOriginal:id, eliminadoPor:actorAuditoria(), motivoEliminacion:motivo,
+      fechaEliminacion:fechaHoy(), horaEliminacion:new Date().toLocaleTimeString('es-EC'),
+      eliminadoEn:firebase.firestore.FieldValue.serverTimestamp()
+    });
     await db.collection('gastos').doc(id).delete();
     await _registrarAuditoria('gasto', 'eliminación', id, 'Gasto eliminado por ' + actorAuditoria(), motivo);
     mostrarToastEdicion('🗑 Gasto eliminado correctamente.');
