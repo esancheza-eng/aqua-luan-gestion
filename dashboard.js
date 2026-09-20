@@ -1232,13 +1232,64 @@ function renderNotasAdicionalesDash(){
   }
   if(tabla) tabla.style.display = '';
   if(emptyMsg) emptyMsg.style.display = 'none';
-  tbody.innerHTML = pedidosConNota.map(p => `
-    <tr>
+  const puede=(p)=>{
+    if(ROL_ACTUAL==='admin') return true;
+    if(ROL_ACTUAL==='secretaria') return typeof _esRegistroDeHoy==='function' ? _esRegistroDeHoy(p.fecha) : false;
+    return false;
+  };
+  tbody.innerHTML = pedidosConNota.map(p => {
+    const id=escHTML(p._id||'').replace(/'/g,"\\'");
+    const acc=puede(p)?`<button type="button" class="btn-editar-fila" onclick="editarNotaAdicional('${id}')">✏ Editar</button>
+      <button type="button" class="btn-eliminar-fila" onclick="eliminarNotaAdicional('${id}')">🗑 Eliminar</button>`:'';
+    return `<tr>
       <td style="white-space:nowrap;font-weight:700;color:var(--navy)">${escHTML(p.fecha||'-')}</td>
       <td style="font-weight:700;color:var(--navy)">${escHTML(p.empleado||'-')}</td>
       <td style="font-weight:700;color:var(--navy)">${escHTML(p.cliente||'-')}</td>
       <td style="font-weight:700;color:var(--navy)">📝 ${escHTML(p.notas)}</td>
-    </tr>`).join('');
+      <td style="white-space:nowrap">${acc}</td>
+    </tr>`;
+  }).join('');
+}
+async function editarNotaAdicional(pedidoId){
+  const p=(_pedidosRaw||[]).find(x=>x._id===pedidoId);
+  if(!p){ alert('No se encontró el pedido de esta nota.'); return; }
+  if(ROL_ACTUAL!=='admin' && !(ROL_ACTUAL==='secretaria' && _esRegistroDeHoy(p.fecha))){
+    alert('No puedes editar notas de fechas anteriores.'); return;
+  }
+  const actual=p.notas||'';
+  const nuevo=prompt('Editar nota de '+(p.cliente||'este cliente')+':', actual);
+  if(nuevo===null) return;
+  const texto=String(nuevo).trim();
+  if(!texto){ alert('La nota no puede quedar vacía. Usa Eliminar si quieres quitarla.'); return; }
+  try{
+    await db.collection('pedidos').doc(pedidoId).update({ notas:texto });
+    if(typeof _registrarAuditoria==='function'){
+      await _registrarAuditoria('nota','edición',pedidoId,'Nota de "'+(p.cliente||'')+'" editada');
+    }
+    p.notas=texto;
+    renderNotasAdicionalesDash();
+  }catch(err){
+    alert('No se pudo guardar la nota.');
+  }
+}
+function eliminarNotaAdicional(pedidoId){
+  const p=(_pedidosRaw||[]).find(x=>x._id===pedidoId);
+  if(!p){ alert('No se encontró el pedido de esta nota.'); return; }
+  if(ROL_ACTUAL!=='admin' && !(ROL_ACTUAL==='secretaria' && _esRegistroDeHoy(p.fecha))){
+    alert('No puedes eliminar notas de fechas anteriores.'); return;
+  }
+  _pedirMotivoEliminar('Vas a quitar la nota del pedido de "'+(p.cliente||'este cliente')+'". El pedido no se borra, solo la observación.', async (motivo)=>{
+    try{
+      await db.collection('pedidos').doc(pedidoId).update({ notas:'' });
+      if(typeof _registrarAuditoria==='function'){
+        await _registrarAuditoria('nota','eliminación',pedidoId,'Nota de "'+(p.cliente||'')+'" eliminada', motivo);
+      }
+      p.notas='';
+      renderNotasAdicionalesDash();
+    }catch(err){
+      alert('No se pudo eliminar la nota.');
+    }
+  });
 }
 /* [NEW] Imprimir Notas Adicionales — mismo patrón (logo + firmas) que
    imprimirLiquidacionDash(), respetando los mismos filtros de fecha y asesor
