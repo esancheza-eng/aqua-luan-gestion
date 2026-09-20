@@ -980,6 +980,23 @@ async function _guardarCierreDelDia(){
       actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
       actualizadoPor: (typeof actorAuditoria==='function') ? actorAuditoria() : ''
     }, {merge:true});
+    const asesoresSync=_cierreDelDiaAsesoresCache||[];
+    await Promise.all(asesoresSync.map(async nombre=>{
+      const get=etiq=>Number(tabla2[etiq]&&tabla2[etiq][nombre])||0;
+      const ef=get('Efectivo'), dep=get('Depósito'), tr=get('Transferencia');
+      const f1=get('Faltante 1'), f2=get('Faltante 2'), f3=get('Faltante 3');
+      const sob=Math.abs(get('Sobrante'));
+      await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).set({
+        efectivo:{marcado:ef>0, monto:ef},
+        deposito:{marcado:dep>0, monto:dep},
+        depositos:dep>0?[{marcado:true,monto:dep}]:[],
+        transferencia:{marcado:tr>0, monto:tr},
+        faltantes:[{monto:f1,motivo:''},{monto:f2,motivo:''},{monto:f3,motivo:''}],
+        sobrante:{monto:sob, motivo:''},
+        actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
+        actualizadoPor: (typeof actorAuditoria==='function') ? actorAuditoria() : ''
+      }, {merge:true});
+    }));
     if (typeof _registrarAuditoria === 'function') {
       _registrarAuditoria('cierreDelDia', 'edición', _idCierreDelDia(), 'Cierre del Día guardado por '+actorAuditoria());
     }
@@ -1181,8 +1198,9 @@ async function renderCierreDelDia(){
       tabla2Liq[f.etiqueta][id]= f.valor(e);
     });
   });
+  const t2Final=(guardado.tabla2 && Object.keys(guardado.tabla2).length)?guardado.tabla2:tabla2Liq;
   cont1.innerHTML = _htmlTablaCierreDelDia(1, rutasFull, nombresDisplay, datosAsesores, filas1, guardado.tabla1||{});
-  cont2.innerHTML = _htmlTablaCierreDelDia(2, rutasFull, nombresDisplay, entregas, filas2, tabla2Liq);
+  cont2.innerHTML = _htmlTablaCierreDelDia(2, rutasFull, nombresDisplay, entregas, filas2, t2Final);
   if(st) st.textContent = guardado && guardado.actualizadoPor ? ('Última vez guardado por '+guardado.actualizadoPor) : 'Aún no se ha guardado este Cierre del Día — mostrando valores calculados automáticamente.';
   _setCierreDelDiaEditable(false);
 }
