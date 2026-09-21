@@ -136,6 +136,17 @@ function _montoPedidoSegunFiltroPago(r){
   if(f==='Mixto' && !des.length && activos.includes('Crédito')) s+=cred;
   return s;
 }
+function _totalYEtiquetaDetalleFiltrado(datos){
+  const activos=_filtrosPagoActivos();
+  const porProducto=!!_productoFiltroSeleccionado;
+  const total= porProducto
+    ? (datos||[]).reduce((s,r)=>s+(parseFloat(r['SUBTOTAL'])||0),0)
+    : (datos||[]).reduce((s,r)=>s+(_montoPedidoSegunFiltroPago(r)||0),0);
+  let label='TOTAL GENERAL';
+  if(activos.length===1) label='TOTAL '+activos[0].toUpperCase();
+  if(porProducto) label=label+' · '+_productoFiltroSeleccionado;
+  return {total,label,activos,producto:_productoFiltroSeleccionado||'Todos'};
+}
 const _secondaryAppDash = firebase.initializeApp(firebaseConfig, 'secondaryDash');
 const _secondaryAuthDash = _secondaryAppDash.auth();
 
@@ -3473,7 +3484,12 @@ function onChangeFiltroProducto() {
 
 function renderTabla(pedidos) {
   const tbody = document.getElementById('tablaPedidos');
-  if (!pedidos.length) { tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="icon">📋</div>No hay pedidos en este período</div></td></tr>'; return; }
+  if (!pedidos.length) {
+    tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="icon">📋</div>No hay pedidos en este período</div></td></tr>';
+    const foot0=document.getElementById('tablaPedidosFoot');
+    if(foot0) foot0.innerHTML='';
+    return;
+  }
   const lista = pedidos.slice(0,100);
   tbody.innerHTML = lista.map((r, idx) => {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
@@ -3526,6 +3542,11 @@ function renderTabla(pedidos) {
     const sig = String(lista[idx+1]?.['CLIENTE']||'').trim().toLowerCase();
     return fila + ((idx < lista.length-1 && este !== sig) ? '<tr class="sep-cliente"><td colspan="12"></td></tr>' : '');
   }).join('');
+  const foot=document.getElementById('tablaPedidosFoot');
+  if(foot){
+    const t=_totalYEtiquetaDetalleFiltrado(pedidos);
+    foot.innerHTML=`<tr style="background:#e6f4f2;font-weight:800;color:#085f54"><td colspan="8" style="text-align:right;padding:10px">${escHTML(t.label)}</td><td style="text-align:right;padding:10px">$${t.total.toFixed(2)}</td><td colspan="3" style="font-size:11px;font-weight:600;color:var(--muted)">${pedidos.length} línea(s)</td></tr>`;
+  }
 }
 
 /* [NEW] Resumen por Cliente — agrupa el detalle de pedidos por cliente,
@@ -5222,9 +5243,11 @@ function exportarDetallePDF() {
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
   const asesorLabel = asesorSel.split(':')[1]?.trim() || 'Todos';
 
-  const activosPago=_filtrosPagoActivos();
-  const totalGeneral = datos.reduce((s,r)=>s+(_montoPedidoSegunFiltroPago(r)||0),0);
-  const etiquetaTotal = (activosPago.length===1) ? ('TOTAL '+activosPago[0].toUpperCase()) : 'TOTAL GENERAL';
+  const tDet=_totalYEtiquetaDetalleFiltrado(datos);
+  const totalGeneral=tDet.total;
+  const etiquetaTotal=tDet.label;
+  const pagoTxt=tDet.activos.length===FORMAS_PAGO_FIJAS.length?'Todos':tDet.activos.join(', ');
+  const prodTxt=tDet.producto;
 
   const filas = datos.map((r, idx) => {
     const montoF=_montoPedidoSegunFiltroPago(r);
@@ -5281,7 +5304,7 @@ function exportarDetallePDF() {
     <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
     <div>
       <h1>Detalle de Pedidos — ${escHTML(asesorLabel)}</h1>
-      <p>Fecha: ${fecha} · Asesor: ${asesorLabel} · ${datos.length} línea(s) · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
+      <p>Fecha: ${fecha} · Asesor: ${asesorLabel} · Pago: ${escHTML(pagoTxt)} · Producto: ${escHTML(prodTxt)} · ${datos.length} línea(s) · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
     </div>
   </div>
   <table>
@@ -5671,6 +5694,8 @@ async function guardarEdicionPedido(){
 
     // El listener en tiempo real de "pedidos" ya activo recibe el cambio y recalcula
     // automáticamente KPIs, gráficos, Resumen por Cliente y Cuadre de Caja — sin recargar.
+    Object.assign(original, nuevo);
+    if(typeof renderDashboard==='function') renderDashboard();
     mostrarToastEdicion('✅ Pedido actualizado correctamente.');
     cerrarEditarPedido();
   }catch(err){
@@ -5782,9 +5807,8 @@ async function eliminarPedidoCompleto(pedidoId){
 
     // 3) Recién ahora se borra el documento original de "pedidos"
     await db.collection('pedidos').doc(pedidoId).delete();
-
-    // El listener en tiempo real ya activo quita el pedido de la tabla, KPIs,
-    // Resumen por Cliente y Cuadre de Caja automáticamente — sin recargar.
+    _pedidosRaw = (_pedidosRaw||[]).filter(x=>x._id!==pedidoId);
+    if(typeof renderDashboard==='function') renderDashboard();
     mostrarToastEdicion('🗑 Pedido eliminado, respaldado y su inventario revertido correctamente.');
   }catch(err){
     console.error(err);
