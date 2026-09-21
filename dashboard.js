@@ -1179,25 +1179,20 @@ function renderProductosVendidosDash(){
     const totC=lista.reduce((s,p)=>s+(p.cantidad||0),0);
     const totD=lista.reduce((s,p)=>s+(p.dolares||0),0);
     const filas=lista.map(p=>{
-      const ids=p.ids||[];
-      const id=ids[0]||'';
-      const puede=id && _puedeEditarCuadreCaja(document.getElementById('filtroFechaHasta')?.value||'');
-      const acc=puede?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${id}')">✏ Editar</button>${ids.length===1?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${id}')">🗑 Eliminar</button>`:`<span style="font-size:10px;color:var(--muted)">${ids.length} pedidos</span>`}`:'—';
       const cant=p.cantidad%1===0?parseInt(p.cantidad):p.cantidad.toFixed(1);
       return `<tr>
         <td>${escHTML(p.nombre||'')}</td>
         <td style="text-align:right">$${(Number(p.precio)||0).toFixed(2)}</td>
         <td style="text-align:right">${cant}</td>
         <td style="text-align:right">$${(Number(p.dolares)||0).toFixed(2)}</td>
-        <td>${acc}</td>
       </tr>`;
     }).join('');
     return `<div style="margin-bottom:18px">
       <div class="cierre-section-label" style="margin-bottom:6px">📦 Productos vendidos por ${escHTML(nombre)}</div>
       <table class="cierre-prod-table">
-        <thead><tr><th>Producto</th><th>Precio unit.</th><th>Cantidad</th><th>Total ($)</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Producto</th><th>Precio unit.</th><th>Cantidad</th><th>Total ($)</th></tr></thead>
         <tbody>${filas}
-          <tr class="cierre-prod-subtotal"><td>SUBTOTAL PRODUCTOS</td><td>—</td><td style="text-align:right">${totC%1===0?parseInt(totC):totC.toFixed(1)}</td><td style="text-align:right">$${totD.toFixed(2)}</td><td></td></tr>
+          <tr class="cierre-prod-subtotal"><td>SUBTOTAL PRODUCTOS</td><td>—</td><td style="text-align:right">${totC%1===0?parseInt(totC):totC.toFixed(1)}</td><td style="text-align:right">$${totD.toFixed(2)}</td></tr>
         </tbody>
       </table>
     </div>`;
