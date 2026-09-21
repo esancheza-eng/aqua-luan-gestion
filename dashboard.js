@@ -1105,7 +1105,12 @@ async function renderCierreDelDia(){
     ...(Array.isArray(_asesoresCache) ? _asesoresCache : []),
     ...Object.keys(porAsesor)
   ]);
-  const rutasFull = [...rutasSet].sort((a,b)=>a.localeCompare(b,'es'));
+  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
+  let rutasFull = [...rutasSet].sort((a,b)=>a.localeCompare(b,'es'));
+  if(asesorSel){
+    const selNom=(asesorSel.split(':')[1]||asesorSel).trim().toLowerCase();
+    rutasFull = rutasFull.filter(r => r===asesorSel || (r.split(':')[1]||r).trim().toLowerCase()===selNom);
+  }
   if(!rutasFull.length){
     cont1.innerHTML=''; cont2.innerHTML='';
     if(emptyMsg) emptyMsg.style.display='block';
