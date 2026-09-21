@@ -3533,7 +3533,7 @@ function renderTabla(pedidos) {
     const pago  = etiquetaPago ? `<span class="badge badge-teal">${escHTML(etiquetaPago)}</span>${detallePago}` : '';
     /* [NEW] Botón Editar — solo funciona si la fila trae el id real del pedido en Firestore
        (las filas de pagos/gastos no lo traen, pero renderTabla solo recibe pedidos con producto) */
-    const puedeEditar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
+    const puedeEditar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
     const puedeEliminar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
     const accion = (puedeEditar || puedeEliminar)
       ? `${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}`
@@ -3684,7 +3684,7 @@ function actualizarTablaCentral(datos) {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
     const pago  = r['FORMA DE PAGO'] ? `<span class="badge badge-teal">${r['FORMA DE PAGO']}</span>` : '';
-    const puedeEditar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
+    const puedeEditar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
     const puedeEliminar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
     const accion = (puedeEditar || puedeEliminar)
       ? `${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}`
@@ -5366,8 +5366,8 @@ function exportarExcel() {
 ════════════════════════════════════════════════════════════ */
 function abrirEditarPedido(pedidoId){
   const p = _pedidosRaw.find(x => x._id === pedidoId);
-  if(ROL_ACTUAL !== 'admin'){
-    if(p && !_esRegistroDeHoy(p.fecha||p.FECHA)){ alert('Solo el administrador puede editar pedidos de fechas anteriores.'); return; }
+  if(!_puedeEditarCuadreCaja(p && (p.fecha||p.FECHA))){
+    alert('No se puede editar este pedido en el período.'); return;
   }
   if(!p){ alert('No se encontró el pedido — puede que otro admin lo haya eliminado.'); return; }
   // Copia editable e independiente, para no mutar los datos en vivo del listener mientras se edita
@@ -5629,8 +5629,8 @@ function agregarRegaliaLinea(i){
    colección) y registra cada campo que cambió en historialCambios para auditoría. */
 async function guardarEdicionPedido(){
   if(!editandoPedidoActual) return;
-  if(ROL_ACTUAL !== 'admin' && !_esRegistroDeHoy(editandoPedidoActual.fecha||editandoPedidoActual.FECHA)){
-    alert('Solo el administrador puede guardar cambios de pedidos de fechas anteriores.');
+  if(!_puedeEditarCuadreCaja(editandoPedidoActual.fecha||editandoPedidoActual.FECHA)){
+    alert('No se puede guardar este pedido en el período.');
     return;
   }
   if(!confirm('¿Está seguro que desea guardar los cambios de este pedido?')) return;
