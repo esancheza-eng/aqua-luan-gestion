@@ -1390,7 +1390,7 @@ function _periodoEditableDesde15(){
   return dia>=MB_FECHA_EDITABLE_DESDE && dia<=hoy;
 }
 function _mbPeriodoEditable(){
-  if(ROL_ACTUAL !== 'admin') return false;
+  if(ROL_ACTUAL !== 'admin' && ROL_ACTUAL !== 'secretaria') return false;
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
   const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
   const desde=document.getElementById('filtroFecha')?.value||hasta;
@@ -1399,7 +1399,7 @@ function _mbPeriodoEditable(){
   return (!hasta || hasta<=hoy) && (!desde || desde<=hoy);
 }
 function _esAdminMovBanc(){
-  return ROL_ACTUAL === 'admin';
+  return ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria';
 }
 function _idMovimientosBancarios(){
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
