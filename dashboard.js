@@ -939,15 +939,14 @@ function _cierreDelDiaEsSoloHoy(){
   return !!hoy && desde===hoy && hasta===hoy;
 }
 function _cierreDelDiaPuedeEditar(){
+  if(ROL_ACTUAL!=='admin' && ROL_ACTUAL!=='secretaria') return false;
   const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
   const desde=document.getElementById('filtroFecha')?.value||hoy;
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
   if(!hoy) return false;
   if(desde && desde>hoy) return false;
   if(hasta && hasta>hoy) return false;
-  if(ROL_ACTUAL === 'admin') return true;
-  if(ROL_ACTUAL === 'secretaria') return _cierreDelDiaEsSoloHoy();
-  return false;
+  return true;
 }
 function _actualizarBotonesCierreDelDia(editando){
   const puede=_cierreDelDiaPuedeEditar();
@@ -972,9 +971,7 @@ function _setCierreDelDiaEditable(on){
 }
 function habilitarEdicionCierreDelDia(){
   if(!_cierreDelDiaPuedeEditar()){
-    alert(ROL_ACTUAL==='secretaria'
-      ? 'La secretaria solo puede editar el Cierre del Día del día actual.'
-      : 'Solo el administrador puede editar el Cierre del Día en el rango Desde / Hasta.');
+    alert('No se puede editar el Cierre del Día en fechas futuras. Usa el filtro Desde / Hasta.');
     return;
   }
   _setCierreDelDiaEditable(true);
@@ -983,9 +980,7 @@ function habilitarEdicionCierreDelDia(){
 }
 function _confirmarGuardarCierreDelDia(){
   if(!_cierreDelDiaPuedeEditar()){
-    alert(ROL_ACTUAL==='secretaria'
-      ? 'La secretaria solo puede guardar el Cierre del Día del día actual.'
-      : 'Solo el administrador puede guardar el Cierre del Día.');
+    alert('No se puede guardar el Cierre del Día en fechas futuras. Usa el filtro Desde / Hasta.');
     return;
   }
   if(!confirm('¿Está seguro que desea guardar el Cierre del Día de este rango de fechas?')) return;
@@ -993,9 +988,7 @@ function _confirmarGuardarCierreDelDia(){
 }
 async function _guardarCierreDelDia(){
   if(!_cierreDelDiaPuedeEditar()){
-    alert(ROL_ACTUAL==='secretaria'
-      ? 'La secretaria solo puede guardar el Cierre del Día del día actual.'
-      : 'Solo el administrador puede guardar el Cierre del Día.');
+    alert('No se puede guardar el Cierre del Día en fechas futuras. Usa el filtro Desde / Hasta.');
     return;
   }
   if(typeof db==='undefined') return;
@@ -1277,9 +1270,10 @@ function renderNotasAdicionalesDash(){
   if(tabla) tabla.style.display = '';
   if(emptyMsg) emptyMsg.style.display = 'none';
   const puede=(p)=>{
-    if(ROL_ACTUAL==='admin') return true;
-    if(ROL_ACTUAL==='secretaria') return typeof _esRegistroDeHoy==='function' ? _esRegistroDeHoy(p.fecha) : false;
-    return false;
+    if(ROL_ACTUAL!=='admin' && ROL_ACTUAL!=='secretaria') return false;
+    const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+    const f=p.fecha||'';
+    return !hoy || !f || f<=hoy;
   };
   tbody.innerHTML = pedidosConNota.map(p => {
     const id=escHTML(p._id||'').replace(/'/g,"\\'");
@@ -1297,8 +1291,8 @@ function renderNotasAdicionalesDash(){
 async function editarNotaAdicional(pedidoId){
   const p=(_pedidosRaw||[]).find(x=>x._id===pedidoId);
   if(!p){ alert('No se encontró el pedido de esta nota.'); return; }
-  if(ROL_ACTUAL!=='admin' && !(ROL_ACTUAL==='secretaria' && _esRegistroDeHoy(p.fecha))){
-    alert('No puedes editar notas de fechas anteriores.'); return;
+  if(ROL_ACTUAL!=='admin' && ROL_ACTUAL!=='secretaria'){
+    alert('No puedes editar esta nota.'); return;
   }
   const actual=p.notas||'';
   const nuevo=prompt('Editar nota de '+(p.cliente||'este cliente')+':', actual);
@@ -1312,6 +1306,7 @@ async function editarNotaAdicional(pedidoId){
     }
     p.notas=texto;
     renderNotasAdicionalesDash();
+    if(typeof renderDashboard==='function') renderDashboard();
   }catch(err){
     alert('No se pudo guardar la nota.');
   }
@@ -1319,8 +1314,8 @@ async function editarNotaAdicional(pedidoId){
 function eliminarNotaAdicional(pedidoId){
   const p=(_pedidosRaw||[]).find(x=>x._id===pedidoId);
   if(!p){ alert('No se encontró el pedido de esta nota.'); return; }
-  if(ROL_ACTUAL!=='admin' && !(ROL_ACTUAL==='secretaria' && _esRegistroDeHoy(p.fecha))){
-    alert('No puedes eliminar notas de fechas anteriores.'); return;
+  if(ROL_ACTUAL!=='admin' && ROL_ACTUAL!=='secretaria'){
+    alert('No puedes eliminar esta nota.'); return;
   }
   _pedirMotivoEliminar('Vas a quitar la nota del pedido de "'+(p.cliente||'este cliente')+'". El pedido no se borra, solo la observación.', async (motivo)=>{
     try{
@@ -1330,6 +1325,7 @@ function eliminarNotaAdicional(pedidoId){
       }
       p.notas='';
       renderNotasAdicionalesDash();
+      if(typeof renderDashboard==='function') renderDashboard();
     }catch(err){
       alert('No se pudo eliminar la nota.');
     }
@@ -3286,8 +3282,21 @@ function renderDashboard() {
 ════════════════════════════════════════ */
 let pagosDetalleActuales = [], gastosDetalleActuales = []; // [NEW] para exportar a PDF
 
+function _puedeEditarCuadreCaja(fecha){
+  if(ROL_ACTUAL!=='admin' && ROL_ACTUAL!=='secretaria') return false;
+  const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+  const f=String(fecha||'').slice(0,10);
+  if(!hoy) return ROL_ACTUAL==='admin' || ROL_ACTUAL==='secretaria';
+  if(f && f>hoy) return false;
+  return true;
+}
 function renderPagosGastosDetalle(pagos, gastos) {
   pagosDetalleActuales = pagos; gastosDetalleActuales = gastos; // [NEW]
+  const puedeAlta=_puedeEditarCuadreCaja(document.getElementById('filtroFechaHasta')?.value||(typeof fechaHoy==='function'?fechaHoy():''));
+  const btnNP=document.getElementById('btnNuevoPagoCaja');
+  const btnNG=document.getElementById('btnNuevoGastoCaja');
+  if(btnNP) btnNP.style.display=puedeAlta?'inline-flex':'none';
+  if(btnNG) btnNG.style.display=puedeAlta?'inline-flex':'none';
   const totalPagos  = pagos.reduce((s,r) => s + (parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
   const totalGastos = gastos.reduce((s,r) => s + Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
   const neto = totalPagos - totalGastos;
@@ -3312,8 +3321,13 @@ function renderPagosGastosDetalle(pagos, gastos) {
   } else {
     const filas = pagos.map(r => {
       const monto = parseFloat(r['TOTAL PEDIDO ($)'])||0;
-      const puedePago = r['_pagoId'] && ROL_ACTUAL === 'admin';
-      const accionesPago = puedePago ? `<button class="btn-editar-fila" onclick="abrirEditarPago('${r['_pagoId']}')" title="Editar este pago">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarPagoDash('${r['_pagoId']}')" title="Eliminar este pago">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
+      let pid = r['_pagoId'] || '';
+      if(!pid && Array.isArray(_pagosRaw)){
+        const hit=_pagosRaw.find(pg => String(pg.fecha||'')===String(r['FECHA']||'') && String(pg.cliente||'')===String(r['CLIENTE']||'') && Math.abs((parseFloat(pg.monto)||0)-monto)<0.009);
+        if(hit) pid=hit._id||'';
+      }
+      const puedePago = pid && _puedeEditarCuadreCaja(r['FECHA']);
+      const accionesPago = puedePago ? `<button class="btn-editar-fila" onclick="abrirEditarPago('${pid}')" title="Editar este pago">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarPagoDash('${pid}')" title="Eliminar este pago">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
       return `<tr>
         <td style="font-weight:600">${escHTML(r['CLIENTE']||'-')}</td>
         <td style="font-size:12px">${(r['ASESOR / RUTA']||'').split(':')[1]?.trim()||r['ASESOR / RUTA']||'-'}</td>
@@ -3338,7 +3352,7 @@ function renderPagosGastosDetalle(pagos, gastos) {
         const hit=_gastosRaw.find(g => String(g.fecha||'')===String(r['FECHA']||'') && Math.abs((parseFloat(g.monto)||0)-monto)<0.009);
         if(hit) gid=hit._id||'';
       }
-      const puedeGasto = gid && ROL_ACTUAL === 'admin';
+      const puedeGasto = gid && _puedeEditarCuadreCaja(r['FECHA']);
       const accionesGasto = puedeGasto ? `<button class="btn-editar-fila" onclick="abrirEditarGasto('${gid}')" title="Editar este gasto">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarGastoDash('${gid}')" title="Eliminar este gasto">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
       return `<tr>
         <td style="font-weight:600">${escHTML(desc)}</td>
@@ -6185,10 +6199,51 @@ function mostrarToastEdicion(msg){
 const FORMAS_PAGO_COBRO = ['Efectivo','Transferencia','Cheque']; // mismas opciones que usa index.html al registrar un pago
 let _editandoPagoGasto = null; // { tipo:'pago'|'gasto', id:'...' }
 
+function _opcionesAsesorCuadre(sel){
+  const lista=(Array.isArray(_asesoresCache)&&_asesoresCache.length)?_asesoresCache:[''];
+  return lista.map(a=>`<option value="${escHTML(a)}" ${a===sel?'selected':''}>${escHTML((a.split(':')[1]||a).trim()||a)}</option>`).join('');
+}
+function abrirNuevoPago(){
+  const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+  const fecha=document.getElementById('filtroFechaHasta')?.value||hoy;
+  if(!_puedeEditarCuadreCaja(fecha)){ alert('No se puede añadir un pago en este período.'); return; }
+  _editandoPagoGasto={ tipo:'pago-nuevo' };
+  document.getElementById('editarPagoGastoTitulo').textContent='＋ Añadir pago';
+  const optionsForma=FORMAS_PAGO_COBRO.map(f=>`<option value="${f}">${f}</option>`).join('');
+  document.getElementById('editarPagoGastoBody').innerHTML=`
+    <div class="editar-grid full">
+      <div class="editar-field"><label>Cliente</label><input type="text" id="epgCliente" value=""></div>
+      <div class="editar-field"><label>Asesor</label><select id="epgAsesor">${_opcionesAsesorCuadre('')}</select></div>
+      <div class="editar-field"><label>Monto ($)</label><input type="number" min="0" step="0.01" id="epgMonto" value=""></div>
+      <div class="editar-field"><label>Forma de Pago</label><select id="epgForma">${optionsForma}</select></div>
+      <div class="editar-field"><label>Fecha</label><input type="date" id="epgFecha" value="${fecha}"></div>
+      <div class="editar-field"><label>Notas / Referencia</label><textarea id="epgNotas"></textarea></div>
+    </div>`;
+  document.getElementById('editarPagoGastoOverlay').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function abrirNuevoGasto(){
+  const hoy=(typeof fechaHoy==='function')?fechaHoy():'';
+  const fecha=document.getElementById('filtroFechaHasta')?.value||hoy;
+  if(!_puedeEditarCuadreCaja(fecha)){ alert('No se puede añadir un gasto en este período.'); return; }
+  _editandoPagoGasto={ tipo:'gasto-nuevo' };
+  document.getElementById('editarPagoGastoTitulo').textContent='＋ Añadir gasto';
+  document.getElementById('editarPagoGastoBody').innerHTML=`
+    <div class="editar-grid full">
+      <div class="editar-field"><label>Descripción</label><input type="text" id="epgDesc" value=""></div>
+      <div class="editar-field"><label>Categoría</label><input type="text" id="epgCategoria" value=""></div>
+      <div class="editar-field"><label>Asesor / responsable</label><select id="epgAsesor">${_opcionesAsesorCuadre('')}</select></div>
+      <div class="editar-field"><label>Monto ($)</label><input type="number" min="0" step="0.01" id="epgMonto" value=""></div>
+      <div class="editar-field"><label>Fecha</label><input type="date" id="epgFecha" value="${fecha}"></div>
+      <div class="editar-field"><label>Comprobante / Referencia</label><input type="text" id="epgRef" value=""></div>
+    </div>`;
+  document.getElementById('editarPagoGastoOverlay').classList.add('open');
+  document.body.style.overflow='hidden';
+}
 function abrirEditarPago(id){
   const p = _pagosRaw.find(x => x._id === id);
   if(!p){ alert('No se encontró el pago — puede que ya se haya eliminado.'); return; }
-  if(ROL_ACTUAL !== 'admin'){ alert('Solo el administrador puede editar pagos.'); return; }
+  if(!_puedeEditarCuadreCaja(p.fecha)){ alert('No se puede editar este pago en el período.'); return; }
   _editandoPagoGasto = { tipo:'pago', id };
   document.getElementById('editarPagoGastoTitulo').textContent = '✏ Editar Pago';
   const optionsForma = FORMAS_PAGO_COBRO.map(f => `<option value="${f}" ${p.forma===f?'selected':''}>${f}</option>`).join('');
@@ -6207,7 +6262,7 @@ function abrirEditarPago(id){
 function abrirEditarGasto(id){
   const g = _gastosRaw.find(x => x._id === id);
   if(!g){ alert('No se encontró el gasto — puede que ya se haya eliminado.'); return; }
-  if(ROL_ACTUAL !== 'admin'){ alert('Solo el administrador puede editar gastos.'); return; }
+  if(!_puedeEditarCuadreCaja(g.fecha)){ alert('No se puede editar este gasto en el período.'); return; }
   _editandoPagoGasto = { tipo:'gasto', id };
   document.getElementById('editarPagoGastoTitulo').textContent = '✏ Editar Gasto';
   document.getElementById('editarPagoGastoBody').innerHTML = `
@@ -6237,23 +6292,43 @@ async function guardarEdicionPagoGasto(){
   const btn = document.getElementById('btnGuardarPagoGasto');
   btn.disabled = true; btn.textContent = 'Guardando...';
   try{
-    if(tipo === 'pago'){
+    if(tipo === 'pago' || tipo === 'pago-nuevo'){
       const cliente = document.getElementById('epgCliente').value.trim();
       if(!cliente){ alert('El nombre del cliente no puede quedar vacío.'); btn.disabled=false; btn.textContent='✅ Guardar Cambios'; return; }
-      await db.collection('pagos').doc(id).update({
+      const payloadPago={
         cliente, monto, forma: document.getElementById('epgForma').value,
         fecha: document.getElementById('epgFecha').value, notas: document.getElementById('epgNotas').value.trim()
-      });
+      };
+      const asEl=document.getElementById('epgAsesor');
+      if(asEl) payloadPago.empleado=asEl.value;
+      if(tipo==='pago-nuevo'){
+        payloadPago.creadoEn=firebase.firestore.FieldValue.serverTimestamp();
+        payloadPago.creadoPor=actorAuditoria();
+        await db.collection('pagos').add(payloadPago);
+      } else {
+        await db.collection('pagos').doc(id).update(payloadPago);
+      }
     } else {
       const desc = document.getElementById('epgDesc').value.trim();
       if(!desc){ alert('La descripción no puede quedar vacía.'); btn.disabled=false; btn.textContent='✅ Guardar Cambios'; return; }
-      await db.collection('gastos').doc(id).update({
+      const payloadGasto={
         desc, categoria: document.getElementById('epgCategoria').value.trim(), monto,
         fecha: document.getElementById('epgFecha').value, ref: document.getElementById('epgRef').value.trim()
-      });
+      };
+      const asEl=document.getElementById('epgAsesor');
+      if(asEl) payloadGasto.empleado=asEl.value;
+      if(tipo==='gasto-nuevo'){
+        payloadGasto.creadoEn=firebase.firestore.FieldValue.serverTimestamp();
+        payloadGasto.creadoPor=actorAuditoria();
+        await db.collection('gastos').add(payloadGasto);
+      } else {
+        await db.collection('gastos').doc(id).update(payloadGasto);
+      }
     }
-    await _registrarAuditoria(tipo, 'edición', id, (tipo==='pago'?'Pago':'Gasto') + ' editado por ' + actorAuditoria() + ' — monto $' + monto.toFixed(2));
-    mostrarToastEdicion(tipo === 'pago' ? '✅ Pago actualizado correctamente.' : '✅ Gasto actualizado correctamente.');
+    const esAlta=tipo==='pago-nuevo'||tipo==='gasto-nuevo';
+    const tipoAud=tipo.indexOf('gasto')===0?'gasto':'pago';
+    await _registrarAuditoria(tipoAud, esAlta?'creación':'edición', id||'', (tipoAud==='pago'?'Pago':'Gasto') + (esAlta?' añadido':' editado') + ' por ' + actorAuditoria() + ' — monto $' + monto.toFixed(2));
+    mostrarToastEdicion(esAlta ? (tipoAud==='pago'?'✅ Pago añadido.':'✅ Gasto añadido.') : (tipoAud==='pago'?'✅ Pago actualizado correctamente.':'✅ Gasto actualizado correctamente.'));
     cerrarEditarPagoGasto();
     if(typeof _refrescarDashboardTrasMB==='function') _refrescarDashboardTrasMB();
   }catch(err){
@@ -6266,7 +6341,7 @@ async function guardarEdicionPagoGasto(){
 
 async function eliminarPagoDash(id){
   const pagoChk = (_pagosRaw||[]).find(x => x._id === id);
-  if(ROL_ACTUAL !== 'admin'){ alert('Solo el administrador puede eliminar pagos.'); return; }
+  if(!_puedeEditarCuadreCaja(pagoChk&&pagoChk.fecha)){ alert('No se puede eliminar este pago en el período.'); return; }
 
   const p = _pagosRaw.find(x => x._id === id);
   _pedirMotivoEliminar(`Vas a eliminar el pago de "${p?.cliente||'este cliente'}" ($${(parseFloat(p?.monto)||0).toFixed(2)}). Esta acción no se puede deshacer.`, async (motivo) => {
@@ -6288,7 +6363,7 @@ async function eliminarPagoDash(id){
 
 async function eliminarGastoDash(id){
   const g = _gastosRaw.find(x => x._id === id);
-  if(ROL_ACTUAL !== 'admin'){ alert('Solo el administrador puede eliminar gastos.'); return; }
+  if(!_puedeEditarCuadreCaja(g&&g.fecha)){ alert('No se puede eliminar este gasto en el período.'); return; }
   _pedirMotivoEliminar(`Vas a eliminar el gasto "${g?.desc||g?.categoria||'este gasto'}" ($${(parseFloat(g?.monto)||0).toFixed(2)}). Esta acción no se puede deshacer.`, async (motivo) => {
   try{
     await db.collection('pedidosEliminados').doc('gasto_'+id).set({
