@@ -223,6 +223,17 @@ function _quitarEmoji(str){
   return String(str||'').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu,'');
 }
 
+function _abrirVentanaImpresion(){
+  let frame=document.getElementById('aquaPrintFrame');
+  if(!frame){
+    frame=document.createElement('iframe');
+    frame.id='aquaPrintFrame';
+    frame.setAttribute('title','Impresión');
+    frame.style.cssText='position:fixed;left:0;top:0;width:0;height:0;border:0;opacity:0;pointer-events:none';
+    document.body.appendChild(frame);
+  }
+  return frame.contentWindow;
+}
 function _dispararImpresion(win){
   if(!win) return;
   try{
@@ -1073,7 +1084,7 @@ async function imprimirCierreDelDia(){
   };
   const bloque1 = armarTabla('cierreDelDiaTabla1', 'CIERRE DEL DÍA');
   const bloque2 = armarTabla('cierreDelDiaTabla2', 'FORMA DE ENTREGA DE DINERO');
-  const v = window.open('', '_blank', 'width=900,height=900');
+  const v = _abrirVentanaImpresion();
   const logoUrl = location.origin + '/logo-luanaqua.png';
   v.document.write(`<html><head><title>Cierre del Día</title><style>
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -1365,7 +1376,7 @@ function imprimirNotasAdicionalesDash(){
     <td style="font-weight:700;color:#1a3a5c">${escHTML(p.cliente||'-')}</td>
     <td style="font-weight:700;color:#1a3a5c">${escHTML(p.notas||'-')}</td>
   </tr>`).join('');
-  const v = window.open('', '_blank', 'width=900,height=900');
+  const v = _abrirVentanaImpresion();
   // [NEW] URL absoluta del logo — esta ventana se abre en blanco, sin el
   // dashboard como base, así que una ruta relativa no cargaría.
   const logoUrl = location.origin + '/logo-luanaqua.png';
@@ -2160,7 +2171,7 @@ async function imprimirMovimientosBancarios(){
     <td>${escHTML(f.cuenta)}</td>
     <td>${escHTML(f.banco)}</td>
   </tr>`).join('');
-  const v=window.open('','_blank','width=900,height=900');
+  const v=_abrirVentanaImpresion();
   const logoUrl=location.origin+'/logo-luanaqua.png';
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Movimientos Bancarios — Aqua Luan — ${fecha}</title>
   <style>
@@ -2776,7 +2787,7 @@ async function imprimirLiquidacionDash(){
     </div>`;
   }));
   const bloquesHtml = bloques.join('');
-  const v = window.open('', '_blank', 'width=900,height=900');
+  const v = _abrirVentanaImpresion();
   // [NEW] URL absoluta del logo — esta ventana se abre en blanco, sin el
   // dashboard como base, así que una ruta relativa no cargaría. Mismo patrón
   // que ya se usa en Pagos y Gastos / Detalle de Pedidos.
@@ -2910,10 +2921,10 @@ function aplicarRestriccionesRol(){
     el.style.display = (esSecretaria && !SECCIONES_SECRETARIA.includes(sec)) ? 'none' : '';
   });
   const tabRutas = document.getElementById('tabRutas');
-  if (tabRutas) tabRutas.style.display = esSecretaria ? 'none' : '';
+  if (tabRutas) tabRutas.style.display = '';
   document.querySelectorAll('.btn-cierre-dia').forEach(btn => {
     const t = (btn.textContent || '');
-    if (t.includes('Cierre') || t.includes('Contraseña')) btn.style.display = esSecretaria ? 'none' : '';
+    if (t.includes('Contraseña')) btn.style.display = esSecretaria ? 'none' : '';
   });
   const btnPass = document.getElementById('btnMiPassword');
   if (btnPass) btnPass.style.display = esSecretaria ? 'none' : '';
@@ -3549,7 +3560,7 @@ function renderTabla(pedidos) {
     }
     const pago  = etiquetaPago ? `<span class="badge badge-teal">${escHTML(etiquetaPago)}</span>${detallePago}` : '';
     const puedeEditar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
-    const puedeEliminar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
+    const puedeEliminar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
     const accion = (puedeEditar || puedeEliminar)
       ? `${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}`
       : '<span style="color:var(--muted);font-size:11px">—</span>';
@@ -3700,7 +3711,7 @@ function actualizarTablaCentral(datos) {
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
     const pago  = r['FORMA DE PAGO'] ? `<span class="badge badge-teal">${r['FORMA DE PAGO']}</span>` : '';
     const puedeEditar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
-    const puedeEliminar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
+    const puedeEliminar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
     const accion = (puedeEditar || puedeEliminar)
       ? `${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}`
       : '<span style="color:var(--muted);font-size:11px">—</span>';
@@ -4041,7 +4052,7 @@ function exportarClientePDF() {
       </div>`;
   }).join('');
 
-  const v = window.open('', '_blank', 'width=800,height=900');
+  const v = _abrirVentanaImpresion();
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escHTML(tituloSeleccion)} — Aqua Luan</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -4345,7 +4356,7 @@ function _imprimirClientesPDF(clientesArr) {
   // [NEW] Título de pestaña según la selección real: nombre del cliente si es
   // uno solo, o cantidad si son varios — en vez del genérico "Clientes".
   const tituloSeleccion = clientesArr.length === 1 ? clientesArr[0].nombre : `Clientes (${clientesArr.length})`;
-  const v = window.open('', '_blank', 'width=800,height=900');
+  const v = _abrirVentanaImpresion();
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escHTML(tituloSeleccion)} — Aqua Luan</title>
   <style>
     body{font-family:Arial,sans-serif;color:#1a3a5c;padding:24px}
@@ -4605,7 +4616,7 @@ function _htmlPrintReporteAsesor(ruta){
 }
 function _abrirPrintReporteAsesor(titulo, bloquesHtml){
   const fecha=_textoRangoFecha();
-  const v=window.open('','_blank','width=900,height=900');
+  const v=_abrirVentanaImpresion();
   if(!v){ alert('Permite ventanas emergentes para imprimir.'); return; }
   const logoUrl=location.origin+'/logo-luanaqua.png';
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escHTML(titulo)}</title>
@@ -4910,7 +4921,7 @@ function cerrarCierreDia() {
 function imprimirCierre() {
   const fecha  = document.getElementById('cierreFechaBadge').textContent;
   const cuerpo = _quitarEmoji(document.getElementById('cierreBody').innerHTML);
-  const v = window.open('','_blank','width=800,height=900');
+  const v = _abrirVentanaImpresion();
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cierre del Día — Aqua Luan — ${fecha}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -4991,7 +5002,7 @@ function exportarPagosGastosPDF() {
       <td style="text-align:right">$${Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0).toFixed(2)}</td>
     </tr>`;
   }).join('');
-  const v = window.open('', '_blank', 'width=900,height=900');
+  const v = _abrirVentanaImpresion();
   // [NEW] URL absoluta del logo — esta ventana se abre en blanco, sin el
   // dashboard como base, así que una ruta relativa no cargaría.
   const logoUrl = location.origin + '/logo-luanaqua.png';
@@ -5214,7 +5225,7 @@ function imprimirCobranzasSeleccionadas(){
     </tr>`;
   }).join('');
   const logoUrl=location.origin+'/logo-luanaqua.png';
-  const v=window.open('','_blank','width=1000,height=900');
+  const v=_abrirVentanaImpresion();
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Consulta Cobranzas — Aqua Luan</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -5305,7 +5316,7 @@ function exportarDetallePDF() {
   // no cargaría. Se arma con location.origin para que funcione en cualquier dominio.
   const logoUrl = location.origin + '/logo-luanaqua.png';
 
-  const v = window.open('', '_blank', 'width=1000,height=900');
+  const v = _abrirVentanaImpresion();
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Detalle de Pedidos — ${asesorLabel} — Aqua Luan — ${fecha}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -5793,8 +5804,8 @@ async function _registrarAuditoria(tipo, accion, registroId, detalle, motivo){
 async function eliminarPedidoCompleto(pedidoId){
   const p = _pedidosRaw.find(x => x._id === pedidoId);
   if(!p){ alert('No se encontró el pedido — puede que ya se haya eliminado.'); return; }
-  if(ROL_ACTUAL !== 'admin'){
-    alert('Solo el administrador puede eliminar pedidos.');
+  if(!_puedeEditarCuadreCaja(p.fecha||p.FECHA)){
+    alert('No se puede eliminar este pedido en el período.');
     return;
   }
 
