@@ -108,6 +108,34 @@ function _etiquetaPagoDetalle(r){
 function _textoDesgloseFila(r){
   return _desgloseRealPago(r);
 }
+function _montoPedidoSegunFiltroPago(r){
+  const raw=r['TOTAL PEDIDO ($)'];
+  if(raw==='' || raw===null || raw===undefined) return 0;
+  const tot=parseFloat(raw)||0;
+  const activos=_filtrosPagoActivos();
+  if(!activos.length) return 0;
+  if(activos.length===FORMAS_PAGO_FIJAS.length) return tot;
+  const des=Array.isArray(r['PAGOS_DESGLOSE'])?r['PAGOS_DESGLOSE']:[];
+  const cred=parseFloat(r['CREDITO_PENDIENTE']||0)||0;
+  let s=0;
+  if(des.length){
+    des.forEach(pg=>{
+      const f=_normFormaPago(pg.forma);
+      if(f && activos.includes(f)) s+=parseFloat(pg.monto)||0;
+    });
+    if(activos.includes('Crédito')) s+=cred;
+    return s;
+  }
+  const f=_normFormaPago(r['FORMA DE PAGO']);
+  if(activos.includes('Crédito') && (f==='Crédito' || cred>0.004)){
+    s+= cred>0.004 ? cred : (f==='Crédito' ? tot : 0);
+  }
+  if(f && f!=='Crédito' && f!=='Mixto' && activos.includes(f)){
+    s+= Math.max(tot-cred,0);
+  }
+  if(f==='Mixto' && !des.length && activos.includes('Crédito')) s+=cred;
+  return s;
+}
 const _secondaryAppDash = firebase.initializeApp(firebaseConfig, 'secondaryDash');
 const _secondaryAuthDash = _secondaryAppDash.auth();
 
@@ -5194,10 +5222,14 @@ function exportarDetallePDF() {
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
   const asesorLabel = asesorSel.split(':')[1]?.trim() || 'Todos';
 
-  const totalGeneral = datos.filter(r=>r['TOTAL PEDIDO ($)']&&parseFloat(r['TOTAL PEDIDO ($)'])>0).reduce((s,r)=>s+(parseFloat(r['TOTAL PEDIDO ($)'])||0),0);
+  const activosPago=_filtrosPagoActivos();
+  const totalGeneral = datos.reduce((s,r)=>s+(_montoPedidoSegunFiltroPago(r)||0),0);
+  const etiquetaTotal = (activosPago.length===1) ? ('TOTAL '+activosPago[0].toUpperCase()) : 'TOTAL GENERAL';
 
   const filas = datos.map((r, idx) => {
-    const total = r['TOTAL PEDIDO ($)'] ? `$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}` : '—';
+    const montoF=_montoPedidoSegunFiltroPago(r);
+    const tieneTotal=r['TOTAL PEDIDO ($)']!=='' && r['TOTAL PEDIDO ($)']!=null && r['TOTAL PEDIDO ($)']!==undefined;
+    const total = tieneTotal ? `$${montoF.toFixed(2)}` : '—';
     const precioUnit = r['PRECIO UNIT.']!==undefined && r['PRECIO UNIT.']!=='' ? `$${parseFloat(r['PRECIO UNIT.']).toFixed(2)}` : '—';
     const fila = `<tr>
       <td>${limpiarFecha(r['FECHA'])}</td>
@@ -5256,7 +5288,7 @@ function exportarDetallePDF() {
     <thead><tr><th>Fecha</th><th>Asesor</th><th>Cliente</th><th>Teléfono</th><th>Producto</th><th>Cant.</th><th>Precio Unit.</th><th>Subtotal</th><th>Total</th><th>Pago</th></tr></thead>
     <tbody>
       ${filas}
-      <tr class="total-row"><td colspan="8" style="text-align:right">TOTAL GENERAL</td><td style="text-align:right">$${totalGeneral.toFixed(2)}</td><td></td></tr>
+      <tr class="total-row"><td colspan="8" style="text-align:right">${etiquetaTotal}</td><td style="text-align:right">$${totalGeneral.toFixed(2)}</td><td></td></tr>
     </tbody>
   </table>
   <div class="firmas">
