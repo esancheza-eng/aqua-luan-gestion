@@ -1186,13 +1186,22 @@ function renderProductosVendidosDash(){
       const ultimoDelProducto=!sig || (sig.nombre||'')!==(p.nombre||'');
       const repetido=i>0 && (lista[i-1].nombre||'')===(p.nombre||'');
       const nomCel=repetido?'':escHTML(p.nombre||'');
-      const corte=ultimoDelProducto?'border-bottom:3px solid #1a3a5c;':'';
-      return `<tr>
-        <td style="${corte}">${nomCel}</td>
-        <td style="text-align:right;${corte}">$${(Number(p.precio)||0).toFixed(2)}</td>
-        <td style="text-align:right;${corte}">${cant}</td>
-        <td style="text-align:right;${corte}">$${(Number(p.dolares)||0).toFixed(2)}</td>
+      let html=`<tr>
+        <td>${nomCel}</td>
+        <td style="text-align:right">$${(Number(p.precio)||0).toFixed(2)}</td>
+        <td style="text-align:right">${cant}</td>
+        <td style="text-align:right">$${(Number(p.dolares)||0).toFixed(2)}</td>
       </tr>`;
+      if(ultimoDelProducto){
+        let gC=0,gD=0;
+        for(let k=i;k>=0;k--){
+          if((lista[k].nombre||'')!==(p.nombre||'')) break;
+          gC+=Number(lista[k].cantidad)||0;
+          gD+=Number(lista[k].dolares)||0;
+        }
+        html+=`<tr class="pv-total-prod"><td style="border-bottom:3px solid #1a3a5c;font-weight:800">TOTAL ${escHTML(p.nombre||'')}</td><td style="border-bottom:3px solid #1a3a5c;text-align:right">—</td><td style="border-bottom:3px solid #1a3a5c;text-align:right;font-weight:800">${gC%1===0?parseInt(gC):gC.toFixed(1)}</td><td style="border-bottom:3px solid #1a3a5c;text-align:right;font-weight:800">$${gD.toFixed(2)}</td></tr>`;
+      }
+      return html;
     }).join('');
     return `<div style="margin-bottom:22px">
       <div class="pv-asesor" style="margin:0 0 10px;font-weight:800;font-size:22px;color:#12324d;letter-spacing:0.01em">${escHTML(nombre)}</div>
@@ -1219,7 +1228,7 @@ function imprimirProductosVendidosDash(){
   const asesorLabel=asesorSel?((asesorSel.split(':')[1]||asesorSel).trim()):'Todos';
   const v=_abrirVentanaImpresion();
   v.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Productos vendidos</title>
-  <style>body{font-family:system-ui,sans-serif;color:#1a3a5c;padding:24px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}th{text-align:left;font-size:10px;border-bottom:1px solid #ccc;padding:6px}td{padding:6px}.cierre-prod-subtotal td{font-weight:800;background:#e6f4f2}.pv-asesor{font-weight:800;font-size:22px;color:#12324d;margin:0 0 10px}</style></head><body>
+  <style>body{font-family:system-ui,sans-serif;color:#1a3a5c;padding:24px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}th{text-align:left;font-size:10px;border-bottom:1px solid #ccc;padding:6px}td{padding:6px}.cierre-prod-subtotal td{font-weight:800;background:#e6f4f2}.pv-total-prod td{background:#f3f7f6}.pv-asesor{font-weight:800;font-size:22px;color:#12324d;margin:0 0 10px}</style></head><body>
   <h1 style="font-size:20px">Productos vendidos</h1>
   <p style="color:#888;font-size:12px">Fecha: ${fecha} · Asesor: ${escHTML(asesorLabel)} · ${escHTML(lineaImpresoPor())}</p>
   ${box.innerHTML}
