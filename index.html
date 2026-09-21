@@ -229,7 +229,10 @@
           </div>
           <div style="padding:1rem 1.25rem 0" id="resumenPgGrid"></div>
           <div style="padding:1rem 1.25rem 8px" id="bloquePagosCaja">
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--blue)">💰 Pagos registrados</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--blue)">💰 Pagos registrados</div>
+              <button type="button" class="btn-editar-fila" id="btnNuevoPagoCaja" onclick="abrirNuevoPago()" style="display:none">＋ Añadir pago</button>
+            </div>
           </div>
           <div style="padding:0 1.25rem 10px" id="resumenFormasPago"></div>
           <div class="table-wrap">
@@ -239,7 +242,10 @@
             </table>
           </div>
           <div style="padding:1.25rem 1.25rem 8px" id="bloqueGastosCaja">
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--red)">📉 Gastos registrados</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--red)">📉 Gastos registrados</div>
+              <button type="button" class="btn-editar-fila" id="btnNuevoGastoCaja" onclick="abrirNuevoGasto()" style="display:none">＋ Añadir gasto</button>
+            </div>
           </div>
           <div class="table-wrap">
             <table>
