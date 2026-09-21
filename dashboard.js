@@ -1170,7 +1170,11 @@ function renderProductosVendidosDash(){
   const rutas=Object.keys(por).sort((a,b)=>a.localeCompare(b));
   if(!rutas.length){ box.innerHTML='<div class="empty-msg">No hay productos en este período. Elige fecha y pulsa Aplicar.</div>'; return; }
   box.innerHTML=rutas.map(nombre=>{
-    const lista=Object.values(por[nombre]||{}).sort((a,b)=>(b.dolares||0)-(a.dolares||0));
+    const lista=Object.values(por[nombre]||{}).sort((a,b)=>{
+      const n=(a.nombre||'').localeCompare(b.nombre||'','es');
+      if(n!==0) return n;
+      return (Number(a.precio)||0)-(Number(b.precio)||0);
+    });
     if(!lista.length) return '';
     const totC=lista.reduce((s,p)=>s+(p.cantidad||0),0);
     const totD=lista.reduce((s,p)=>s+(p.dolares||0),0);
@@ -1200,19 +1204,21 @@ function renderProductosVendidosDash(){
   }).join('')||'<div class="empty-msg">No hay productos en este período.</div>';
 }
 function imprimirProductosVendidosDash(){
-  const por=_agruparProductosVendidos();
-  const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
-  const rutas=Object.keys(por).sort((a,b)=>a.localeCompare(b));
-  const bloques=rutas.map(nombre=>{
-    const lista=Object.values(por[nombre]||{}).sort((a,b)=>(b.dolares||0)-(a.dolares||0));
-    if(!lista.length) return '';
-    const totC=lista.reduce((s,p)=>s+(p.cantidad||0),0);
-    const totD=lista.reduce((s,p)=>s+(p.dolares||0),0);
-    const filas=lista.map(p=>`<tr><td>${escHTML(p.nombre||'')}</td><td style="text-align:right">$${(Number(p.precio)||0).toFixed(2)}</td><td style="text-align:right">${p.cantidad%1===0?parseInt(p.cantidad):p.cantidad.toFixed(1)}</td><td style="text-align:right">$${(Number(p.dolares)||0).toFixed(2)}</td></tr>`).join('');
-    return `<h3>Productos vendidos por ${escHTML(nombre)}</h3><table><thead><tr><th>Producto</th><th>Precio unit.</th><th>Cantidad</th><th>Total ($)</th></tr></thead><tbody>${filas}<tr class="cierre-prod-subtotal"><td>SUBTOTAL PRODUCTOS</td><td>—</td><td style="text-align:right">${totC%1===0?parseInt(totC):totC.toFixed(1)}</td><td style="text-align:right">$${totD.toFixed(2)}</td></tr></tbody></table>`;
+  if(typeof renderProductosVendidosDash==='function') renderProductosVendidosDash();
+  const box=document.getElementById('productosVendidosDashLista');
+  if(!box||!box.querySelector('table')){ alert('No hay datos para imprimir.'); return; }
+  const bloques=[...box.querySelectorAll('.cierre-prod-table, table')].map(tabla=>{
+    const titulo=tabla.previousElementSibling ? tabla.previousElementSibling.textContent : 'Productos vendidos';
+    const head='<tr><th>Producto</th><th>Precio unit.</th><th>Cantidad</th><th>Total ($)</th></tr>';
+    const body=[...tabla.querySelectorAll('tbody tr')].map(tr=>{
+      const tds=[...tr.querySelectorAll('td')].slice(0,4).map(td=>`<td>${td.innerHTML}</td>`).join('');
+      return `<tr class="${tr.className}">${tds}</tr>`;
+    }).join('');
+    return `<h3>${escHTML(titulo)}</h3><table><thead>${head}</thead><tbody>${body}</tbody></table>`;
   }).join('');
   if(!bloques){ alert('No hay datos para imprimir.'); return; }
   const fecha=_textoRangoFecha();
+  const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
   const asesorLabel=asesorSel?((asesorSel.split(':')[1]||asesorSel).trim()):'Todos';
   const v=_abrirVentanaImpresion();
   v.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Productos vendidos</title>
