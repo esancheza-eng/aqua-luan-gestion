@@ -1048,11 +1048,12 @@ function _firmaUsuarioActualCierreDia(){
   return rolLabel + (nombre ? ': ' + nombre : '');
 }
 async function imprimirCierreDelDia(){
-  const yaHay=!!document.querySelector('#cierreDelDiaTabla1 tbody tr, #cierreDelDiaTabla1Wrap table tbody tr');
-  if(!yaHay && typeof renderCierreDelDia==='function') await renderCierreDelDia();
+  if(typeof renderCierreDelDia==='function') await renderCierreDelDia();
   const asesores=_cierreDelDiaAsesoresCache||[];
   if(!asesores.length){ alert('No hay datos para imprimir en este período.'); return; }
   const fecha = _textoRangoFecha();
+  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
+  const asesorLabel = asesorSel ? ((asesorSel.split(':')[1]||asesorSel).trim()) : 'Todos';
   const filaAHtml = tr => {
     const celdas=[...tr.querySelectorAll('td')].map((td,i)=>{
       if(i===0) return `<td style="text-align:center;font-weight:800">${escHTML(td.textContent)}</td>`;
@@ -1096,7 +1097,7 @@ async function imprimirCierreDelDia(){
     <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
     <div>
       <h1>CIERRE DEL DÍA</h1>
-      <p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
+      <p>Fecha: ${fecha} · Asesor: ${escHTML(asesorLabel)} · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
     </div>
   </div>
   ${bloque1}
@@ -1116,7 +1117,9 @@ async function imprimirCierreDelDia(){
   v.document.close();
   _dispararImpresion(v);
 }
+let _cierreRenderToken=0;
 async function renderCierreDelDia(){
+  const token=++_cierreRenderToken;
   const cont1 = document.getElementById('cierreDelDiaTabla1Wrap');
   const cont2 = document.getElementById('cierreDelDiaTabla2Wrap');
   const emptyMsg = document.getElementById('cierreDelDiaEmptyMsg');
@@ -1170,6 +1173,7 @@ async function renderCierreDelDia(){
       ajustes[n]=await _leerAjusteSaldosAsesor(n);
     }
   }));
+  if(token!==_cierreRenderToken) return;
   const datosAsesores = rutasFull.map(r => {
     const d0 = porAsesor[r] || _asesorVacio;
     const ajuste = Number(ajustes[r])||0;
@@ -1191,6 +1195,7 @@ async function renderCierreDelDia(){
       return await _cargarEntregaCierreAsesor(nombre);
     }catch(err){ console.warn('cierreDelDia lectura entrega:', err); return {}; }
   }));
+  if(token!==_cierreRenderToken) return;
   const _montoEfectivo = e => (e.efectivo?.marcado ? (Number(e.efectivo.monto)||0) : 0);
   const _montoDeposito = e => {
     if(Array.isArray(e.depositos) && e.depositos.length){
@@ -1226,6 +1231,7 @@ async function renderCierreDelDia(){
       if(snap.exists) guardado = snap.data() || {};
     }
   }catch(err){ console.warn('cierresDelDia lectura:', err); }
+  if(token!==_cierreRenderToken) return;
 
   const tabla2Liq={};
   filas2.forEach(f=>{
@@ -1235,9 +1241,20 @@ async function renderCierreDelDia(){
       tabla2Liq[f.etiqueta][id]= f.valor(e);
     });
   });
-  const t2Final=(guardado.tabla2 && Object.keys(guardado.tabla2).length)?guardado.tabla2:tabla2Liq;
-  cont1.innerHTML = _htmlTablaCierreDelDia(1, rutasFull, nombresDisplay, datosAsesores, filas1, guardado.tabla1||{});
-  cont2.innerHTML = _htmlTablaCierreDelDia(2, rutasFull, nombresDisplay, entregas, filas2, t2Final);
+  const t1Live={};
+  filas1.forEach(f=>{
+    t1Live[f.etiqueta]={};
+    rutasFull.forEach((id,i)=>{ t1Live[f.etiqueta][id]=f.valor(datosAsesores[i]); });
+  });
+  filas1.filter(f=>f.destacado).forEach(f=>{
+    if(!tabla2Liq['TOTAL GENERAL']) tabla2Liq['TOTAL GENERAL']={};
+    rutasFull.forEach(id=>{
+      const v1=Number(t1Live[f.etiqueta]&&t1Live[f.etiqueta][id])||0;
+      tabla2Liq['TOTAL GENERAL'][id]=v1;
+    });
+  });
+  cont1.innerHTML = _htmlTablaCierreDelDia(1, rutasFull, nombresDisplay, datosAsesores, filas1, t1Live);
+  cont2.innerHTML = _htmlTablaCierreDelDia(2, rutasFull, nombresDisplay, entregas, filas2, tabla2Liq);
   if(st) st.textContent = guardado && guardado.actualizadoPor ? ('Última vez guardado por '+guardado.actualizadoPor) : 'Aún no se ha guardado este Cierre del Día — mostrando valores calculados automáticamente.';
   _setCierreDelDiaEditable(false);
 }
@@ -3531,8 +3548,6 @@ function renderTabla(pedidos) {
       }
     }
     const pago  = etiquetaPago ? `<span class="badge badge-teal">${escHTML(etiquetaPago)}</span>${detallePago}` : '';
-    /* [NEW] Botón Editar — solo funciona si la fila trae el id real del pedido en Firestore
-       (las filas de pagos/gastos no lo traen, pero renderTabla solo recibe pedidos con producto) */
     const puedeEditar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
     const puedeEliminar = r['_pedidoId'] && ROL_ACTUAL === 'admin';
     const accion = (puedeEditar || puedeEliminar)
