@@ -299,7 +299,10 @@ function switchSeccionDash(sec){
     detenerListenerInventario();
   }
   if (sec === 'liquidacionDash' && typeof renderLiquidacionDash === 'function') renderLiquidacionDash(); // [NEW] siempre refresca al entrar, ya usa datos que el Dashboard ya tiene cargados
-  if (sec === 'productosVendidosDash' && typeof renderProductosVendidosDash === 'function') renderProductosVendidosDash();
+  if (sec === 'productosVendidosDash' && typeof renderProductosVendidosDash === 'function'){
+    renderProductosVendidosDash();
+    setTimeout(function(){ if(typeof renderProductosVendidosDash==='function') renderProductosVendidosDash(); }, 200);
+  }
   if (sec === 'cierreDelDia' && typeof renderCierreDelDia === 'function') renderCierreDelDia(); // [NEW] Cierre del Día — vista matriz, se refresca al entrar
   if (sec === 'eliminados' && typeof renderTablaEliminados === 'function') renderTablaEliminados();
   if (sec === 'auditoria' && typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
@@ -1133,16 +1136,41 @@ async function imprimirCierreDelDia(){
   v.document.close();
   _dispararImpresion(v);
 }
+function _agruparProductosVendidos(){
+  const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
+  const por={};
+  const add=(asesor,nom,precio,cant,dol,id)=>{
+    if(asesorSel && asesor!==asesorSel) return;
+    if(!por[asesor]) por[asesor]={};
+    const clave=nom+'|'+(Number(precio)||0).toFixed(4);
+    if(!por[asesor][clave]) por[asesor][clave]={nombre:nom,precio:Number(precio)||0,cantidad:0,dolares:0,ids:[]};
+    por[asesor][clave].cantidad+=Number(cant)||0;
+    por[asesor][clave].dolares+=Number(dol)||0;
+    if(id && por[asesor][clave].ids.indexOf(id)<0) por[asesor][clave].ids.push(id);
+  };
+  (_pedidosRaw||[]).forEach(p=>{
+    const asesor=p.empleado||'Sin asignar';
+    (p.productos||[]).forEach(prod=>{
+      add(asesor, prod.nombre||'Sin nombre', prod.precio, prod.cantidad, prod.subtotal, p._id);
+      (prod.regalias||[]).forEach(reg=>add(asesor,'🎁 REGALO: '+(reg.nombre||'Sin nombre'),0,reg.cantidad,0,p._id));
+    });
+  });
+  if(!Object.keys(por).length && Array.isArray(todosLosDatos)){
+    todosLosDatos.forEach(r=>{
+      const nom=r['PRODUCTO']; if(!nom) return;
+      add(r['ASESOR / RUTA']||'Sin asignar', nom, r['PRECIO UNIT.'], r['CANTIDAD'], r['SUBTOTAL'], r['_pedidoId']);
+    });
+  }
+  return por;
+}
 function renderProductosVendidosDash(){
   const box=document.getElementById('productosVendidosDashLista');
   if(!box) return;
-  const por=_calcularLiquidacionDash();
-  const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
-  const rutas=Object.keys(por).filter(n=>!asesorSel||n===asesorSel).sort((a,b)=>a.localeCompare(b));
-  if(!rutas.length){ box.innerHTML='<div class="empty-msg">No hay productos en este período.</div>'; return; }
+  const por=_agruparProductosVendidos();
+  const rutas=Object.keys(por).sort((a,b)=>a.localeCompare(b));
+  if(!rutas.length){ box.innerHTML='<div class="empty-msg">No hay productos en este período. Elige fecha y pulsa Aplicar.</div>'; return; }
   box.innerHTML=rutas.map(nombre=>{
-    const d=por[nombre]||{productos:{}};
-    const lista=Object.values(d.productos||{}).sort((a,b)=>(b.dolares||0)-(a.dolares||0));
+    const lista=Object.values(por[nombre]||{}).sort((a,b)=>(b.dolares||0)-(a.dolares||0));
     if(!lista.length) return '';
     const totC=lista.reduce((s,p)=>s+(p.cantidad||0),0);
     const totD=lista.reduce((s,p)=>s+(p.dolares||0),0);
@@ -1172,11 +1200,11 @@ function renderProductosVendidosDash(){
   }).join('')||'<div class="empty-msg">No hay productos en este período.</div>';
 }
 function imprimirProductosVendidosDash(){
-  const por=_calcularLiquidacionDash();
+  const por=_agruparProductosVendidos();
   const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
-  const rutas=Object.keys(por).filter(n=>!asesorSel||n===asesorSel).sort((a,b)=>a.localeCompare(b));
+  const rutas=Object.keys(por).sort((a,b)=>a.localeCompare(b));
   const bloques=rutas.map(nombre=>{
-    const lista=Object.values((por[nombre]||{}).productos||{}).sort((a,b)=>(b.dolares||0)-(a.dolares||0));
+    const lista=Object.values(por[nombre]||{}).sort((a,b)=>(b.dolares||0)-(a.dolares||0));
     if(!lista.length) return '';
     const totC=lista.reduce((s,p)=>s+(p.cantidad||0),0);
     const totD=lista.reduce((s,p)=>s+(p.dolares||0),0);
