@@ -272,7 +272,7 @@ let editandoPedidoActual = null;
 ════════════════════════════════════════ */
 /* [NEW] Menú lateral del panel administrativo — cambia entre secciones sin mezclarlas */
 let _yaCargado = { eliminados:false, inventario:false, roles:false, pedidosweb:false, auditoria:false }; // [NEW] carga perezosa
-const SECCIONES_SECRETARIA = ['pedidos','caja','liquidacionDash','cierreDelDia','notasAdicionalesDash','movimientosBancarios','cobranzasClientes'];
+const SECCIONES_SECRETARIA = ['pedidos','caja','liquidacionDash','productosVendidosDash','cierreDelDia','notasAdicionalesDash','movimientosBancarios','cobranzasClientes'];
 
 function switchSeccionDash(sec){
   if (ROL_ACTUAL === 'secretaria' && !SECCIONES_SECRETARIA.includes(sec)) {
@@ -299,6 +299,7 @@ function switchSeccionDash(sec){
     detenerListenerInventario();
   }
   if (sec === 'liquidacionDash' && typeof renderLiquidacionDash === 'function') renderLiquidacionDash(); // [NEW] siempre refresca al entrar, ya usa datos que el Dashboard ya tiene cargados
+  if (sec === 'productosVendidosDash' && typeof renderProductosVendidosDash === 'function') renderProductosVendidosDash();
   if (sec === 'cierreDelDia' && typeof renderCierreDelDia === 'function') renderCierreDelDia(); // [NEW] Cierre del Día — vista matriz, se refresca al entrar
   if (sec === 'eliminados' && typeof renderTablaEliminados === 'function') renderTablaEliminados();
   if (sec === 'auditoria' && typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
@@ -702,14 +703,18 @@ function _calcularLiquidacionDash(){
     // como unidades entregadas en el desglose de la Liquidación)
     (p.productos||[]).forEach(prod=>{
       const nom = prod.nombre || 'Sin nombre';
-      if(!d.productos[nom]) d.productos[nom] = { cantidad:0, dolares:0 };
-      d.productos[nom].cantidad += parseFloat(prod.cantidad||0);
-      d.productos[nom].dolares  += parseFloat(prod.subtotal||0);
+      const precio = parseFloat(prod.precio||0)||0;
+      const clave = nom + '|' + precio.toFixed(4);
+      if(!d.productos[clave]) d.productos[clave] = { nombre:nom, precio:precio, cantidad:0, dolares:0, ids:[] };
+      d.productos[clave].cantidad += parseFloat(prod.cantidad||0);
+      d.productos[clave].dolares  += parseFloat(prod.subtotal||0);
+      if(p._id && d.productos[clave].ids.indexOf(p._id)<0) d.productos[clave].ids.push(p._id);
       (prod.regalias||[]).forEach(reg=>{
         const nomReg = '🎁 REGALO: ' + (reg.nombre || 'Sin nombre');
-        if(!d.productos[nomReg]) d.productos[nomReg] = { cantidad:0, dolares:0 };
-        d.productos[nomReg].cantidad += parseFloat(reg.cantidad||0);
-        // dolares se mantiene en 0 para regalías, no afecta el total en $
+        const claveReg = nomReg + '|0';
+        if(!d.productos[claveReg]) d.productos[claveReg] = { nombre:nomReg, precio:0, cantidad:0, dolares:0, ids:[] };
+        d.productos[claveReg].cantidad += parseFloat(reg.cantidad||0);
+        if(p._id && d.productos[claveReg].ids.indexOf(p._id)<0) d.productos[claveReg].ids.push(p._id);
       });
     });
   });
@@ -825,9 +830,9 @@ async function renderLiquidacionDash(){
     const prodsOrdenados = Object.entries(d.productos).sort(([,a],[,b]) => b.dolares - a.dolares);
     const totalCantidadProd = prodsOrdenados.reduce((s,[,p]) => s + p.cantidad, 0);
     const totalDolaresProd  = prodsOrdenados.reduce((s,[,p]) => s + p.dolares, 0);
-    const filasProductosLiq = prodsOrdenados.map(([nom,p]) => `
+    const filasProductosLiq = prodsOrdenados.map(([clave,p]) => `
       <tr>
-        <td>${escHTML(nom)}</td>
+        <td>${escHTML(p.nombre||clave)}</td>
         <td>${p.cantidad % 1 === 0 ? parseInt(p.cantidad) : p.cantidad.toFixed(1)}</td>
         <td>$${p.dolares.toFixed(2)}</td>
       </tr>`).join('');
@@ -1124,6 +1129,69 @@ async function imprimirCierreDelDia(){
     window.onload=_intentarImprimirCierreDia;
     setTimeout(_intentarImprimirCierreDia,180);
   <\/script>
+  </body></html>`);
+  v.document.close();
+  _dispararImpresion(v);
+}
+function renderProductosVendidosDash(){
+  const box=document.getElementById('productosVendidosDashLista');
+  if(!box) return;
+  const por=_calcularLiquidacionDash();
+  const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
+  const rutas=Object.keys(por).filter(n=>!asesorSel||n===asesorSel).sort((a,b)=>a.localeCompare(b));
+  if(!rutas.length){ box.innerHTML='<div class="empty-msg">No hay productos en este período.</div>'; return; }
+  box.innerHTML=rutas.map(nombre=>{
+    const d=por[nombre]||{productos:{}};
+    const lista=Object.values(d.productos||{}).sort((a,b)=>(b.dolares||0)-(a.dolares||0));
+    if(!lista.length) return '';
+    const totC=lista.reduce((s,p)=>s+(p.cantidad||0),0);
+    const totD=lista.reduce((s,p)=>s+(p.dolares||0),0);
+    const filas=lista.map(p=>{
+      const ids=p.ids||[];
+      const id=ids[0]||'';
+      const puede=id && _puedeEditarCuadreCaja(document.getElementById('filtroFechaHasta')?.value||'');
+      const acc=puede?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${id}')">✏ Editar</button>${ids.length===1?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${id}')">🗑 Eliminar</button>`:`<span style="font-size:10px;color:var(--muted)">${ids.length} pedidos</span>`}`:'—';
+      const cant=p.cantidad%1===0?parseInt(p.cantidad):p.cantidad.toFixed(1);
+      return `<tr>
+        <td>${escHTML(p.nombre||'')}</td>
+        <td style="text-align:right">$${(Number(p.precio)||0).toFixed(2)}</td>
+        <td style="text-align:right">${cant}</td>
+        <td style="text-align:right">$${(Number(p.dolares)||0).toFixed(2)}</td>
+        <td>${acc}</td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:18px">
+      <div class="cierre-section-label" style="margin-bottom:6px">📦 Productos vendidos por ${escHTML(nombre)}</div>
+      <table class="cierre-prod-table">
+        <thead><tr><th>Producto</th><th>Precio unit.</th><th>Cantidad</th><th>Total ($)</th><th>Acciones</th></tr></thead>
+        <tbody>${filas}
+          <tr class="cierre-prod-subtotal"><td>SUBTOTAL PRODUCTOS</td><td>—</td><td style="text-align:right">${totC%1===0?parseInt(totC):totC.toFixed(1)}</td><td style="text-align:right">$${totD.toFixed(2)}</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>`;
+  }).join('')||'<div class="empty-msg">No hay productos en este período.</div>';
+}
+function imprimirProductosVendidosDash(){
+  const por=_calcularLiquidacionDash();
+  const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
+  const rutas=Object.keys(por).filter(n=>!asesorSel||n===asesorSel).sort((a,b)=>a.localeCompare(b));
+  const bloques=rutas.map(nombre=>{
+    const lista=Object.values((por[nombre]||{}).productos||{}).sort((a,b)=>(b.dolares||0)-(a.dolares||0));
+    if(!lista.length) return '';
+    const totC=lista.reduce((s,p)=>s+(p.cantidad||0),0);
+    const totD=lista.reduce((s,p)=>s+(p.dolares||0),0);
+    const filas=lista.map(p=>`<tr><td>${escHTML(p.nombre||'')}</td><td style="text-align:right">$${(Number(p.precio)||0).toFixed(2)}</td><td style="text-align:right">${p.cantidad%1===0?parseInt(p.cantidad):p.cantidad.toFixed(1)}</td><td style="text-align:right">$${(Number(p.dolares)||0).toFixed(2)}</td></tr>`).join('');
+    return `<h3>Productos vendidos por ${escHTML(nombre)}</h3><table><thead><tr><th>Producto</th><th>Precio unit.</th><th>Cantidad</th><th>Total ($)</th></tr></thead><tbody>${filas}<tr class="cierre-prod-subtotal"><td>SUBTOTAL PRODUCTOS</td><td>—</td><td style="text-align:right">${totC%1===0?parseInt(totC):totC.toFixed(1)}</td><td style="text-align:right">$${totD.toFixed(2)}</td></tr></tbody></table>`;
+  }).join('');
+  if(!bloques){ alert('No hay datos para imprimir.'); return; }
+  const fecha=_textoRangoFecha();
+  const asesorLabel=asesorSel?((asesorSel.split(':')[1]||asesorSel).trim()):'Todos';
+  const v=_abrirVentanaImpresion();
+  v.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Productos vendidos</title>
+  <style>body{font-family:system-ui,sans-serif;color:#1a3a5c;padding:24px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}th{text-align:left;font-size:10px;border-bottom:1px solid #ccc;padding:6px}td{padding:6px;border-bottom:1px solid #eee}.cierre-prod-subtotal td{font-weight:800;background:#e6f4f2}</style></head><body>
+  <h1 style="font-size:20px">Productos vendidos</h1>
+  <p style="color:#888;font-size:12px">Fecha: ${fecha} · Asesor: ${escHTML(asesorLabel)} · ${escHTML(lineaImpresoPor())}</p>
+  ${bloques}
   </body></html>`);
   v.document.close();
   _dispararImpresion(v);
@@ -2752,8 +2820,8 @@ async function imprimirLiquidacionDash(){
     const prodsOrdenados = Object.entries(d.productos).sort(([,a],[,b]) => b.dolares - a.dolares);
     const totalCantidadProd = prodsOrdenados.reduce((s,[,p]) => s + p.cantidad, 0);
     const totalDolaresProd  = prodsOrdenados.reduce((s,[,p]) => s + p.dolares, 0);
-    const filasProductosPdf = prodsOrdenados.map(([nom,p]) => `
-      <tr><td>${escHTML(nom)}</td><td style="text-align:right">${p.cantidad % 1 === 0 ? parseInt(p.cantidad) : p.cantidad.toFixed(1)}</td><td style="text-align:right">$${p.dolares.toFixed(2)}</td></tr>`).join('');
+    const filasProductosPdf = prodsOrdenados.map(([clave,p]) => `
+      <tr><td>${escHTML(p.nombre||clave)}</td><td style="text-align:right">${p.cantidad % 1 === 0 ? parseInt(p.cantidad) : p.cantidad.toFixed(1)}</td><td style="text-align:right">$${p.dolares.toFixed(2)}</td></tr>`).join('');
     const bloqueProductos = prodsOrdenados.length ? `
       <div class="prod-box">
         <div class="prod-title">PRODUCTOS VENDIDOS</div>
@@ -3125,6 +3193,8 @@ function _recalcularTodosLosDatos() {
   // viendo. Ahora solo se actualiza si esa pestaña está realmente abierta.
   const seccionLiquidacionVisible = document.getElementById('seccion-liquidacionDash')?.classList.contains('active');
   if (seccionLiquidacionVisible && typeof renderLiquidacionDash === 'function') renderLiquidacionDash();
+  const seccionProdVis = document.getElementById('seccion-productosVendidosDash')?.classList.contains('active');
+  if (seccionProdVis && typeof renderProductosVendidosDash === 'function') renderProductosVendidosDash();
   // [NEW] misma lógica de refresco perezoso para Cierre del Día — antes solo se
   // actualizaba al ENTRAR a la pestaña, no al cambiar el filtro de fecha estando ya adentro
   const seccionCierreDelDiaVisible = document.getElementById('seccion-cierreDelDia')?.classList.contains('active');
