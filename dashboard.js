@@ -1169,7 +1169,8 @@ function renderProductosVendidosDash(){
   const por=_agruparProductosVendidos();
   const rutas=Object.keys(por).sort((a,b)=>a.localeCompare(b));
   if(!rutas.length){ box.innerHTML='<div class="empty-msg">No hay productos en este período. Elige fecha y pulsa Aplicar.</div>'; return; }
-  box.innerHTML=rutas.map(nombre=>{
+  let granC=0, granD=0;
+  const bloques=rutas.map(nombre=>{
     const lista=Object.values(por[nombre]||{}).sort((a,b)=>{
       const n=(a.nombre||'').localeCompare(b.nombre||'','es');
       if(n!==0) return n;
@@ -1178,17 +1179,23 @@ function renderProductosVendidosDash(){
     if(!lista.length) return '';
     const totC=lista.reduce((s,p)=>s+(p.cantidad||0),0);
     const totD=lista.reduce((s,p)=>s+(p.dolares||0),0);
-    const filas=lista.map(p=>{
+    granC+=totC; granD+=totD;
+    const filas=lista.map((p,i)=>{
       const cant=p.cantidad%1===0?parseInt(p.cantidad):p.cantidad.toFixed(1);
+      const sig=lista[i+1];
+      const ultimoDelProducto=!sig || (sig.nombre||'')!==(p.nombre||'');
+      const repetido=i>0 && (lista[i-1].nombre||'')===(p.nombre||'');
+      const nomCel=repetido?'':escHTML(p.nombre||'');
+      const corte=ultimoDelProducto?'border-bottom:3px solid #1a3a5c;':'';
       return `<tr>
-        <td>${escHTML(p.nombre||'')}</td>
-        <td style="text-align:right">$${(Number(p.precio)||0).toFixed(2)}</td>
-        <td style="text-align:right">${cant}</td>
-        <td style="text-align:right">$${(Number(p.dolares)||0).toFixed(2)}</td>
+        <td style="${corte}">${nomCel}</td>
+        <td style="text-align:right;${corte}">$${(Number(p.precio)||0).toFixed(2)}</td>
+        <td style="text-align:right;${corte}">${cant}</td>
+        <td style="text-align:right;${corte}">$${(Number(p.dolares)||0).toFixed(2)}</td>
       </tr>`;
     }).join('');
-    return `<div style="margin-bottom:18px">
-      <div class="cierre-section-label" style="margin-bottom:6px">📦 Productos vendidos por ${escHTML(nombre)}</div>
+    return `<div style="margin-bottom:22px">
+      <div class="pv-asesor" style="margin:0 0 10px;font-weight:800;font-size:22px;color:#12324d;letter-spacing:0.01em">${escHTML(nombre)}</div>
       <table class="cierre-prod-table">
         <thead><tr><th>Producto</th><th>Precio unit.</th><th>Cantidad</th><th>Total ($)</th></tr></thead>
         <tbody>${filas}
@@ -1196,31 +1203,26 @@ function renderProductosVendidosDash(){
         </tbody>
       </table>
     </div>`;
-  }).join('')||'<div class="empty-msg">No hay productos en este período.</div>';
+  }).join('');
+  const totalHtml=`<div class="pv-gran-total" style="margin-top:8px;padding:14px 16px;background:#e6f4f2;border:2px solid #0a7c6e;border-radius:10px;display:flex;justify-content:space-between;align-items:center;font-weight:800">
+    <span style="font-size:16px;color:#12324d">TOTAL DE TODOS LOS PRODUCTOS (incluye regalías)</span>
+    <span style="font-size:16px;color:#0a7c6e">Cantidad: ${granC%1===0?parseInt(granC):granC.toFixed(1)} &nbsp;·&nbsp; Total $: $${granD.toFixed(2)}</span>
+  </div>`;
+  box.innerHTML=(bloques||'<div class="empty-msg">No hay productos en este período.</div>')+(bloques?totalHtml:'');
 }
 function imprimirProductosVendidosDash(){
   if(typeof renderProductosVendidosDash==='function') renderProductosVendidosDash();
   const box=document.getElementById('productosVendidosDashLista');
   if(!box||!box.querySelector('table')){ alert('No hay datos para imprimir.'); return; }
-  const bloques=[...box.querySelectorAll('.cierre-prod-table, table')].map(tabla=>{
-    const titulo=tabla.previousElementSibling ? tabla.previousElementSibling.textContent : 'Productos vendidos';
-    const head='<tr><th>Producto</th><th>Precio unit.</th><th>Cantidad</th><th>Total ($)</th></tr>';
-    const body=[...tabla.querySelectorAll('tbody tr')].map(tr=>{
-      const tds=[...tr.querySelectorAll('td')].slice(0,4).map(td=>`<td>${td.innerHTML}</td>`).join('');
-      return `<tr class="${tr.className}">${tds}</tr>`;
-    }).join('');
-    return `<h3>${escHTML(titulo)}</h3><table><thead>${head}</thead><tbody>${body}</tbody></table>`;
-  }).join('');
-  if(!bloques){ alert('No hay datos para imprimir.'); return; }
   const fecha=_textoRangoFecha();
   const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
   const asesorLabel=asesorSel?((asesorSel.split(':')[1]||asesorSel).trim()):'Todos';
   const v=_abrirVentanaImpresion();
   v.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Productos vendidos</title>
-  <style>body{font-family:system-ui,sans-serif;color:#1a3a5c;padding:24px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}th{text-align:left;font-size:10px;border-bottom:1px solid #ccc;padding:6px}td{padding:6px;border-bottom:1px solid #eee}.cierre-prod-subtotal td{font-weight:800;background:#e6f4f2}</style></head><body>
+  <style>body{font-family:system-ui,sans-serif;color:#1a3a5c;padding:24px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}th{text-align:left;font-size:10px;border-bottom:1px solid #ccc;padding:6px}td{padding:6px}.cierre-prod-subtotal td{font-weight:800;background:#e6f4f2}.pv-asesor{font-weight:800;font-size:22px;color:#12324d;margin:0 0 10px}</style></head><body>
   <h1 style="font-size:20px">Productos vendidos</h1>
   <p style="color:#888;font-size:12px">Fecha: ${fecha} · Asesor: ${escHTML(asesorLabel)} · ${escHTML(lineaImpresoPor())}</p>
-  ${bloques}
+  ${box.innerHTML}
   </body></html>`);
   v.document.close();
   _dispararImpresion(v);
