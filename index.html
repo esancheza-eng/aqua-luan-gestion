@@ -430,9 +430,35 @@
           <div class="table-card">
             <div class="table-header">
               <div class="table-title">📦 Productos vendidos</div>
-              <button class="btn-filter" style="background:#0a7c6e" onclick="imprimirProductosVendidosDash()">Imprimir</button>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <div class="filtro-pago-wrap">
+                  <button class="btn-filter" style="background:#12324d;display:flex;align-items:center;gap:6px" onclick="toggleDropdownPv('dropdownPvProducto',event)">
+                    PRODUCTO <span id="filtroPvProdContador" style="display:none"></span> ▾
+                  </button>
+                  <div class="filtro-pago-dropdown" id="dropdownPvProducto">
+                    <div id="filtroPvProdOpciones"></div>
+                    <div class="filtro-pago-actions">
+                      <button type="button" onclick="marcarTodosFiltroPvProducto(true)">Marcar todos</button>
+                      <button type="button" onclick="marcarTodosFiltroPvProducto(false)">Desmarcar todos</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="filtro-pago-wrap">
+                  <button class="btn-filter" style="background:#12324d;display:flex;align-items:center;gap:6px" onclick="toggleDropdownPv('dropdownPvPrecio',event)">
+                    PRECIO <span id="filtroPvPrecioContador" style="display:none"></span> ▾
+                  </button>
+                  <div class="filtro-pago-dropdown" id="dropdownPvPrecio">
+                    <div id="filtroPvPrecioOpciones"></div>
+                    <div class="filtro-pago-actions">
+                      <button type="button" onclick="marcarTodosFiltroPvPrecio(true)">Marcar todos</button>
+                      <button type="button" onclick="marcarTodosFiltroPvPrecio(false)">Desmarcar todos</button>
+                    </div>
+                  </div>
+                </div>
+                <button class="btn-filter" style="background:#0a7c6e" onclick="imprimirProductosVendidosDash()">Imprimir</button>
+              </div>
             </div>
-            <div style="padding:0 1.25rem 8px;font-size:12px;color:var(--muted)">Cantidad × precio unitario que el asesor colocó en el app de pedidos. Respeta fecha y asesor de arriba.</div>
+            <div style="padding:0 1.25rem 8px;font-size:12px;color:var(--muted)">Cantidad × precio unitario que el asesor colocó en el app de pedidos. Respeta fecha y asesor de arriba. Los filtros de PRODUCTO y PRECIO son de selección múltiple.</div>
             <div id="productosVendidosDashLista" style="padding:0 1.25rem 1.25rem"></div>
           </div>
         </div>
