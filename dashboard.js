@@ -820,6 +820,13 @@ async function renderLiquidacionDash(){
     _liqTotalEntregarCache=0;
     const boxGlobal0=document.getElementById('liqEntregaBox');
     if(boxGlobal0) boxGlobal0.style.display='none';
+    const asesorSelVacio=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
+    if(asesorSelVacio){
+      const desde=document.getElementById('filtroFecha')?.value||'';
+      const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+      const dias=(typeof _diasISOInclusive==='function')?_diasISOInclusive(desde,hasta):[desde].filter(Boolean);
+      Promise.all(dias.map(dia=>_limpiarCierreSiSinMovimiento(asesorSelVacio, dia))).catch(()=>{});
+    }
     return;
   }
   if(emptyMsg) emptyMsg.style.display='none';
@@ -1294,6 +1301,12 @@ async function renderCierreDelDia(){
     if(emptyMsg) emptyMsg.style.display='block';
     if(st) st.textContent='';
     _cierreDelDiaAsesoresCache=[];
+    if(asesorSel){
+      const desde=document.getElementById('filtroFecha')?.value||'';
+      const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+      const dias=(typeof _diasISOInclusive==='function')?_diasISOInclusive(desde,hasta):[desde].filter(Boolean);
+      Promise.all(dias.map(dia=>_limpiarCierreSiSinMovimiento(asesorSel, dia))).catch(()=>{});
+    }
     return;
   }
   if(emptyMsg) emptyMsg.style.display='none';
@@ -2387,6 +2400,64 @@ function _entregaLiqVacia(){
     faltantes:[{monto:0,motivo:''},{monto:0,motivo:''},{monto:0,motivo:''}],
     sobrante:{monto:0, motivo:''}
   };
+}
+function _mismoAsesorLiq(a, b){
+  const na=String(a||'').trim();
+  const nb=String(b||'').trim();
+  if(!na || !nb) return false;
+  if(na===nb) return true;
+  if(_slugAsesorLiq(na)===_slugAsesorLiq(nb)) return true;
+  const sa=(na.split(':')[1]||na).trim().toLowerCase();
+  const sb=(nb.split(':')[1]||nb).trim().toLowerCase();
+  return !!sa && sa===sb;
+}
+function _diaISORegistroLiq(valor){
+  const s=String(valor||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  return '';
+}
+async function _limpiarCierreSiSinMovimiento(asesor, fecha){
+  if(!asesor || typeof db==='undefined') return;
+  const dia=_diaISORegistroLiq(fecha);
+  if(!dia) return;
+  const queda=
+    (_pedidosRaw||[]).some(p => _mismoAsesorLiq(p.empleado, asesor) && _diaISORegistroLiq(p.fecha)===dia) ||
+    (_pagosRaw||[]).some(p => _mismoAsesorLiq(p.empleado, asesor) && _diaISORegistroLiq(p.fecha)===dia) ||
+    (_gastosRaw||[]).some(g => _mismoAsesorLiq(g.empleado, asesor) && _diaISORegistroLiq(g.fecha)===dia);
+  if(queda) return;
+  const sl=_slugAsesorLiq(asesor);
+  const idsEntrega=[
+    dia+'_'+dia+'__'+sl,
+    dia+'_'+dia+'__'+_slugAsesorLiq((asesor.split(':')[1]||asesor).trim())
+  ];
+  await Promise.all([...new Set(idsEntrega)].map(id =>
+    db.collection('cierresLiquidacion').doc(id).delete().catch(()=>{})
+  ));
+  try{
+    const idCierre=dia+'_'+dia;
+    const snap=await db.collection('cierresDelDia').doc(idCierre).get();
+    if(!snap.exists) return;
+    const data=snap.data()||{};
+    const limpiarTabla=t=>{
+      if(!t || typeof t!=='object') return t||{};
+      const out={};
+      Object.keys(t).forEach(etiq=>{
+        const fila=Object.assign({}, t[etiq]||{});
+        Object.keys(fila).forEach(k=>{ if(_mismoAsesorLiq(k, asesor) || _slugAsesorLiq(k)===sl) delete fila[k]; });
+        out[etiq]=fila;
+      });
+      return out;
+    };
+    await db.collection('cierresDelDia').doc(idCierre).set({
+      tabla1:limpiarTabla(data.tabla1),
+      tabla2:limpiarTabla(data.tabla2),
+      asesores:(data.asesores||[]).filter(n => !_mismoAsesorLiq(n, asesor)),
+      actualizadoEn:firebase.firestore.FieldValue.serverTimestamp(),
+      actualizadoPor:(typeof actorAuditoria==='function')?actorAuditoria():'sistema'
+    }, {merge:true});
+  }catch(err){
+    console.warn('limpiar cierre tras eliminación:', err);
+  }
 }
 function _fusionarEntregasLiq(docs){
   const acc={
@@ -6000,7 +6071,10 @@ async function eliminarPedidoCompleto(pedidoId){
     // 3) Recién ahora se borra el documento original de "pedidos"
     await db.collection('pedidos').doc(pedidoId).delete();
     _pedidosRaw = (_pedidosRaw||[]).filter(x=>x._id!==pedidoId);
+    await _limpiarCierreSiSinMovimiento(p.empleado, p.fecha||p.FECHA);
     if(typeof renderDashboard==='function') renderDashboard();
+    if(typeof renderLiquidacionDash==='function') renderLiquidacionDash();
+    if(typeof renderCierreDelDia==='function') renderCierreDelDia();
     mostrarToastEdicion('🗑 Pedido eliminado, respaldado y su inventario revertido correctamente.');
   }catch(err){
     console.error(err);
@@ -6532,6 +6606,8 @@ async function eliminarPagoDash(id){
       eliminadoEn:firebase.firestore.FieldValue.serverTimestamp()
     });
     await db.collection('pagos').doc(id).delete();
+    _pagosRaw = (_pagosRaw||[]).filter(x=>x._id!==id);
+    await _limpiarCierreSiSinMovimiento(p && p.empleado, p && p.fecha);
     await _registrarAuditoria('pago', 'eliminación', id, 'Pago eliminado por ' + actorAuditoria(), motivo);
     mostrarToastEdicion('🗑 Pago eliminado correctamente.');
     if(typeof _refrescarDashboardTrasMB==='function') _refrescarDashboardTrasMB();
@@ -6552,6 +6628,8 @@ async function eliminarGastoDash(id){
       eliminadoEn:firebase.firestore.FieldValue.serverTimestamp()
     });
     await db.collection('gastos').doc(id).delete();
+    _gastosRaw = (_gastosRaw||[]).filter(x=>x._id!==id);
+    await _limpiarCierreSiSinMovimiento(g && g.empleado, g && g.fecha);
     await _registrarAuditoria('gasto', 'eliminación', id, 'Gasto eliminado por ' + actorAuditoria(), motivo);
     mostrarToastEdicion('🗑 Gasto eliminado correctamente.');
     if(typeof _refrescarDashboardTrasMB==='function') _refrescarDashboardTrasMB();
