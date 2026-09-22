@@ -656,9 +656,10 @@ function _calcularLiquidacionDash(){
   // el usuario hubiera elegido una en el dropdown. Ahora, si hay un asesor
   // seleccionado, solo se procesan sus pedidos/pagos/gastos.
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-  const pedidosF = asesorSel ? _pedidosRaw.filter(p => (p.empleado||'') === asesorSel) : _pedidosRaw;
-  const pagosF   = asesorSel ? _pagosRaw.filter(p => (p.empleado||'') === asesorSel) : _pagosRaw;
-  const gastosF  = asesorSel ? _gastosRaw.filter(g => (g.empleado||'') === asesorSel) : _gastosRaw;
+  const _enFecha = (r) => !_estaEnRangoFiltroDash || _estaEnRangoFiltroDash(r.fecha, r.creadoEn || r.fechaTs || r.registradoEn);
+  const pedidosF = (_pedidosRaw||[]).filter(p => _enFecha(p) && (!asesorSel || (p.empleado||'') === asesorSel));
+  const pagosF   = (_pagosRaw||[]).filter(p => _enFecha(p) && (!asesorSel || (p.empleado||'') === asesorSel));
+  const gastosF  = (_gastosRaw||[]).filter(g => _enFecha(g) && (!asesorSel || (g.empleado||'') === asesorSel));
   pedidosF.forEach(p=>{
     const d = getAsesor(p.empleado || 'Sin asignar'); const tot = parseFloat(p.total||0);
     // [FIX] NUEVO FORMATO DE PAGO MÚLTIPLE (index.html) — el asesor ahora puede marcar
@@ -729,6 +730,20 @@ function _calcularLiquidacionDash(){
 async function _leerAjusteSaldosAsesor(nombre){
   try{
     if(typeof db==='undefined') return 0;
+    const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
+    const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+    const sl=_slugAsesorLiq(nombre);
+    const dias=(typeof _diasISOInclusive==='function') ? _diasISOInclusive(desde, hasta) : [desde];
+    if(dias.length>1){
+      let suma=0;
+      for(const dia of dias){
+        try{
+          const snap=await db.collection('cierresLiquidacion').doc(dia+'_'+dia+'__'+sl).get();
+          if(snap.exists) suma += Number(snap.data().ajusteSaldos)||0;
+        }catch(e){}
+      }
+      return suma;
+    }
     const snap=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
     return snap.exists ? (Number(snap.data().ajusteSaldos)||0) : 0;
   }catch(e){ return 0; }
@@ -2399,6 +2414,7 @@ async function _cargarEntregaCierreAsesor(nombre){
       if(snap.exists) diarios.push(snap.data()||{});
     }catch(err){}
   }
+  if(dias.length>1) return _fusionarEntregasLiq(diarios);
   if(diarios.length) return _fusionarEntregasLiq(diarios);
   try{
     const snapExact=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
