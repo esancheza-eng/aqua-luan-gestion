@@ -1185,11 +1185,112 @@ async function imprimirCierreDelDia(){
   v.document.close();
   _dispararImpresion(v);
 }
-function _agruparProductosVendidos(){
+let _pvProdExcluidos = new Set();
+let _pvPrecioExcluidos = new Set();
+function _precioPvKey(precio){
+  return (Number(precio)||0).toFixed(2);
+}
+function _catalogoProductosVendidos(){
+  const por=_agruparProductosVendidos(false);
+  const productos=new Set();
+  const precios=new Set();
+  Object.keys(por).forEach(asesor=>{
+    Object.values(por[asesor]||{}).forEach(p=>{
+      if(p.nombre) productos.add(p.nombre);
+      precios.add(_precioPvKey(p.precio));
+    });
+  });
+  return {
+    productos:[...productos].sort((a,b)=>a.localeCompare(b,'es')),
+    precios:[...precios].sort((a,b)=>Number(a)-Number(b))
+  };
+}
+function _pasaFiltroPv(nom,precio){
+  const cat=_catalogoProductosVendidosCache || {productos:[],precios:[]};
+  if(_pvProdExcluidos.size && _pvProdExcluidos.has(nom)) return false;
+  if(_pvPrecioExcluidos.size && _pvPrecioExcluidos.has(_precioPvKey(precio))) return false;
+  return true;
+}
+let _catalogoProductosVendidosCache=null;
+function renderFiltrosProductosVendidos(){
+  const cat=_catalogoProductosVendidos();
+  _catalogoProductosVendidosCache=cat;
+  const contP=document.getElementById('filtroPvProdOpciones');
+  if(contP){
+    contP.innerHTML=cat.productos.map(n=>`
+      <label class="filtro-pago-item">
+        <input type="checkbox" ${_pvProdExcluidos.has(n)?'':'checked'} onchange="toggleFiltroPvProducto(${JSON.stringify(n)}, this.checked)">
+        ${escHTML(n)}
+      </label>`).join('') || '<div class="filtro-pago-item">Sin productos</div>';
+  }
+  const contPr=document.getElementById('filtroPvPrecioOpciones');
+  if(contPr){
+    contPr.innerHTML=cat.precios.map(pr=>`
+      <label class="filtro-pago-item">
+        <input type="checkbox" ${_pvPrecioExcluidos.has(pr)?'':'checked'} onchange="toggleFiltroPvPrecio('${pr}', this.checked)">
+        $${pr}
+      </label>`).join('') || '<div class="filtro-pago-item">Sin precios</div>';
+  }
+  const cP=document.getElementById('filtroPvProdContador');
+  if(cP){
+    if(_pvProdExcluidos.size>0 && cat.productos.length){
+      cP.textContent=`(${cat.productos.length-_pvProdExcluidos.size}/${cat.productos.length})`;
+      cP.style.display='inline';
+    } else cP.style.display='none';
+  }
+  const cPr=document.getElementById('filtroPvPrecioContador');
+  if(cPr){
+    if(_pvPrecioExcluidos.size>0 && cat.precios.length){
+      cPr.textContent=`(${cat.precios.length-_pvPrecioExcluidos.size}/${cat.precios.length})`;
+      cPr.style.display='inline';
+    } else cPr.style.display='none';
+  }
+}
+function toggleFiltroPvProducto(nombre,marcado){
+  if(marcado) _pvProdExcluidos.delete(nombre); else _pvProdExcluidos.add(nombre);
+  renderProductosVendidosDash();
+}
+function toggleFiltroPvPrecio(precio,marcado){
+  if(marcado) _pvPrecioExcluidos.delete(precio); else _pvPrecioExcluidos.add(precio);
+  renderProductosVendidosDash();
+}
+function marcarTodosFiltroPvProducto(marcarTodo){
+  const cat=_catalogoProductosVendidos();
+  _pvProdExcluidos = marcarTodo ? new Set() : new Set(cat.productos);
+  renderProductosVendidosDash();
+}
+function marcarTodosFiltroPvPrecio(marcarTodo){
+  const cat=_catalogoProductosVendidos();
+  _pvPrecioExcluidos = marcarTodo ? new Set() : new Set(cat.precios);
+  renderProductosVendidosDash();
+}
+function toggleDropdownPv(id,ev){
+  if(ev) ev.stopPropagation();
+  const dd=document.getElementById(id);
+  if(!dd) return;
+  const otro=id==='dropdownPvProducto'?'dropdownPvPrecio':'dropdownPvProducto';
+  const o=document.getElementById(otro);
+  if(o) o.classList.remove('open');
+  dd.classList.toggle('open');
+}
+document.addEventListener('click',(ev)=>{
+  ['dropdownPvProducto','dropdownPvPrecio'].forEach(id=>{
+    const dd=document.getElementById(id);
+    if(dd && dd.classList.contains('open') && !dd.contains(ev.target) && ev.target.closest('.filtro-pago-wrap')===null){
+      dd.classList.remove('open');
+    }
+  });
+});
+function _agruparProductosVendidos(aplicarFiltrosPv){
+  if(aplicarFiltrosPv===undefined) aplicarFiltrosPv=true;
   const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
   const por={};
   const add=(asesor,nom,precio,cant,dol,id)=>{
     if(asesorSel && asesor!==asesorSel) return;
+    if(aplicarFiltrosPv){
+      if(_pvProdExcluidos.size && _pvProdExcluidos.has(nom)) return;
+      if(_pvPrecioExcluidos.size && _pvPrecioExcluidos.has(_precioPvKey(precio))) return;
+    }
     if(!por[asesor]) por[asesor]={};
     const clave=nom+'|'+(Number(precio)||0).toFixed(4);
     if(!por[asesor][clave]) por[asesor][clave]={nombre:nom,precio:Number(precio)||0,cantidad:0,dolares:0,ids:[]};
@@ -1215,6 +1316,7 @@ function _agruparProductosVendidos(){
 function renderProductosVendidosDash(){
   const box=document.getElementById('productosVendidosDashLista');
   if(!box) return;
+  if(typeof renderFiltrosProductosVendidos==='function') renderFiltrosProductosVendidos();
   const por=_agruparProductosVendidos();
   const rutas=Object.keys(por).sort((a,b)=>a.localeCompare(b));
   if(!rutas.length){ box.innerHTML='<div class="empty-msg">No hay productos en este período. Elige fecha y pulsa Aplicar.</div>'; return; }
