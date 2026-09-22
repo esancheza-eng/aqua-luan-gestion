@@ -162,9 +162,10 @@ cursor: pointer; transition: background 0.2s;
 /* [NEW] Dropdown tipo checklist para el filtro de "Pago" en Detalle de Pedidos */
 .filtro-pago-wrap { position: relative; display: inline-block; }
 .filtro-pago-dropdown {
-  display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+  display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 80;
   background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px;
   box-shadow: var(--shadow-lg); padding: 8px; min-width: 180px;
+  max-height: 320px; overflow-y: auto;
 }
 .filtro-pago-dropdown.open { display: block; }
 .filtro-pago-item {
