@@ -1276,17 +1276,13 @@ async function renderCierreDelDia(){
   // dropdown "ASESOR" de arriba) — así siempre aparecen todas las rutas como columna,
   // aunque alguna no haya tenido movimiento ese día (se muestra en $0.00).
   const porAsesor = _calcularLiquidacionDash();
-  // [FIX] Lista maestra de todos los asesores activos (_asesoresCache, la misma que
-  // llena el dropdown "ASESOR" de arriba), FUSIONADA con cualquier asesor que sí tenga
-  // actividad registrada ese período (porAsesor). Esto es una red de seguridad: si el
-  // perfil de un asesor en Firestore tiene el campo 'esAdmin' mal configurado o
-  // ausente, la consulta .where('esAdmin','==',false) lo excluye silenciosamente de
-  // _asesoresCache — pero si igual tiene pedidos/pagos/gastos ese día, con esta fusión
-  // de todas formas aparece en la tabla, en vez de desaparecer sin explicación.
-  const rutasSet = new Set([
-    ...(Array.isArray(_asesoresCache) ? _asesoresCache : []),
-    ...Object.keys(porAsesor)
-  ]);
+  // [FIX] Cierre del Día debe coincidir con Liquidación: solo asesores que
+  // tienen ventas, pagos o gastos en el período filtrado. Si se eliminó la
+  // información de una ruta (ej. Jefferson el 09/09), no se rellena la tabla
+  // con un documento huérfano de cierresLiquidacion / cierresDelDia.
+  const rutasSet = new Set(
+    Object.keys(porAsesor).filter(n => _asesorTieneMovimientoLiq(porAsesor[n]))
+  );
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
   let rutasFull = [...rutasSet].sort((a,b)=>a.localeCompare(b,'es'));
   if(asesorSel){
@@ -1339,8 +1335,9 @@ async function renderCierreDelDia(){
   // Tabla 2 — Forma de Entrega de Dinero (lee lo guardado por cada asesor en Liquidación)
   const entregas = await Promise.all(rutasFull.map(async nombre=>{
     try{
+      if(!_asesorTieneMovimientoLiq(porAsesor[nombre])) return _entregaLiqVacia();
       return await _cargarEntregaCierreAsesor(nombre);
-    }catch(err){ console.warn('cierreDelDia lectura entrega:', err); return {}; }
+    }catch(err){ console.warn('cierreDelDia lectura entrega:', err); return _entregaLiqVacia(); }
   }));
   if(token!==_cierreRenderToken) return;
   const _montoEfectivo = e => (e.efectivo?.marcado ? (Number(e.efectivo.monto)||0) : 0);
@@ -2370,6 +2367,26 @@ function _diasISOInclusive(desde, hasta){
     out.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
   }
   return out;
+}
+function _asesorTieneMovimientoLiq(d){
+  if(!d) return false;
+  const nums=[
+    d.ventasContado,d.ventasCredito,d.ventasTransferencia,d.ventasCheque,d.ventasOtras,
+    d.pagosEfectivo,d.pagosTransferencia,d.pagosCheque,d.pagosOtros,d.gastos
+  ];
+  if(nums.some(n => (Number(n)||0) !== 0)) return true;
+  const prods=d.productos||{};
+  return Object.keys(prods).some(k => (Number(prods[k]&&prods[k].cantidad)||0)!==0 || (Number(prods[k]&&prods[k].dolares)||0)!==0);
+}
+function _entregaLiqVacia(){
+  return {
+    efectivo:{marcado:false, monto:0},
+    deposito:{marcado:false, monto:0},
+    depositos:[],
+    transferencia:{marcado:false, monto:0},
+    faltantes:[{monto:0,motivo:''},{monto:0,motivo:''},{monto:0,motivo:''}],
+    sobrante:{monto:0, motivo:''}
+  };
 }
 function _fusionarEntregasLiq(docs){
   const acc={
