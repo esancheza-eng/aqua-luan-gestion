@@ -3280,6 +3280,11 @@ function horaAMinutos(str) {
 ════════════════════════════════════════ */
 let _pedidosRaw = [], _pagosRaw = [], _gastosRaw = [];
 let _unsubPedidosAll = null, _unsubPagosAll = null, _unsubGastosAll = null;
+/* Rango Fecha que ya está en memoria (_pedidosRaw/_pagosRaw/_gastosRaw).
+   Si "Aplicar" pide el mismo rango (o un subconjunto), no se vuelve a
+   consultar Firestore: el filtro de asesor/fecha se aplica en el cliente. */
+let _rangoListeners = { desde: null, hasta: null };
+let _primeraCargaListenersPendiente = 0;
 
 function _horaDeTs(ts) {
   try { const ms = ts?.toMillis ? ts.toMillis() : Date.now(); return new Date(ms).toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit', second:'2-digit' }); }
@@ -3402,7 +3407,57 @@ function _recalcularTodosLosDatos() {
   }
   document.getElementById('lastUpdate').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit' });
 }
+function _rangoFiltroActualDash() {
+  const hoyTop = _topeFechaHoy();
+  let desde = (document.getElementById('filtroFecha').value || '').trim();
+  let hasta = (document.getElementById('filtroFechaHasta').value || '').trim() || hoyTop;
+  if (!hasta || hasta > hoyTop) hasta = hoyTop;
+  if (desde && hasta && desde > hasta) {
+    const tmp = desde; desde = hasta; hasta = tmp;
+    document.getElementById('filtroFecha').value = desde;
+  }
+  if (document.getElementById('filtroFechaHasta') && !document.getElementById('filtroFechaHasta').disabled) {
+    document.getElementById('filtroFechaHasta').value = hasta;
+  }
+  return { desde, hasta };
+}
+function _rangoYaCargadoEnMemoria(desde, hasta) {
+  if (!_unsubPedidosAll) return false;
+  const c = _rangoListeners;
+  if (c.desde == null && c.hasta == null) return false;
+  if (c.desde === desde && c.hasta === hasta) return true;
+  const loadedDesde = c.desde || '';
+  const loadedHasta = c.hasta || '';
+  if (!hasta) return false;
+  if (!loadedDesde) return hasta <= loadedHasta;
+  if (!desde) return false;
+  return desde >= loadedDesde && hasta <= loadedHasta;
+}
+function _flushRecalcInmediato() {
+  if (_recalcDebounceTimer) { clearTimeout(_recalcDebounceTimer); _recalcDebounceTimer = null; }
+  _recalcularTodosLosDatos();
+}
+function _onSnapshotColeccionLista() {
+  if (_primeraCargaListenersPendiente > 0) {
+    _primeraCargaListenersPendiente--;
+    if (_primeraCargaListenersPendiente <= 0) {
+      _primeraCargaListenersPendiente = 0;
+      _flushRecalcInmediato();
+      return;
+    }
+    return;
+  }
+  _recalcularTodosLosDatosDebounced();
+}
 function iniciarListenersDashboard() {
+  const { desde, hasta } = _rangoFiltroActualDash();
+  /* Si el rango pedido ya está en memoria (mismo Desde/Hasta o un subconjunto),
+     no se desarman los listeners ni se vuelve a bajar Firestore. El asesor se
+     filtra siempre en cliente (getDatosFiltrados), así "Aplicar" es instantáneo. */
+  if (_rangoYaCargadoEnMemoria(desde, hasta)) {
+    _flushRecalcInmediato();
+    return;
+  }
   if (_unsubPedidosAll) _unsubPedidosAll();
   if (_unsubPagosAll) _unsubPagosAll();
   if (_unsubGastosAll) _unsubGastosAll();
@@ -3415,17 +3470,8 @@ function iniciarListenersDashboard() {
      funcionando igual: al dejar ambos campos vacíos, no se agrega ningún .where() de
      fecha y se trae el histórico completo, como antes (esperable que tarde más, porque
      ahí sí se está pidiendo todo a propósito). */
-  const hoyTop = _topeFechaHoy();
-  let desde = (document.getElementById('filtroFecha').value || '').trim();
-  let hasta = (document.getElementById('filtroFechaHasta').value || '').trim() || hoyTop;
-  if (!hasta || hasta > hoyTop) hasta = hoyTop;
-  if (desde && hasta && desde > hasta) {
-    const tmp = desde; desde = hasta; hasta = tmp;
-    document.getElementById('filtroFecha').value = desde;
-  }
-  if (document.getElementById('filtroFechaHasta') && !document.getElementById('filtroFechaHasta').disabled) {
-    document.getElementById('filtroFechaHasta').value = hasta;
-  }
+  _rangoListeners = { desde, hasta };
+  _primeraCargaListenersPendiente = 3;
   let qPedidos = db.collection('pedidos'), qPagos = db.collection('pagos'), qGastos = db.collection('gastos');
   if (desde) { qPedidos = qPedidos.where('fecha','>=',desde); qPagos = qPagos.where('fecha','>=',desde); qGastos = qGastos.where('fecha','>=',desde); }
   qPedidos = qPedidos.where('fecha','<=',hasta); qPagos = qPagos.where('fecha','<=',hasta); qGastos = qGastos.where('fecha','<=',hasta);
@@ -3438,15 +3484,17 @@ function iniciarListenersDashboard() {
        los documentos recibidos — nadie se excluye, solo se ordenan. */
     _pedidosRaw = snap.docs.map(d => ({ _id: d.id, ...d.data() }))
       .sort((a,b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
-    _recalcularTodosLosDatosDebounced(); // [FIX] ver comentario en la función
-  }, err => { console.error('listener pedidos:', err); document.getElementById('kpiGrid').innerHTML = '<div class="loading"><span>⚠️ Error al cargar datos: '+err.message+'</span></div>'; }); /* [FIX] _id agregado — antes no se guardaba el id del documento, y sin él no era posible editar un pedido puntual */
-  _unsubPagosAll   = qPagos.onSnapshot(snap => { _pagosRaw = snap.docs.map(d => ({ _id: d.id, ...d.data() })); _recalcularTodosLosDatosDebounced(); }, err => console.error('listener pagos:', err)); /* [NEW] _id agregado para poder editar/eliminar */
-  _unsubGastosAll  = qGastos.onSnapshot(snap => { _gastosRaw = snap.docs.map(d => ({ _id: d.id, ...d.data() })); _recalcularTodosLosDatosDebounced(); }, err => console.error('listener gastos:', err)); /* [NEW] _id agregado para poder editar/eliminar */
+    _onSnapshotColeccionLista();
+  }, err => { console.error('listener pedidos:', err); _primeraCargaListenersPendiente = 0; document.getElementById('kpiGrid').innerHTML = '<div class="loading"><span>⚠️ Error al cargar datos: '+err.message+'</span></div>'; }); /* [FIX] _id agregado — antes no se guardaba el id del documento, y sin él no era posible editar un pedido puntual */
+  _unsubPagosAll   = qPagos.onSnapshot(snap => { _pagosRaw = snap.docs.map(d => ({ _id: d.id, ...d.data() })); _onSnapshotColeccionLista(); }, err => console.error('listener pagos:', err)); /* [NEW] _id agregado para poder editar/eliminar */
+  _unsubGastosAll  = qGastos.onSnapshot(snap => { _gastosRaw = snap.docs.map(d => ({ _id: d.id, ...d.data() })); _onSnapshotColeccionLista(); }, err => console.error('listener gastos:', err)); /* [NEW] _id agregado para poder editar/eliminar */
 }
 function detenerListenersDashboard() {
   if (_unsubPedidosAll) { _unsubPedidosAll(); _unsubPedidosAll = null; }
   if (_unsubPagosAll)   { _unsubPagosAll();   _unsubPagosAll   = null; }
   if (_unsubGastosAll)  { _unsubGastosAll();  _unsubGastosAll  = null; }
+  _rangoListeners = { desde: null, hasta: null };
+  _primeraCargaListenersPendiente = 0;
 }
 /* Botón "Actualizar" — con listeners en tiempo real los datos ya están al día,
    así que solo forzamos un re-render inmediato con lo último recibido. */
