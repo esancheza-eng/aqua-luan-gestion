@@ -928,8 +928,26 @@ function _htmlTablaCierreDelDia(tablaNum, asesoresId, nombresDisplay, datos, fil
 function _recalcularFilaCierreDelDia(input){
   const tabla = input.closest('table');
   if(!tabla) return;
-  const ths = tabla.querySelectorAll('thead th');
+  const ths = [...tabla.querySelectorAll('thead th')];
   const colCount = ths.length;
+  const idxTotal = ths.findIndex(th => String(th.textContent||'').trim().toUpperCase()==='TOTAL GENERAL');
+  const esTablaEntrega = tabla.id==='cierreDelDiaTabla2';
+  if(esTablaEntrega && idxTotal>0){
+    const tr = input.closest('tr');
+    const tds = tr ? tr.querySelectorAll('td') : [];
+    let sumaEntrega = 0;
+    tds.forEach((td, i)=>{
+      if(i===0 || i===idxTotal) return;
+      const inp = td.querySelector('.cdd-input');
+      if(!inp) return;
+      const p = _parseMontoLiq(inp.value);
+      sumaEntrega += p.ok ? p.valor : 0;
+    });
+    const inpTotal = tds[idxTotal] && tds[idxTotal].querySelector('.cdd-input');
+    if(inpTotal && input !== inpTotal){
+      inpTotal.value = sumaEntrega.toFixed(2);
+    }
+  }
   const sums = Array(colCount).fill(0);
   tabla.querySelectorAll('tbody tr').forEach(tr=>{
     const tds = tr.querySelectorAll('td');
@@ -1360,13 +1378,9 @@ async function renderCierreDelDia(){
     t1Live[f.etiqueta]={};
     rutasFull.forEach((id,i)=>{ t1Live[f.etiqueta][id]=f.valor(datosAsesores[i]); });
   });
-  filas1.filter(f=>f.destacado).forEach(f=>{
-    if(!tabla2Liq['TOTAL GENERAL']) tabla2Liq['TOTAL GENERAL']={};
-    rutasFull.forEach(id=>{
-      const v1=Number(t1Live[f.etiqueta]&&t1Live[f.etiqueta][id])||0;
-      tabla2Liq['TOTAL GENERAL'][id]=v1;
-    });
-  });
+  // TOTAL GENERAL de Forma de Entrega = suma de sus propias columnas
+  // (efectivo + depósito + transferencia + faltantes − sobrante).
+  // No se copia el "Valor total del día" de la Tabla 1.
   cont1.innerHTML = _htmlTablaCierreDelDia(1, rutasFull, nombresDisplay, datosAsesores, filas1, t1Live);
   cont2.innerHTML = _htmlTablaCierreDelDia(2, rutasFull, nombresDisplay, entregas, filas2, tabla2Liq);
   if(st) st.textContent = guardado && guardado.actualizadoPor ? ('Última vez guardado por '+guardado.actualizadoPor) : 'Aún no se ha guardado este Cierre del Día — mostrando valores calculados automáticamente.';
