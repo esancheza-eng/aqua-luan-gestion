@@ -4002,7 +4002,9 @@ function renderTabla(pedidos) {
   const foot=document.getElementById('tablaPedidosFoot');
   if(foot){
     const t=_totalYEtiquetaDetalleFiltrado(pedidos);
-    foot.innerHTML=`<tr style="background:#e6f4f2;font-weight:800;color:#085f54"><td colspan="8" style="text-align:right;padding:10px">${escHTML(t.label)}</td><td style="text-align:right;padding:10px">$${t.total.toFixed(2)}</td><td colspan="3" style="font-size:11px;font-weight:600;color:var(--muted)">${pedidos.length} línea(s)</td></tr>`;
+    const cantTotal=pedidos.reduce((s,r)=>s+(parseFloat(r['CANTIDAD'])||0),0);
+    const cantTxt=cantTotal%1===0?String(parseInt(cantTotal)):cantTotal.toFixed(1);
+    foot.innerHTML=`<tr style="background:#e6f4f2;font-weight:800;color:#085f54"><td colspan="6" style="text-align:right;padding:10px">${escHTML(t.label)}</td><td style="text-align:center;padding:10px">${cantTxt}</td><td></td><td style="text-align:right;padding:10px">$${t.total.toFixed(2)}</td><td colspan="3" style="font-size:11px;font-weight:600;color:var(--muted)">${pedidos.length} línea(s)</td></tr>`;
   }
 }
 
@@ -4909,12 +4911,32 @@ function renderReporteAsesorDetalle(){
       porProducto[nombreProd].subtotal += parseFloat(r['SUBTOTAL'])||0;
     }
   });
+  const totalCantProd = Object.values(porProducto).reduce((s,d)=>s+(d.cantidad||0),0);
+  const totalSubProd = Object.values(porProducto).reduce((s,d)=>s+(d.subtotal||0),0);
+  const totalCantReg = Object.values(porRegalia).reduce((s,c)=>s+(c||0),0);
   const filasProducto = Object.entries(porProducto).sort(([,a],[,b]) => b.subtotal-a.subtotal)
     .map(([n,d]) => `<tr><td style="font-weight:600">${escHTML(n)}</td><td style="text-align:right">${d.cantidad%1===0?parseInt(d.cantidad):d.cantidad.toFixed(1)}</td><td style="text-align:right;font-weight:700;color:var(--teal)">$${d.subtotal.toFixed(2)}</td></tr>`).join('')
     || '<tr><td colspan="3" style="text-align:center;color:var(--muted)">Sin productos vendidos</td></tr>';
+  const pieProductos = Object.keys(porProducto).length
+    ? `<tr style="background:#e6f4f2;font-weight:800"><td>TOTAL PRODUCTOS</td><td style="text-align:right">${totalCantProd%1===0?parseInt(totalCantProd):totalCantProd.toFixed(1)}</td><td style="text-align:right;color:var(--teal)">$${totalSubProd.toFixed(2)}</td></tr>`
+    : '';
   const filasRegalia = Object.entries(porRegalia).sort(([,a],[,b]) => b-a)
     .map(([n,c]) => `<tr><td style="font-weight:600">🎁 ${escHTML(n)}</td><td style="text-align:right">${c%1===0?parseInt(c):c.toFixed(1)}</td></tr>`).join('')
     || '<tr><td colspan="2" style="text-align:center;color:var(--muted)">Sin regalías entregadas</td></tr>';
+  const pieRegalia = Object.keys(porRegalia).length
+    ? `<tr style="background:#e6f4f2;font-weight:800"><td>TOTAL REGALÍAS</td><td style="text-align:right">${totalCantReg%1===0?parseInt(totalCantReg):totalCantReg.toFixed(1)}</td></tr>`
+    : '';
+  const totalCantPedidos = pedidos.reduce((s,r)=>s+(parseFloat(r['CANTIDAD'])||0),0);
+  const totalCantPedTxt = totalCantPedidos%1===0?String(parseInt(totalCantPedidos)):totalCantPedidos.toFixed(1);
+  const piePedidos = pedidos.length
+    ? `<tr style="background:#e6f4f2;font-weight:800"><td colspan="3" style="text-align:right">TOTAL CANTIDAD</td><td style="text-align:center">${totalCantPedTxt}</td><td style="text-align:right;color:var(--teal)">$${totalVentas.toFixed(2)}</td><td></td></tr>`
+    : '';
+  const piePagos = pagos.length
+    ? `<tr style="background:#e6f4f2;font-weight:800"><td>TOTAL COBRADO</td><td style="text-align:right;color:var(--blue)">$${totalCobrado.toFixed(2)}</td><td colspan="2">Efectivo: $${pagosEfectivoAsesor.toFixed(2)}</td></tr>`
+    : '';
+  const pieGastos = gastos.length
+    ? `<tr style="background:#e6f4f2;font-weight:800"><td>TOTAL GASTOS</td><td style="text-align:right;color:var(--red)">$${totalGastos.toFixed(2)}</td><td></td></tr>`
+    : '';
 
   const filasPedidos = pedidos.slice(0,150).map(r => {
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
@@ -4943,15 +4965,15 @@ function renderReporteAsesorDetalle(){
       <div class="table-header"><div class="table-title">💳 Formas de pago (ventas)</div></div>
       <div style="padding:0 1.25rem 14px">${tagsFormaVentas}</div>
       <div class="table-header"><div class="table-title">📦 Productos vendidos</div></div>
-      <div class="table-wrap"><table><thead><tr><th>Producto</th><th style="text-align:right">Cant.</th><th style="text-align:right">Subtotal</th></tr></thead><tbody>${filasProducto}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Producto</th><th style="text-align:right">Cant.</th><th style="text-align:right">Subtotal</th></tr></thead><tbody>${filasProducto}</tbody><tfoot>${pieProductos}</tfoot></table></div>
       <div class="table-header"><div class="table-title">🎁 Regalías entregadas</div></div>
-      <div class="table-wrap"><table><thead><tr><th>Regalía</th><th style="text-align:right">Cant.</th></tr></thead><tbody>${filasRegalia}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Regalía</th><th style="text-align:right">Cant.</th></tr></thead><tbody>${filasRegalia}</tbody><tfoot>${pieRegalia}</tfoot></table></div>
       <div class="table-header"><div class="table-title">📋 Detalle de pedidos</div></div>
-      <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th style="text-align:center">Cant.</th><th style="text-align:right">Total</th><th>Pago</th></tr></thead><tbody>${filasPedidos}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th style="text-align:center">Cant.</th><th style="text-align:right">Total</th><th>Pago</th></tr></thead><tbody>${filasPedidos}</tbody><tfoot>${piePedidos}</tfoot></table></div>
       <div class="table-header"><div class="table-title">💰 Pagos cobrados</div></div>
-      <div class="table-wrap"><table><thead><tr><th>Cliente</th><th style="text-align:right">Monto</th><th>Forma</th><th>Fecha</th></tr></thead><tbody>${filasPagos}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Cliente</th><th style="text-align:right">Monto</th><th>Forma</th><th>Fecha</th></tr></thead><tbody>${filasPagos}</tbody><tfoot>${piePagos}</tfoot></table></div>
       <div class="table-header"><div class="table-title">Gastos registrados</div></div>
-      <div class="table-wrap"><table><thead><tr><th>Descripción</th><th style="text-align:right">Monto</th><th>Fecha</th></tr></thead><tbody>${filasGastos}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Descripción</th><th style="text-align:right">Monto</th><th>Fecha</th></tr></thead><tbody>${filasGastos}</tbody><tfoot>${pieGastos}</tfoot></table></div>
     </div>`;
 }
 
@@ -4999,11 +5021,21 @@ function _datosReporteAsesor(ruta){
 function _htmlPrintReporteAsesor(ruta){
   const d=_datosReporteAsesor(ruta);
   const formas=Object.entries(d.porFormaVentas).sort(([,a],[,b])=>b-a).map(([f,v])=>`${escHTML(f)}: $${v.toFixed(2)}`).join(' · ') || 'Sin ventas';
+  const totalCantProd=Object.values(d.porProducto).reduce((s,p)=>s+(p.cantidad||0),0);
+  const totalSubProd=Object.values(d.porProducto).reduce((s,p)=>s+(p.subtotal||0),0);
+  const totalCantReg=Object.values(d.porRegalia).reduce((s,c)=>s+(c||0),0);
+  const totalCantPed=d.pedidos.reduce((s,r)=>s+(parseFloat(r['CANTIDAD'])||0),0);
+  const pagosEfectivoPrint=d.pagos.filter(r=>r['FORMA DE PAGO']==='Efectivo').reduce((s,r)=>s+(parseFloat(r['TOTAL PEDIDO ($)'])||0),0);
   const filasProd=Object.entries(d.porProducto).sort(([,a],[,b])=>b.subtotal-a.subtotal).map(([n,p])=>`<tr><td>${escHTML(n)}</td><td style="text-align:right">${p.cantidad%1===0?parseInt(p.cantidad):p.cantidad.toFixed(1)}</td><td style="text-align:right">$${p.subtotal.toFixed(2)}</td></tr>`).join('')||'<tr><td colspan="3">Sin productos</td></tr>';
+  const pieProd=Object.keys(d.porProducto).length?`<tr class="tot"><td>TOTAL PRODUCTOS</td><td style="text-align:right">${totalCantProd%1===0?parseInt(totalCantProd):totalCantProd.toFixed(1)}</td><td style="text-align:right">$${totalSubProd.toFixed(2)}</td></tr>`:'';
   const filasReg=Object.entries(d.porRegalia).sort(([,a],[,b])=>b-a).map(([n,c])=>`<tr><td>🎁 ${escHTML(n)}</td><td style="text-align:right">${c%1===0?parseInt(c):c.toFixed(1)}</td></tr>`).join('')||'<tr><td colspan="2">Sin regalías</td></tr>';
+  const pieReg=Object.keys(d.porRegalia).length?`<tr class="tot"><td>TOTAL REGALÍAS</td><td style="text-align:right">${totalCantReg%1===0?parseInt(totalCantReg):totalCantReg.toFixed(1)}</td></tr>`:'';
   const filasPed=d.pedidos.slice(0,300).map(r=>`<tr><td>${escHTML(limpiarFecha(r['FECHA']))}</td><td>${escHTML(r['CLIENTE']||'-')}</td><td>${escHTML(r['PRODUCTO']||'-')}</td><td style="text-align:center">${escHTML(String(r['CANTIDAD']||'-'))}</td><td style="text-align:right">${r['TOTAL PEDIDO ($)']?'$'+(parseFloat(r['TOTAL PEDIDO ($)'])||0).toFixed(2):''}</td><td>${escHTML(r['FORMA DE PAGO']||'')}</td></tr>`).join('')||'<tr><td colspan="6">Sin pedidos</td></tr>';
+  const piePed=d.pedidos.length?`<tr class="tot"><td colspan="3" style="text-align:right">TOTAL CANTIDAD</td><td style="text-align:center">${totalCantPed%1===0?parseInt(totalCantPed):totalCantPed.toFixed(1)}</td><td style="text-align:right">$${d.totalVentas.toFixed(2)}</td><td></td></tr>`:'';
   const filasPag=d.pagos.map(r=>`<tr><td>${escHTML(r['CLIENTE']||'-')}</td><td style="text-align:right">$${(parseFloat(r['TOTAL PEDIDO ($)'])||0).toFixed(2)}</td><td>${escHTML(r['FORMA DE PAGO']||'-')}</td><td>${escHTML(limpiarFecha(r['FECHA']))}</td></tr>`).join('')||'<tr><td colspan="4">Sin pagos</td></tr>';
+  const piePag=d.pagos.length?`<tr class="tot"><td>TOTAL COBRADO</td><td style="text-align:right">$${d.totalCobrado.toFixed(2)}</td><td colspan="2">Efectivo: $${pagosEfectivoPrint.toFixed(2)}</td></tr>`:'';
   const filasGas=d.gastos.map(r=>`<tr><td>${escHTML(r['NOTAS']||'-')}</td><td style="text-align:right">$${Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0).toFixed(2)}</td><td>${escHTML(limpiarFecha(r['FECHA']))}</td></tr>`).join('')||'<tr><td colspan="3">Sin gastos</td></tr>';
+  const pieGas=d.gastos.length?`<tr class="tot"><td>TOTAL GASTOS</td><td style="text-align:right">$${d.totalGastos.toFixed(2)}</td><td></td></tr>`:'';
   return `<div class="ruta-print">
     <h2>${escHTML(d.nombre)} — ${escHTML(ruta)}</h2>
     <div class="kpis">
@@ -5015,15 +5047,15 @@ function _htmlPrintReporteAsesor(ruta){
     </div>
     <p class="formas"><b>Formas de pago:</b> ${formas}</p>
     <h3>Productos vendidos</h3>
-    <table><thead><tr><th>Producto</th><th style="text-align:right">Cant.</th><th style="text-align:right">Subtotal</th></tr></thead><tbody>${filasProd}</tbody></table>
+    <table><thead><tr><th>Producto</th><th style="text-align:right">Cant.</th><th style="text-align:right">Subtotal</th></tr></thead><tbody>${filasProd}</tbody><tfoot>${pieProd}</tfoot></table>
     <h3>Regalías entregadas</h3>
-    <table><thead><tr><th>Regalía</th><th style="text-align:right">Cant.</th></tr></thead><tbody>${filasReg}</tbody></table>
+    <table><thead><tr><th>Regalía</th><th style="text-align:right">Cant.</th></tr></thead><tbody>${filasReg}</tbody><tfoot>${pieReg}</tfoot></table>
     <h3>Detalle de pedidos</h3>
-    <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th style="text-align:center">Cant.</th><th style="text-align:right">Total</th><th>Pago</th></tr></thead><tbody>${filasPed}</tbody></table>
+    <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th style="text-align:center">Cant.</th><th style="text-align:right">Total</th><th>Pago</th></tr></thead><tbody>${filasPed}</tbody><tfoot>${piePed}</tfoot></table>
     <h3>Pagos cobrados</h3>
-    <table><thead><tr><th>Cliente</th><th style="text-align:right">Monto</th><th>Forma</th><th>Fecha</th></tr></thead><tbody>${filasPag}</tbody></table>
+    <table><thead><tr><th>Cliente</th><th style="text-align:right">Monto</th><th>Forma</th><th>Fecha</th></tr></thead><tbody>${filasPag}</tbody><tfoot>${piePag}</tfoot></table>
     <h3>Gastos registrados</h3>
-    <table><thead><tr><th>Descripción</th><th style="text-align:right">Monto</th><th>Fecha</th></tr></thead><tbody>${filasGas}</tbody></table>
+    <table><thead><tr><th>Descripción</th><th style="text-align:right">Monto</th><th>Fecha</th></tr></thead><tbody>${filasGas}</tbody><tfoot>${pieGas}</tfoot></table>
     <div class="firmas">
       <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Liquidadora</div></div>
       <div class="firma"><div class="firma-linea">&nbsp;</div><div class="firma-label">Firma Asesor</div></div>
@@ -5057,6 +5089,7 @@ function _abrirPrintReporteAsesor(titulo, bloquesHtml){
     table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px;}
     th{text-align:left;font-size:9px;color:#888;border-bottom:1px solid #d2dae2;padding:4px;}
     td{padding:4px;border-bottom:1px solid #eef2f6;}
+    tfoot tr.tot td{font-weight:800;border-top:1.5px solid #1a3a5c;padding-top:6px;background:#eef6f4;}
     .firmas{display:flex;justify-content:space-between;gap:30px;margin-top:70px;page-break-inside:avoid;}
     .firmas .firma{flex:1;text-align:center;}
     .firmas .firma-linea{border-top:1.5px solid #1a3a5c;margin-bottom:6px;}
@@ -5703,6 +5736,8 @@ function exportarDetallePDF() {
   const tDet=_totalYEtiquetaDetalleFiltrado(datos);
   const totalGeneral=tDet.total;
   const etiquetaTotal=tDet.label;
+  const cantDetallePdf=datos.reduce((s,r)=>s+(parseFloat(r['CANTIDAD'])||0),0);
+  const cantDetallePdfTxt=cantDetallePdf%1===0?String(parseInt(cantDetallePdf)):cantDetallePdf.toFixed(1);
   const pagoTxt=tDet.activos.length===FORMAS_PAGO_FIJAS.length?'Todos':tDet.activos.join(', ');
   const prodTxt=tDet.producto;
 
@@ -5768,7 +5803,7 @@ function exportarDetallePDF() {
     <thead><tr><th>Fecha</th><th>Asesor</th><th>Cliente</th><th>Teléfono</th><th>Producto</th><th>Cant.</th><th>Precio Unit.</th><th>Subtotal</th><th>Total</th><th>Pago</th></tr></thead>
     <tbody>
       ${filas}
-      <tr class="total-row"><td colspan="8" style="text-align:right">${etiquetaTotal}</td><td style="text-align:right">$${totalGeneral.toFixed(2)}</td><td></td></tr>
+      <tr class="total-row"><td colspan="5" style="text-align:right">${etiquetaTotal}</td><td style="text-align:center">${cantDetallePdfTxt}</td><td></td><td></td><td style="text-align:right">$${totalGeneral.toFixed(2)}</td><td></td></tr>
     </tbody>
   </table>
   <div class="firmas">
