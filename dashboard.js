@@ -706,18 +706,13 @@ function _calcularLiquidacionDash(){
     // como unidades entregadas en el desglose de la Liquidación)
     (p.productos||[]).forEach(prod=>{
       const nom = prod.nombre || 'Sin nombre';
-      const precio = parseFloat(prod.precio||0)||0;
-      const clave = nom + '|' + precio.toFixed(4);
-      if(!d.productos[clave]) d.productos[clave] = { nombre:nom, precio:precio, cantidad:0, dolares:0, ids:[] };
-      d.productos[clave].cantidad += parseFloat(prod.cantidad||0);
-      d.productos[clave].dolares  += parseFloat(prod.subtotal||0);
-      if(p._id && d.productos[clave].ids.indexOf(p._id)<0) d.productos[clave].ids.push(p._id);
+      if(!d.productos[nom]) d.productos[nom] = { cantidad:0, dolares:0 };
+      d.productos[nom].cantidad += parseFloat(prod.cantidad||0);
+      d.productos[nom].dolares  += parseFloat(prod.subtotal||0);
       (prod.regalias||[]).forEach(reg=>{
         const nomReg = '🎁 REGALO: ' + (reg.nombre || 'Sin nombre');
-        const claveReg = nomReg + '|0';
-        if(!d.productos[claveReg]) d.productos[claveReg] = { nombre:nomReg, precio:0, cantidad:0, dolares:0, ids:[] };
-        d.productos[claveReg].cantidad += parseFloat(reg.cantidad||0);
-        if(p._id && d.productos[claveReg].ids.indexOf(p._id)<0) d.productos[claveReg].ids.push(p._id);
+        if(!d.productos[nomReg]) d.productos[nomReg] = { cantidad:0, dolares:0 };
+        d.productos[nomReg].cantidad += parseFloat(reg.cantidad||0);
       });
     });
   });
@@ -833,9 +828,9 @@ async function renderLiquidacionDash(){
     const prodsOrdenados = Object.entries(d.productos).sort(([,a],[,b]) => b.dolares - a.dolares);
     const totalCantidadProd = prodsOrdenados.reduce((s,[,p]) => s + p.cantidad, 0);
     const totalDolaresProd  = prodsOrdenados.reduce((s,[,p]) => s + p.dolares, 0);
-    const filasProductosLiq = prodsOrdenados.map(([clave,p]) => `
+    const filasProductosLiq = prodsOrdenados.map(([nom,p]) => `
       <tr>
-        <td>${escHTML(p.nombre||clave)}</td>
+        <td>${escHTML(nom)}</td>
         <td>${p.cantidad % 1 === 0 ? parseInt(p.cantidad) : p.cantidad.toFixed(1)}</td>
         <td>$${p.dolares.toFixed(2)}</td>
       </tr>`).join('');
@@ -2860,8 +2855,8 @@ async function imprimirLiquidacionDash(){
     const prodsOrdenados = Object.entries(d.productos).sort(([,a],[,b]) => b.dolares - a.dolares);
     const totalCantidadProd = prodsOrdenados.reduce((s,[,p]) => s + p.cantidad, 0);
     const totalDolaresProd  = prodsOrdenados.reduce((s,[,p]) => s + p.dolares, 0);
-    const filasProductosPdf = prodsOrdenados.map(([clave,p]) => `
-      <tr><td>${escHTML(p.nombre||clave)}</td><td style="text-align:right">${p.cantidad % 1 === 0 ? parseInt(p.cantidad) : p.cantidad.toFixed(1)}</td><td style="text-align:right">$${p.dolares.toFixed(2)}</td></tr>`).join('');
+    const filasProductosPdf = prodsOrdenados.map(([nom,p]) => `
+      <tr><td>${escHTML(nom)}</td><td style="text-align:right">${p.cantidad % 1 === 0 ? parseInt(p.cantidad) : p.cantidad.toFixed(1)}</td><td style="text-align:right">$${p.dolares.toFixed(2)}</td></tr>`).join('');
     const bloqueProductos = prodsOrdenados.length ? `
       <div class="prod-box">
         <div class="prod-title">PRODUCTOS VENDIDOS</div>
