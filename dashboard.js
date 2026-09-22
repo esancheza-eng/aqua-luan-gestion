@@ -229,26 +229,38 @@ function _abrirVentanaImpresion(){
     frame=document.createElement('iframe');
     frame.id='aquaPrintFrame';
     frame.setAttribute('title','Impresión');
-    frame.style.cssText='position:fixed;left:0;top:0;width:0;height:0;border:0;opacity:0;pointer-events:none';
+    frame.setAttribute('aria-hidden','true');
+    frame.style.cssText='position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
     document.body.appendChild(frame);
   }
-  return frame.contentWindow;
+  return frame.contentWindow || frame;
 }
 function _dispararImpresion(win){
-  if(!win) return;
+  const frame=document.getElementById('aquaPrintFrame');
+  const target=(frame && frame.contentWindow) || win;
+  if(!target) return;
   try{
-    if(win.document && win.document.body){
-      win.document.body.innerHTML = _quitarEmoji(win.document.body.innerHTML);
+    if(target.document && target.document.body){
+      target.document.body.innerHTML = _quitarEmoji(target.document.body.innerHTML);
     }
   }catch(e){}
   var hecho=false;
   function go(){
     if(hecho) return;
     hecho=true;
-    try{ win.focus(); win.print(); }catch(e){}
+    try{ target.focus(); }catch(e){}
+    try{ target.print(); }catch(e){
+      try{ frame && frame.contentWindow && frame.contentWindow.print(); }catch(err){}
+    }
   }
-  setTimeout(go, 180);
-  setTimeout(go, 600);
+  try{
+    if(target.document && target.document.readyState==='complete'){
+      go();
+      return;
+    }
+  }catch(e){}
+  try{ if(frame) frame.onload=go; }catch(e){}
+  setTimeout(go, 50);
 }
 
 function actorAuditoria(){
@@ -734,16 +746,18 @@ async function _leerAjusteSaldosAsesor(nombre){
     const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
     const sl=_slugAsesorLiq(nombre);
     const dias=(typeof _diasISOInclusive==='function') ? _diasISOInclusive(desde, hasta) : [desde];
-    if(dias.length>1){
-      let suma=0;
-      for(const dia of dias){
-        try{
-          const snap=await db.collection('cierresLiquidacion').doc(dia+'_'+dia+'__'+sl).get();
-          if(snap.exists) suma += Number(snap.data().ajusteSaldos)||0;
-        }catch(e){}
-      }
-      return suma;
+    let suma=0;
+    let vioDiario=false;
+    for(const dia of dias){
+      try{
+        const snap=await db.collection('cierresLiquidacion').doc(dia+'_'+dia+'__'+sl).get();
+        if(snap.exists){
+          vioDiario=true;
+          suma += Number(snap.data().ajusteSaldos)||0;
+        }
+      }catch(e){}
     }
+    if(vioDiario) return suma;
     const snap=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
     return snap.exists ? (Number(snap.data().ajusteSaldos)||0) : 0;
   }catch(e){ return 0; }
@@ -1651,20 +1665,15 @@ function _diasDelRangoFiltroMB(){
   let hasta = document.getElementById('filtroFechaHasta')?.value || hoy;
   if(!hasta || hasta>hoy) hasta=hoy;
   if(!desde){
-    const d=new Date(hasta+'T00:00:00');
+    const d=new Date(hasta+'T12:00:00');
     d.setDate(d.getDate()-40);
-    desde=d.toISOString().slice(0,10);
+    desde=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   }
-  const out=[];
-  const cur=new Date(desde+'T00:00:00');
-  const end=new Date(hasta+'T00:00:00');
-  let guard=0;
-  while(cur<=end && guard<62){
-    out.push(cur.toISOString().slice(0,10));
-    cur.setDate(cur.getDate()+1);
-    guard++;
+  if(typeof _diasISOInclusive==='function'){
+    const dias=_diasISOInclusive(desde, hasta);
+    if(dias.length) return dias.slice(0, 93);
   }
-  return out;
+  return [hasta];
 }
 function renderFiltroPagoMovBanc(){
   const bar=document.getElementById('mbFiltroPagoBar');
@@ -2414,7 +2423,16 @@ function _mismoAsesorLiq(a, b){
 function _diaISORegistroLiq(valor){
   const s=String(valor||'').trim();
   if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  if(typeof _isoFechaDash==='function'){
+    const iso=_isoFechaDash(s);
+    if(iso) return iso;
+  }
   return '';
+}
+function _asesorTieneMovimientoEnDia(asesor, dia){
+  if(!asesor || !dia) return false;
+  const en=(lista)=> (lista||[]).some(r => _mismoAsesorLiq(r.empleado, asesor) && _diaISORegistroLiq(r.fecha)===dia);
+  return en(_pedidosRaw) || en(_pagosRaw) || en(_gastosRaw);
 }
 async function _limpiarCierreSiSinMovimiento(asesor, fecha){
   if(!asesor || typeof db==='undefined') return;
@@ -2494,19 +2512,35 @@ async function _cargarEntregaCierreAsesor(nombre){
   const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
   const sl=_slugAsesorLiq(nombre);
+  const slCorto=_slugAsesorLiq((nombre.split(':')[1]||nombre).trim());
   const dias=_diasISOInclusive(desde, hasta);
   const diarios=[];
   for(const dia of dias){
-    try{
-      const snap=await db.collection('cierresLiquidacion').doc(dia+'_'+dia+'__'+sl).get();
-      if(snap.exists) diarios.push(snap.data()||{});
-    }catch(err){}
+    const ids=[dia+'_'+dia+'__'+sl];
+    if(slCorto!==sl) ids.push(dia+'_'+dia+'__'+slCorto);
+    for(const id of ids){
+      try{
+        const snap=await db.collection('cierresLiquidacion').doc(id).get();
+        if(!snap.exists) continue;
+        if(!_asesorTieneMovimientoEnDia(nombre, dia)){
+          db.collection('cierresLiquidacion').doc(id).delete().catch(()=>{});
+          continue;
+        }
+        diarios.push(snap.data()||{});
+      }catch(err){}
+    }
   }
-  if(dias.length>1) return _fusionarEntregasLiq(diarios);
   if(diarios.length) return _fusionarEntregasLiq(diarios);
   try{
     const snapExact=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
-    if(snapExact.exists) return snapExact.data()||{};
+    if(snapExact.exists){
+      const hayMov=dias.some(dia=>_asesorTieneMovimientoEnDia(nombre, dia));
+      if(!hayMov){
+        snapExact.ref.delete().catch(()=>{});
+        return {};
+      }
+      return snapExact.data()||{};
+    }
   }catch(err){}
   return {};
 }
@@ -3382,9 +3416,13 @@ function iniciarListenersDashboard() {
      fecha y se trae el histórico completo, como antes (esperable que tarde más, porque
      ahí sí se está pidiendo todo a propósito). */
   const hoyTop = _topeFechaHoy();
-  const desde = document.getElementById('filtroFecha').value;
-  let hasta = document.getElementById('filtroFechaHasta').value || hoyTop;
+  let desde = (document.getElementById('filtroFecha').value || '').trim();
+  let hasta = (document.getElementById('filtroFechaHasta').value || '').trim() || hoyTop;
   if (!hasta || hasta > hoyTop) hasta = hoyTop;
+  if (desde && hasta && desde > hasta) {
+    const tmp = desde; desde = hasta; hasta = tmp;
+    document.getElementById('filtroFecha').value = desde;
+  }
   if (document.getElementById('filtroFechaHasta') && !document.getElementById('filtroFechaHasta').disabled) {
     document.getElementById('filtroFechaHasta').value = hasta;
   }
@@ -3437,8 +3475,14 @@ function getDatosFiltrados() {
   const hasta = document.getElementById('filtroFechaHasta').value;
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
   let datos = todosLosDatos;
-  if (desde) datos = datos.filter(r => String(r['FECHA'] || r['fecha'] || '') >= desde);
-  if (hasta) datos = datos.filter(r => String(r['FECHA'] || r['fecha'] || '') <= hasta);
+  if (desde) datos = datos.filter(r => {
+    const f = _isoFechaDash(r['FECHA'] || r['fecha'] || '');
+    return f ? f >= desde : String(r['FECHA'] || r['fecha'] || '') >= desde;
+  });
+  if (hasta) datos = datos.filter(r => {
+    const f = _isoFechaDash(r['FECHA'] || r['fecha'] || '');
+    return f ? f <= hasta : String(r['FECHA'] || r['fecha'] || '') <= hasta;
+  });
   if (asesorSel) datos = datos.filter(r => (r['ASESOR / RUTA']||'') === asesorSel);
   return datos;
 }
