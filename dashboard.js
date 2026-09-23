@@ -834,13 +834,6 @@ async function renderLiquidacionDash(){
     _liqTotalEntregarCache=0;
     const boxGlobal0=document.getElementById('liqEntregaBox');
     if(boxGlobal0) boxGlobal0.style.display='none';
-    const asesorSelVacio=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
-    if(asesorSelVacio){
-      const desde=document.getElementById('filtroFecha')?.value||'';
-      const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
-      const dias=(typeof _diasISOInclusive==='function')?_diasISOInclusive(desde,hasta):[desde].filter(Boolean);
-      Promise.all(dias.map(dia=>_limpiarCierreSiSinMovimiento(asesorSelVacio, dia))).catch(()=>{});
-    }
     return;
   }
   if(emptyMsg) emptyMsg.style.display='none';
@@ -1417,12 +1410,6 @@ async function renderCierreDelDia(){
     if(emptyMsg) emptyMsg.style.display='block';
     if(st) st.textContent='';
     _cierreDelDiaAsesoresCache=[];
-    if(asesorSel){
-      const desde=document.getElementById('filtroFecha')?.value||'';
-      const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
-      const dias=(typeof _diasISOInclusive==='function')?_diasISOInclusive(desde,hasta):[desde].filter(Boolean);
-      Promise.all(dias.map(dia=>_limpiarCierreSiSinMovimiento(asesorSel, dia))).catch(()=>{});
-    }
     return;
   }
   if(emptyMsg) emptyMsg.style.display='none';
