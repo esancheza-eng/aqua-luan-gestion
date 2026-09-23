@@ -5744,14 +5744,13 @@ function _etiquetaRutaPDF(valor){
 function _tituloReporteDetallePDF(activos, rutaLabel){
   const formas = (activos && activos.length) ? activos.slice() : FORMAS_PAGO_FIJAS.slice();
   const upper = f => String(f||'').toUpperCase();
-  const rutaSel = rutaLabel && rutaLabel !== 'Todas' ? String(rutaLabel).toUpperCase() : '';
   if (formas.length === FORMAS_PAGO_FIJAS.length) {
-    return { h1: 'DETALLE DE PEDIDOS', sub: rutaSel };
+    return { h1: 'DETALLE DE PEDIDOS', sub: '' };
   }
   if (formas.length === 1) {
-    return { h1: 'REPORTE ' + upper(formas[0]), sub: rutaSel };
+    return { h1: 'REPORTE ' + upper(formas[0]), sub: '' };
   }
-  return { h1: 'REPORTE', sub: [formas.map(upper).join(' · '), rutaSel].filter(Boolean).join('  ·  ') };
+  return { h1: 'REPORTE', sub: formas.map(upper).join(' · ') };
 }
 function exportarDetallePDF() {
   const datos = _pedidosTablaFiltrados; // [NEW] exporta lo mismo que se ve en pantalla (respeta el filtro de Pago)
