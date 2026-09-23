@@ -819,10 +819,15 @@ function _guardarAjusteSaldosDesdeInput(el){
     alert('No se pudo guardar el ajuste de saldos.');
   });
 }
+let _liqEntregaMemoria={};
+function _liqHayEdicionAbierta(){
+  return !!document.querySelector('.liq-entrega-asesor[data-editando="1"]');
+}
 async function renderLiquidacionDash(){
   const cont = document.getElementById('liquidacionDashLista');
   const emptyMsg = document.getElementById('liquidacionDashEmptyMsg');
   if(!cont) return;
+  if(_liqHayEdicionAbierta()) return;
   const porAsesor = _calcularLiquidacionDash();
   const asesores = Object.keys(porAsesor).sort((a,b)=>a.localeCompare(b,'es'));
   if(!asesores.length){
@@ -2936,7 +2941,13 @@ async function _cargarEntregaAsesor(nombre){
   const box=_boxEntregaAsesor(nombre);
   if(!box || typeof db==='undefined') return;
   try{
-    const d=await _cargarEntregaCierreAsesor(nombre);
+    let d=_liqEntregaMemoria[nombre] && _entregaTieneDatos(_liqEntregaMemoria[nombre]) ? _liqEntregaMemoria[nombre] : null;
+    const loaded=await _cargarEntregaCierreAsesor(nombre);
+    if(loaded && _entregaTieneDatos(loaded)){
+      d=loaded;
+      _liqEntregaMemoria[nombre]=loaded;
+    }
+    if(!d) d=loaded||{};
     const snapExists=_entregaTieneDatos(d);
     const setN=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.value=(v?Number(v).toFixed(2):''); };
     const chk=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.checked=!!v; };
@@ -3020,6 +3031,11 @@ async function _guardarEntregaAsesor(nombre){
       actualizadoEn:firebase.firestore.FieldValue.serverTimestamp(),
       actualizadoPor: (typeof actorAuditoria==='function') ? actorAuditoria() : ''
     };
+    if(!_entregaTieneDatos(payloadEntrega) && _liqEntregaMemoria[nombre] && _entregaTieneDatos(_liqEntregaMemoria[nombre])){
+      if(st) st.textContent='Entrega guardada de este asesor.';
+      return;
+    }
+    _liqEntregaMemoria[nombre]=payloadEntrega;
     const idRango=_idEntregaLiquidacion(nombre);
     await db.collection('cierresLiquidacion').doc(idRango).set(payloadEntrega, {merge:true});
     const desdeE=payloadEntrega.desde||fechaHoy();
@@ -3517,7 +3533,7 @@ function _recalcularTodosLosDatos() {
   // esa sección constantemente durante todo el día, aunque nadie la estuviera
   // viendo. Ahora solo se actualiza si esa pestaña está realmente abierta.
   const seccionLiquidacionVisible = document.getElementById('seccion-liquidacionDash')?.classList.contains('active');
-  if (seccionLiquidacionVisible && typeof renderLiquidacionDash === 'function') renderLiquidacionDash();
+  if (seccionLiquidacionVisible && typeof renderLiquidacionDash === 'function' && !_liqHayEdicionAbierta()) renderLiquidacionDash();
   const seccionProdVis = document.getElementById('seccion-productosVendidosDash')?.classList.contains('active');
   if (seccionProdVis && typeof renderProductosVendidosDash === 'function') renderProductosVendidosDash();
   // [NEW] misma lógica de refresco perezoso para Cierre del Día — antes solo se
