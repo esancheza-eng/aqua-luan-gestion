@@ -957,12 +957,21 @@ function _htmlTablaCierreDelDia(tablaNum, asesoresId, nombresDisplay, datos, fil
   const tfoot = '<tr class="cierre-matriz-total-row"><td>TOTAL</td>' + colTotales.map((t,i)=>`<td class="${filas[i].destacado?'cierre-matriz-destacado':''}">$${t.toFixed(2)}</td>`).join('') + '</tr>';
   return `<table class="cierre-matriz-table cierre-matriz-asesores-col" id="cierreDelDiaTabla${tablaNum}"><thead>${thead}</thead><tbody>${tbody}</tbody><tfoot>${tfoot}</tfoot></table>`;
 }
+function _parseMontoCierre(raw){
+  const s=String(raw||'').trim().replace(/\$/g,'').replace(/\s/g,'');
+  if(!s || s==='-') return {ok:true, valor:0};
+  const neg=s.charAt(0)==='-';
+  const p=_parseMontoLiq(neg?s.slice(1):s);
+  if(!p.ok) return {ok:false, valor:0};
+  return {ok:true, valor:neg ? -_redondearCentavosLiq(p.valor) : _redondearCentavosLiq(p.valor)};
+}
 function _recalcularFilaCierreDelDia(input){
   const tabla = input.closest('table');
   if(!tabla) return;
   const ths = [...tabla.querySelectorAll('thead th')];
   const colCount = ths.length;
   const idxTotal = ths.findIndex(th => String(th.textContent||'').trim().toUpperCase()==='TOTAL GENERAL');
+  const idxSobrante = ths.findIndex(th => String(th.textContent||'').trim().toUpperCase()==='SOBRANTE');
   const esTablaEntrega = tabla.id==='cierreDelDiaTabla2';
   if(esTablaEntrega && idxTotal>0){
     const tr = input.closest('tr');
@@ -972,12 +981,16 @@ function _recalcularFilaCierreDelDia(input){
       if(i===0 || i===idxTotal) return;
       const inp = td.querySelector('.cdd-input');
       if(!inp) return;
-      const p = _parseMontoLiq(inp.value);
-      sumaEntrega += p.ok ? p.valor : 0;
+      const p = _parseMontoCierre(inp.value);
+      const v = p.ok ? p.valor : 0;
+      /* Misma lógica que Liquidación: el sobrante SE RESTA, aunque el campo
+         venga positivo (34) o negativo (-34). */
+      if(i===idxSobrante) sumaEntrega -= Math.abs(v);
+      else sumaEntrega += v;
     });
     const inpTotal = tds[idxTotal] && tds[idxTotal].querySelector('.cdd-input');
     if(inpTotal && input !== inpTotal){
-      inpTotal.value = sumaEntrega.toFixed(2);
+      inpTotal.value = _redondearCentavosLiq(sumaEntrega).toFixed(2);
     }
   }
   const sums = Array(colCount).fill(0);
@@ -986,14 +999,14 @@ function _recalcularFilaCierreDelDia(input){
     tds.forEach((td, i)=>{
       if(i===0) return;
       const inp = td.querySelector('.cdd-input');
-      const v = inp ? (_parseMontoLiq(inp.value).ok ? _parseMontoLiq(inp.value).valor : 0) : 0;
+      const v = inp ? (_parseMontoCierre(inp.value).ok ? _parseMontoCierre(inp.value).valor : 0) : 0;
       sums[i] += v;
     });
   });
   const footTds = tabla.querySelectorAll('tfoot tr td');
   footTds.forEach((td, i)=>{
     if(i===0) return;
-    td.textContent = '$'+sums[i].toFixed(2);
+    td.textContent = '$'+_redondearCentavosLiq(sums[i]).toFixed(2);
   });
 }
 function _cierreDelDiaEsSoloHoy(){
@@ -2712,7 +2725,7 @@ function _setEntregaEditable(box, on){
   if(addSob) addSob.style.display = on ? '' : 'none';
   if(addDep){
     const n=box.querySelectorAll('.liq-deposito-row').length;
-    addDep.style.display = (on && n<3) ? '' : 'none';
+    addDep.style.display = (on && n<_maxDepositosLiq()) ? '' : 'none';
   }
   if(ed){
     const esAdmin = (typeof _esAdminMovBanc==='function') ? _esAdminMovBanc() : false;
@@ -2769,12 +2782,14 @@ function _parseMontoLiq(raw){
 }
 function _filtrarInputMontoLiq(el){
   if(!el) return;
+  const permiteNeg = (el.dataset && String(el.dataset.etiqueta||'').toUpperCase()==='SOBRANTE') || (el.closest && el.closest('#cierreDelDiaTabla2'));
+  const neg = permiteNeg && String(el.value||'').trim().charAt(0)==='-';
   let v=String(el.value||'').replace(/[^0-9.,]/g,'');
   const sep=v.includes(',')&&!v.includes('.')?',':'.';
   const partes=v.split(/[.,]/);
   if(partes.length>2) v=partes[0]+sep+partes.slice(1).join('');
   if(partes.length>=2 && partes[1].length>2) v=partes[0]+sep+partes[1].slice(0,2);
-  el.value=v;
+  el.value=(neg?'-':'')+v;
 }
 
 function _leerEntregaDesdeBox(box){
@@ -2823,6 +2838,14 @@ function _htmlFilaDepositoAsesor(i,marcado,monto){
     ${i>0?`<button type="button" onclick="_quitarDepositoAsesor(this)" style="height:36px;padding:0 10px;border:none;background:#fdecea;color:#c0392b;border-radius:8px;font-weight:700;cursor:pointer">Quitar</button>`:''}
   </label>`;
 }
+function _maxDepositosLiq(){
+  const desde=document.getElementById('filtroFecha')?.value||'';
+  const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+  /* Un día: máximo 3 depósitos. Un rango (ej. 01–22): hay un depósito por día,
+     no se pueden cortar a 3 o Liquidación queda corta vs Cierre del Día. */
+  if(desde && hasta && desde!==hasta) return 40;
+  return 3;
+}
 function _agregarDepositoAsesor(btn){
   const box=btn.closest('.liq-entrega-asesor');
   if(!box) return;
@@ -2831,11 +2854,11 @@ function _agregarDepositoAsesor(btn){
     marcado:!!row.querySelector('.liq-chk-dep')?.checked,
     monto:row.querySelector('.liq-dep-monto')?.value||''
   }));
-  if(actual.length>=3) return;
+  if(actual.length>=_maxDepositosLiq()) return;
   actual.push({marcado:true,monto:''});
   list.innerHTML=actual.map((d,i)=>_htmlFilaDepositoAsesor(i,d.marcado,d.monto)).join('');
   const add=box.querySelector('.liq-btn-add-dep');
-  if(add) add.style.display=actual.length>=3?'none':'';
+  if(add) add.style.display=actual.length>=_maxDepositosLiq()?'none':'';
   _actualizarCuadreBox(box);
 }
 function _quitarDepositoAsesor(btn){
@@ -2848,7 +2871,7 @@ function _quitarDepositoAsesor(btn){
   const list=box.querySelector('.liq-depositos-lista');
   if(list) list.innerHTML=actual.map((d,i)=>_htmlFilaDepositoAsesor(i,d.marcado,d.monto)).join('');
   const add=box.querySelector('.liq-btn-add-dep');
-  if(add && box.dataset.editando==='1') add.style.display=actual.length>=3?'none':'';
+  if(add && box.dataset.editando==='1') add.style.display=actual.length>=_maxDepositosLiq()?'none':'';
   _actualizarCuadreBox(box);
 }
 function _sumaDepositosEntrega(u){
@@ -2943,7 +2966,7 @@ async function _cargarEntregaAsesor(nombre){
       deps=[{marcado:!!d.deposito.marcado, monto:d.deposito.monto||''}];
     }
     const listDep=box.querySelector('.liq-depositos-lista');
-    if(listDep) listDep.innerHTML=(deps.length?deps:[{marcado:false,monto:''}]).slice(0,3).map((x,i)=>_htmlFilaDepositoAsesor(i,x.marcado,x.monto)).join('');
+    if(listDep) listDep.innerHTML=(deps.length?deps:[{marcado:false,monto:''}]).slice(0,_maxDepositosLiq()).map((x,i)=>_htmlFilaDepositoAsesor(i,x.marcado,x.monto)).join('');
     let filas=Array.isArray(d.faltantes)?d.faltantes.map(f=>({monto:f.monto||'',motivo:f.motivo||''})):[];
     const list=box.querySelector('.liq-faltantes-lista');
     if(list) list.innerHTML=(filas.length?filas:[{monto:'',motivo:''}]).map((f,i)=>_htmlFilaFaltanteAsesor(i,f.monto,f.motivo)).join('');
