@@ -834,13 +834,7 @@ async function renderLiquidacionDash(){
     _liqTotalEntregarCache=0;
     const boxGlobal0=document.getElementById('liqEntregaBox');
     if(boxGlobal0) boxGlobal0.style.display='none';
-    const asesorSelVacio=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
-    if(asesorSelVacio){
-      const desde=document.getElementById('filtroFecha')?.value||'';
-      const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
-      const dias=(typeof _diasISOInclusive==='function')?_diasISOInclusive(desde,hasta):[desde].filter(Boolean);
-      Promise.all(dias.map(dia=>_limpiarCierreSiSinMovimiento(asesorSelVacio, dia))).catch(()=>{});
-    }
+    /* [FIX] No borrar cierresLiquidacion porque el filtro salió vacío. */
     return;
   }
   if(emptyMsg) emptyMsg.style.display='none';
@@ -1417,12 +1411,7 @@ async function renderCierreDelDia(){
     if(emptyMsg) emptyMsg.style.display='block';
     if(st) st.textContent='';
     _cierreDelDiaAsesoresCache=[];
-    if(asesorSel){
-      const desde=document.getElementById('filtroFecha')?.value||'';
-      const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
-      const dias=(typeof _diasISOInclusive==='function')?_diasISOInclusive(desde,hasta):[desde].filter(Boolean);
-      Promise.all(dias.map(dia=>_limpiarCierreSiSinMovimiento(asesorSel, dia))).catch(()=>{});
-    }
+    /* [FIX] Lista vacía no implica borrar liquidación histórica. */
     return;
   }
   if(emptyMsg) emptyMsg.style.display='none';
@@ -1464,7 +1453,6 @@ async function renderCierreDelDia(){
   // Tabla 2 — Forma de Entrega de Dinero (lee lo guardado por cada asesor en Liquidación)
   const entregas = await Promise.all(rutasFull.map(async nombre=>{
     try{
-      if(!_asesorTieneMovimientoLiq(porAsesor[nombre])) return _entregaLiqVacia();
       return await _cargarEntregaCierreAsesor(nombre);
     }catch(err){ console.warn('cierreDelDia lectura entrega:', err); return _entregaLiqVacia(); }
   }));
@@ -2537,6 +2525,9 @@ function _asesorTieneMovimientoEnDia(asesor, dia){
   return en(_pedidosRaw) || en(_pagosRaw) || en(_gastosRaw);
 }
 async function _limpiarCierreSiSinMovimiento(asesor, fecha){
+  /* [FIX] Desactivado: esta rutina borraba cierresLiquidacion y recortaba
+     cierresDelDia cuando _pedidosRaw aún no tenía el día cargado. */
+  return;
   if(!asesor || typeof db==='undefined') return;
   const dia=_diaISORegistroLiq(fecha);
   if(!dia) return;
@@ -2624,10 +2615,6 @@ async function _cargarEntregaCierreAsesor(nombre){
       try{
         const snap=await db.collection('cierresLiquidacion').doc(id).get();
         if(!snap.exists) continue;
-        if(!_asesorTieneMovimientoEnDia(nombre, dia)){
-          db.collection('cierresLiquidacion').doc(id).delete().catch(()=>{});
-          continue;
-        }
         diarios.push(snap.data()||{});
       }catch(err){}
     }
@@ -2636,11 +2623,6 @@ async function _cargarEntregaCierreAsesor(nombre){
   try{
     const snapExact=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
     if(snapExact.exists){
-      const hayMov=dias.some(dia=>_asesorTieneMovimientoEnDia(nombre, dia));
-      if(!hayMov){
-        snapExact.ref.delete().catch(()=>{});
-        return {};
-      }
       return snapExact.data()||{};
     }
   }catch(err){}
@@ -2916,8 +2898,10 @@ async function _cargarEntregaAsesor(nombre){
   const box=_boxEntregaAsesor(nombre);
   if(!box || typeof db==='undefined') return;
   try{
-    const snap=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
-    const d=snap.exists?snap.data():{};
+    const d=(typeof _cargarEntregaCierreAsesor==='function')
+      ? (await _cargarEntregaCierreAsesor(nombre)) || {}
+      : {};
+    const snap={ exists: !!(d && (d.efectivo || d.deposito || d.depositos || d.transferencia || d.totalEntregar)) };
     const setN=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.value=(v?Number(v).toFixed(2):''); };
     const chk=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.checked=!!v; };
     chk('.liq-chk-ef', d.efectivo?.marcado);
@@ -3011,11 +2995,45 @@ async function _guardarEntregaAsesor(nombre){
         'Entrega de '+nombre+' por '+actorAuditoria());
     }
     _actualizarCuadreBox(box);
+    if(typeof _syncEntregaHaciaCierreDelDia==='function'){
+      await _syncEntregaHaciaCierreDelDia(nombre, payloadEntrega);
+    }
     if(typeof renderCierreDelDia==='function') renderCierreDelDia();
   }catch(err){
     console.warn('cierresLiquidacion escritura:', err);
     if(st) st.textContent='No se pudo guardar la entrega.';
   }
+}
+async function _syncEntregaHaciaCierreDelDia(nombre, payload){
+  if(!nombre || !payload || typeof db==='undefined') return;
+  const idCierre=(typeof _idCierreDelDia==='function')?_idCierreDelDia():'';
+  if(!idCierre) return;
+  const ef=payload.efectivo&&payload.efectivo.marcado ? (Number(payload.efectivo.monto)||0) : 0;
+  let dep=0;
+  if(Array.isArray(payload.depositos)&&payload.depositos.length){
+    dep=payload.depositos.reduce((s,d)=>s+((d&&d.marcado)?(Number(d.monto)||0):0),0);
+  }else if(payload.deposito&&payload.deposito.marcado){
+    dep=Number(payload.deposito.monto)||0;
+  }
+  const tr=payload.transferencia&&payload.transferencia.marcado ? (Number(payload.transferencia.monto)||0) : 0;
+  const f1=Number(payload.faltantes&&payload.faltantes[0]&&payload.faltantes[0].monto)||0;
+  const f2=Number(payload.faltantes&&payload.faltantes[1]&&payload.faltantes[1].monto)||0;
+  const f3=Number(payload.faltantes&&payload.faltantes[2]&&payload.faltantes[2].monto)||0;
+  const sob=Number(payload.sobrante&&payload.sobrante.monto)||0;
+  const total=ef+dep+tr+f1+f2+f3-sob;
+  const patch={
+    ['tabla2.Efectivo.'+nombre]: ef,
+    ['tabla2.Depósito.'+nombre]: dep,
+    ['tabla2.Transferencia.'+nombre]: tr,
+    ['tabla2.Faltante 1.'+nombre]: f1,
+    ['tabla2.Faltante 2.'+nombre]: f2,
+    ['tabla2.Faltante 3.'+nombre]: f3,
+    ['tabla2.Sobrante.'+nombre]: -sob,
+    ['tabla2.TOTAL GENERAL.'+nombre]: total,
+    actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
+    actualizadoPor: (typeof actorAuditoria==='function')?actorAuditoria():''
+  };
+  await db.collection('cierresDelDia').doc(idCierre).set(patch, {merge:true});
 }
 function _htmlEntregaLiquidacionPrint(){
   const boxes=[...document.querySelectorAll('.liq-entrega-asesor')];
