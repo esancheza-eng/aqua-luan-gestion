@@ -5735,18 +5735,36 @@ function verDetalleCobranzaCliente(key){
   </div>`;
 }
 
+function _etiquetaRutaPDF(valor){
+  const raw = String(valor||'').trim();
+  if (!raw) return '-';
+  if (raw.includes(':')) return raw.split(':')[0].trim() || raw;
+  return raw;
+}
+function _tituloReporteDetallePDF(activos){
+  const formas = (activos && activos.length) ? activos.slice() : FORMAS_PAGO_FIJAS.slice();
+  const upper = f => String(f||'').toUpperCase();
+  if (formas.length === 1) {
+    return { h1: 'REPORTE ' + upper(formas[0]), sub: '' };
+  }
+  if (formas.length === FORMAS_PAGO_FIJAS.length) {
+    return { h1: 'REPORTE', sub: 'TODOS' };
+  }
+  return { h1: 'REPORTE', sub: formas.map(upper).join(' · ') };
+}
 function exportarDetallePDF() {
   const datos = _pedidosTablaFiltrados; // [NEW] exporta lo mismo que se ve en pantalla (respeta el filtro de Pago)
   if (!datos.length) { alert('No hay datos para exportar. Aplica los filtros primero.'); return; }
   const fecha = _textoRangoFecha();
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-  const asesorLabel = asesorSel.split(':')[1]?.trim() || 'Todos';
+  const rutaLabel = asesorSel ? _etiquetaRutaPDF(asesorSel) : 'Todas';
 
   const tDet=_totalYEtiquetaDetalleFiltrado(datos);
   const totalGeneral=tDet.total;
   const etiquetaTotal=tDet.label;
   const cantDetallePdf=datos.reduce((s,r)=>s+(parseFloat(r['CANTIDAD'])||0),0);
   const cantDetallePdfTxt=cantDetallePdf%1===0?String(parseInt(cantDetallePdf)):cantDetallePdf.toFixed(1);
+  const tit=_tituloReporteDetallePDF(tDet.activos);
   const pagoTxt=tDet.activos.length===FORMAS_PAGO_FIJAS.length?'Todos':tDet.activos.join(', ');
   const prodTxt=tDet.producto;
 
@@ -5757,7 +5775,7 @@ function exportarDetallePDF() {
     const precioUnit = r['PRECIO UNIT.']!==undefined && r['PRECIO UNIT.']!=='' ? `$${parseFloat(r['PRECIO UNIT.']).toFixed(2)}` : '—';
     const fila = `<tr>
       <td>${limpiarFecha(r['FECHA'])}</td>
-      <td>${(r['ASESOR / RUTA']||'').split(':')[1]?.trim()||r['ASESOR / RUTA']||'-'}</td>
+      <td>${escHTML(_etiquetaRutaPDF(r['ASESOR / RUTA']))}</td>
       <td>${escHTML(r['CLIENTE']||'-')}</td>
       <td>${escHTML(r['TELÉFONO']||'-')}</td>
       <td>${escHTML(r['PRODUCTO']||'-')}</td>
@@ -5778,13 +5796,14 @@ function exportarDetallePDF() {
   const logoUrl = location.origin + '/logo-luanaqua.png';
 
   const v = _abrirVentanaImpresion();
-  v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Detalle de Pedidos — ${asesorLabel} — Aqua Luan — ${fecha}</title>
+  v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${tit.h1}${tit.sub?' — '+tit.sub:''} — Aqua Luan — ${fecha}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
     .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
     .print-header img{height:46px;width:auto;}
     .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:22px;color:#1a3a5c;}
+    .print-header .sub-reporte{font-family:Georgia,'Times New Roman',serif;font-size:15px;font-weight:700;letter-spacing:0.06em;color:#1a3a5c;margin-top:2px;}
     .print-header p{font-size:12px;color:#888;margin-top:4px;}
     table{width:100%;border-collapse:collapse;font-size:11px;}
     thead tr{background:#1a3a5c;}
@@ -5804,12 +5823,13 @@ function exportarDetallePDF() {
   <div class="print-header">
     <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
     <div>
-      <h1>Detalle de Pedidos — ${escHTML(asesorLabel)}</h1>
-      <p>Fecha: ${fecha} · Asesor: ${asesorLabel} · Pago: ${escHTML(pagoTxt)} · Producto: ${escHTML(prodTxt)} · ${datos.length} línea(s) · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
+      <h1>${escHTML(tit.h1)}</h1>
+      ${tit.sub ? `<div class="sub-reporte">${escHTML(tit.sub)}</div>` : ''}
+      <p>Fecha: ${fecha} · Ruta: ${escHTML(rutaLabel)} · Pago: ${escHTML(pagoTxt)} · Producto: ${escHTML(prodTxt)} · ${datos.length} línea(s) · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
     </div>
   </div>
   <table>
-    <thead><tr><th>Fecha</th><th>Asesor</th><th>Cliente</th><th>Teléfono</th><th>Producto</th><th>Cant.</th><th>Precio Unit.</th><th>Subtotal</th><th>Total</th><th>Pago</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Ruta</th><th>Cliente</th><th>Teléfono</th><th>Producto</th><th>Cant.</th><th>Precio Unit.</th><th>Subtotal</th><th>Total</th><th>Pago</th></tr></thead>
     <tbody>
       ${filas}
       <tr class="total-row"><td colspan="5" style="text-align:right">${etiquetaTotal}</td><td style="text-align:center">${cantDetallePdfTxt}</td><td></td><td></td><td style="text-align:right">$${totalGeneral.toFixed(2)}</td><td></td></tr>
