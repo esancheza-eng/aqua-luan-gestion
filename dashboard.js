@@ -3048,8 +3048,9 @@ function _htmlBloqueEntregaPrint(nombre, tot, u){
   const deps=(u.depositos&&u.depositos.length)?u.depositos:(u.deposito?[{marcado:!!u.deposito.marcado,monto:u.deposito.monto}]:[]);
   const falt=(u.faltantes||[]).filter(f=>(Number(f.monto)||0)>0);
   const sob=Number(u.sobrante&&u.sobrante.monto)||0;
+  const rutaPrint=(String(nombre||'').split(':')[0]||'').trim()||nombre;
   return `<div class="pasos-box">
-      <div class="pasos-title">FORMA DE ENTREGA — ${escHTML(nombre)}</div>
+      <div class="pasos-title">FORMA DE ENTREGA — ${escHTML(rutaPrint)}</div>
       <div class="ruta-linea"><span>Total a entregar</span><b>$${(Number(tot)||0).toFixed(2)}</b></div>
       ${fila(!!(u.efectivo&&u.efectivo.marcado),'Efectivo',u.efectivo&&u.efectivo.monto)}
       ${(deps.length?deps:[{marcado:false,monto:0}]).map((d,i)=>fila(!!d.marcado,'Depósito '+(i+1),d.monto||0)).join('')}
@@ -3090,7 +3091,15 @@ async function imprimirLiquidacionDash(){
   const asesores = Object.keys(porAsesor).sort((a,b)=>a.localeCompare(b,'es'));
   const fecha = _textoRangoFecha();
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-  const asesorLabel = asesorSel.split(':')[1]?.trim() || 'General';
+  const _etiquetaRutaLiq = (txt)=>{
+    const raw=String(txt||'').trim();
+    const antes=raw.split(':')[0].trim();
+    return antes||raw;
+  };
+  const rutasLabel = (asesorSel
+    ? [_etiquetaRutaLiq(asesorSel)]
+    : asesores.map(_etiquetaRutaLiq)
+  ).filter((v,i,a)=>v && a.indexOf(v)===i).join(', ') || 'General';
   let totalGeneral = 0;
   const bloques = await Promise.all(asesores.map(async nombre=>{
     const d0 = porAsesor[nombre];
@@ -3123,7 +3132,7 @@ async function imprimirLiquidacionDash(){
         </table>
       </div>` : '';
     return `<div class="ruta-block">
-      <div class="ruta-header"><span>${escHTML(nombre)}</span><span style="color:${totalEntregar>=0?'#0f7c38':'#a93226'}">$${totalEntregar.toFixed(2)}</span></div>
+      <div class="ruta-header"><span>${escHTML(_etiquetaRutaLiq(nombre))}</span><span style="color:${totalEntregar>=0?'#0f7c38':'#a93226'}">$${totalEntregar.toFixed(2)}</span></div>
       <div class="ruta-linea"><span>Ventas al contado</span><b>$${d.ventasContado.toFixed(2)}</b></div>
       <div class="ruta-linea"><span>Pagos cobrados en efectivo</span><b>$${d.pagosEfectivo.toFixed(2)}</b></div>
       <div class="ruta-linea"><span>Gastos de la ruta</span><b>$${d.gastos.toFixed(2)}</b></div>
@@ -3149,7 +3158,7 @@ async function imprimirLiquidacionDash(){
   // dashboard como base, así que una ruta relativa no cargaría. Mismo patrón
   // que ya se usa en Pagos y Gastos / Detalle de Pedidos.
   const logoUrl = location.origin + '/logo-luanaqua.png';
-  v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Liquidación de Efectivo — ${asesorLabel} — Aqua Luan — ${fecha}</title>
+  v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Liquidación Diaria — ${rutasLabel} — Aqua Luan — ${fecha}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:24px;background:#fff;}
@@ -3181,7 +3190,7 @@ async function imprimirLiquidacionDash(){
   <div class="print-header">
     <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
     <div>
-      <h1>LIQUIDACIÓN DE EFECTIVO — ${escHTML(asesorLabel)}</h1>
+      <h1>LIQUIDACIÓN DIARIA — ${escHTML(rutasLabel)}</h1>
       <p>Fecha: ${fecha} · Generado: ${new Date().toLocaleString('es-EC')} · Impreso por: Liquidadora${(ADMIN_ACTUAL && (ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario)) ? ' · ' + escHTML(ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.usuario) : ''}</p>
     </div>
   </div>
