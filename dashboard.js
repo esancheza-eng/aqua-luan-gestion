@@ -747,18 +747,10 @@ async function _leerAjusteSaldosAsesor(nombre){
     const sl=_slugAsesorLiq(nombre);
     const slCorto=_slugAsesorLiq((nombre.split(':')[1]||nombre).trim());
     const dias=(typeof _diasISOInclusive==='function') ? _diasISOInclusive(desde, hasta) : [desde];
-    const ids=[];
-    dias.forEach(dia=>{
-      ids.push(dia+'_'+dia+'__'+sl);
-      if(slCorto && slCorto!==sl) ids.push(dia+'_'+dia+'__'+slCorto);
-    });
-    const snaps=await Promise.all(ids.map(id=>db.collection('cierresLiquidacion').doc(id).get().catch(()=>null)));
-    let suma=0, vioDiario=false;
-    snaps.forEach(snap=>{
-      if(!snap || !snap.exists) return;
-      vioDiario=true;
-      suma += Number((snap.data()||{}).ajusteSaldos)||0;
-    });
+    /* [FIX] UN solo ajuste por día y por asesor (misma regla para todos). */
+    const {diarios}=await _leerDocsUnicosAsesorLiq(nombre, dias, false);
+    const vioDiario=diarios.length>0;
+    const suma=diarios.reduce((acc,d)=>acc+(Number(d.ajusteSaldos)||0),0);
     if(vioDiario) return suma;
     const snap=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
     return snap.exists ? (Number(snap.data().ajusteSaldos)||0) : 0;
@@ -2630,31 +2622,38 @@ function _fusionarEntregasLiq(docs){
   acc.sobrante.monto=_redondearCentavosLiq(acc.sobrante.monto);
   return acc;
 }
+/* [FIX] Un solo doc por día y por asesor (para TODOS los asesores).
+   Cada día puede tener dos docs: "ruta-3-vicente" (largo) y "vicente" (corto).
+   Si se suman ambos, el día cuenta dos veces. Se usa el largo; el corto solo
+   si el largo no existe ese día. Lo mismo para el doc de rango. */
+async function _leerDocsUnicosAsesorLiq(nombre, dias, incluirRango){
+  const sl=_slugAsesorLiq(nombre);
+  const slCorto=_slugAsesorLiq((nombre.split(':')[1]||nombre).trim());
+  const hayCorto=!!(slCorto && slCorto!==sl);
+  const leer=id=>db.collection('cierresLiquidacion').doc(id).get().catch(()=>null);
+  const elegir=async(idLargo,idCorto)=>{
+    const [a,b]=await Promise.all([leer(idLargo), idCorto?leer(idCorto):Promise.resolve(null)]);
+    if(a&&a.exists) return a.data()||{};
+    if(b&&b.exists) return b.data()||{};
+    return null;
+  };
+  const diarios=(await Promise.all(dias.map(dia=>elegir(dia+'_'+dia+'__'+sl, hayCorto?dia+'_'+dia+'__'+slCorto:null)))).filter(Boolean);
+  let rangos=[];
+  if(incluirRango){
+    const desde=dias[0], hasta=dias[dias.length-1];
+    if(desde!==hasta){
+      const r=await elegir(desde+'_'+hasta+'__'+sl, hayCorto?desde+'_'+hasta+'__'+slCorto:null);
+      if(r) rangos=[r];
+    }
+  }
+  return {diarios, rangos};
+}
 async function _cargarEntregaCierreAsesor(nombre){
   if(typeof db==='undefined') return {};
   const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
-  const sl=_slugAsesorLiq(nombre);
-  const slCorto=_slugAsesorLiq((nombre.split(':')[1]||nombre).trim());
-  const dias=_diasISOInclusive(desde, hasta);
-  const ids=[];
-  const pushId=id=>{ if(id && !ids.includes(id)) ids.push(id); };
-  dias.forEach(dia=>{
-    pushId(dia+'_'+dia+'__'+sl);
-    if(slCorto && slCorto!==sl) pushId(dia+'_'+dia+'__'+slCorto);
-  });
-  pushId(desde+'_'+hasta+'__'+sl);
-  if(slCorto && slCorto!==sl) pushId(desde+'_'+hasta+'__'+slCorto);
-  pushId(_idEntregaLiquidacion(nombre));
-  const snaps=await Promise.all(ids.map(id=>db.collection('cierresLiquidacion').doc(id).get().catch(()=>null)));
-  const vistos=new Set();
-  const docs=[];
-  snaps.forEach(s=>{
-    if(!s || !s.exists) return;
-    if(vistos.has(s.id)) return;
-    vistos.add(s.id);
-    docs.push(s.data()||{});
-  });
+  const {diarios, rangos}=await _leerDocsUnicosAsesorLiq(nombre, _diasISOInclusive(desde, hasta), true);
+  const docs=diarios.concat(rangos);
   if(docs.length===1) return docs[0];
   if(docs.length>1) return _fusionarEntregasLiq(docs);
   return {};
@@ -2682,20 +2681,7 @@ async function _cargarEntregaLiquidacion(nombre){
   if(!_liqEsRango()) return _cargarEntregaCierreAsesor(nombre);
   const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
-  const sl=_slugAsesorLiq(nombre);
-  const slCorto=_slugAsesorLiq((nombre.split(':')[1]||nombre).trim());
-  const idsDia=[], idsRango=[];
-  const push=(arr,id)=>{ if(id && !idsDia.includes(id) && !idsRango.includes(id)) arr.push(id); };
-  _diasISOInclusive(desde, hasta).forEach(dia=>{
-    push(idsDia, dia+'_'+dia+'__'+sl);
-    if(slCorto && slCorto!==sl) push(idsDia, dia+'_'+dia+'__'+slCorto);
-  });
-  push(idsRango, desde+'_'+hasta+'__'+sl);
-  if(slCorto && slCorto!==sl) push(idsRango, desde+'_'+hasta+'__'+slCorto);
-  push(idsRango, _idEntregaLiquidacion(nombre));
-  const leer=ids=>Promise.all(ids.map(id=>db.collection('cierresLiquidacion').doc(id).get().catch(()=>null)))
-    .then(sn=>sn.filter(s=>s&&s.exists).map(s=>s.data()||{}));
-  const [diarios, rangos]=await Promise.all([leer(idsDia), leer(idsRango)]);
+  const {diarios, rangos}=await _leerDocsUnicosAsesorLiq(nombre, _diasISOInclusive(desde, hasta), true);
   const totalDiario=_totalEntregaDoc(_fusionarEntregasLiq(diarios));
   const rangosValidos=rangos.filter(r=>!(diarios.length && Math.abs(_totalEntregaDoc(r)-totalDiario)<0.009));
   const docs=diarios.concat(rangosValidos);
