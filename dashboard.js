@@ -812,6 +812,7 @@ function _guardarAjusteSaldosDesdeInput(el){
   const inp=card.querySelector('.liq-ajuste-saldos');
   const nombre=card.dataset.asesor||'';
   const valor=parseFloat(String((inp&&inp.value)||'0').replace(',','.'))||0;
+  if(_liqEsRango()){ alert(_msgLiqSoloUnDia()); return; } // [FIX] no guardar ajuste en rango
   if(!confirm('¿Está seguro de guardar el ajuste de saldos de '+nombre+'?')) return;
   _guardarAjusteSaldosAsesor(nombre, valor).then(()=>{
     alert('Ajuste de saldos guardado.');
@@ -2658,6 +2659,50 @@ async function _cargarEntregaCierreAsesor(nombre){
   if(docs.length>1) return _fusionarEntregasLiq(docs);
   return {};
 }
+/* [FIX] Entrega para la pestaña Liquidación.
+   - Un día: idéntico a _cargarEntregaCierreAsesor.
+   - Rango: suma de docs diarios + docs de rango, EXCEPTO un doc de rango que
+     sea solo una copia de la suma diaria (lo que dejaba "Guardar" en rango):
+     ese se descarta para no sumar diario + rango dos veces. Un doc de rango
+     con montos propios (ej. depósito registrado para el rango) sí se suma,
+     igual que en Cierre del Día. */
+function _totalEntregaDoc(e){
+  if(!e) return 0;
+  const ef=(e.efectivo&&e.efectivo.marcado)?(Number(e.efectivo.monto)||0):0;
+  let dep=0;
+  if(Array.isArray(e.depositos)&&e.depositos.length) dep=e.depositos.reduce((s,d)=>s+((d&&d.marcado)?(Number(d.monto)||0):0),0);
+  else if(e.deposito&&e.deposito.marcado) dep=Number(e.deposito.monto)||0;
+  const tr=(e.transferencia&&e.transferencia.marcado)?(Number(e.transferencia.monto)||0):0;
+  const fa=(e.faltantes||[]).reduce((s,f)=>s+(Number(f&&f.monto)||0),0);
+  const sb=Number(e.sobrante&&e.sobrante.monto)||0;
+  return _redondearCentavosLiq(ef+dep+tr+fa-sb);
+}
+async function _cargarEntregaLiquidacion(nombre){
+  if(typeof db==='undefined') return {};
+  if(!_liqEsRango()) return _cargarEntregaCierreAsesor(nombre);
+  const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
+  const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+  const sl=_slugAsesorLiq(nombre);
+  const slCorto=_slugAsesorLiq((nombre.split(':')[1]||nombre).trim());
+  const idsDia=[], idsRango=[];
+  const push=(arr,id)=>{ if(id && !idsDia.includes(id) && !idsRango.includes(id)) arr.push(id); };
+  _diasISOInclusive(desde, hasta).forEach(dia=>{
+    push(idsDia, dia+'_'+dia+'__'+sl);
+    if(slCorto && slCorto!==sl) push(idsDia, dia+'_'+dia+'__'+slCorto);
+  });
+  push(idsRango, desde+'_'+hasta+'__'+sl);
+  if(slCorto && slCorto!==sl) push(idsRango, desde+'_'+hasta+'__'+slCorto);
+  push(idsRango, _idEntregaLiquidacion(nombre));
+  const leer=ids=>Promise.all(ids.map(id=>db.collection('cierresLiquidacion').doc(id).get().catch(()=>null)))
+    .then(sn=>sn.filter(s=>s&&s.exists).map(s=>s.data()||{}));
+  const [diarios, rangos]=await Promise.all([leer(idsDia), leer(idsRango)]);
+  const totalDiario=_totalEntregaDoc(_fusionarEntregasLiq(diarios));
+  const rangosValidos=rangos.filter(r=>!(diarios.length && Math.abs(_totalEntregaDoc(r)-totalDiario)<0.009));
+  const docs=diarios.concat(rangosValidos);
+  if(docs.length===1) return docs[0];
+  if(docs.length>1) return _fusionarEntregasLiq(docs);
+  return {};
+}
 function _boxEntregaAsesor(nombre){
   const boxes=[...document.querySelectorAll('.liq-entrega-asesor')];
   return boxes.find(b=>b.dataset.asesor===nombre) || null;
@@ -2702,7 +2747,21 @@ function _filtroLiquidacionEsHoy(){
   const hasta=document.getElementById('filtroFechaHasta')?.value||hoy;
   const desde=document.getElementById('filtroFecha')?.value||hasta;
   if(!hoy) return false;
+  /* [FIX] Liquidación en rango (ej. 01–22) es solo lectura: guardar un rango
+     creaba un doc desde_hasta con la suma de los días y luego se sumaba
+     encima de los diarios. Para editar: Desde = Hasta. */
+  if(desde && hasta && desde!==hasta) return false;
   return (!hasta || hasta<=hoy) && (!desde || desde<=hoy);
+}
+function _liqEsRango(){
+  const desde=document.getElementById('filtroFecha')?.value||'';
+  const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
+  return !!(desde && hasta && desde!==hasta);
+}
+function _msgLiqSoloUnDia(){
+  return _liqEsRango()
+    ? 'Estás viendo un RANGO: los valores son la suma de cada día y no se pueden guardar. Para editar, pon Desde y Hasta en el mismo día.'
+    : 'No se puede editar la liquidación en este período.';
 }
 function _setEntregaEditable(box, on){
   if(!box) return;
@@ -2730,7 +2789,7 @@ function _setEntregaEditable(box, on){
   if(ed){
     const esAdmin = (typeof _esAdminMovBanc==='function') ? _esAdminMovBanc() : false;
     const puede = (ROL_ACTUAL==='admin' || ROL_ACTUAL==='secretaria');
-    ed.style.display = (puede && !on) ? '' : 'none';
+    ed.style.display = (puede && !on) ? '' : 'none'; // visible también en rango (al pulsar, avisa que se edita por día)
     ed.title = puede ? 'Editar entrega y ajuste de saldos' : 'Sin permiso para editar';
   }
   if(gu) gu.style.display = on ? '' : 'none';
@@ -2738,7 +2797,7 @@ function _setEntregaEditable(box, on){
 }
 function _editarEntregaAsesor(nombre){
   if(!_filtroLiquidacionEsHoy()){
-    alert('No se puede editar la liquidación en este período.');
+    alert(_msgLiqSoloUnDia());
     return;
   }
   const box=_boxEntregaAsesor(nombre);
@@ -2749,7 +2808,7 @@ function _cancelarEntregaAsesor(nombre){
 }
 function _confirmarGuardarEntregaAsesor(nombre){
   if(!_filtroLiquidacionEsHoy()){
-    alert('No se puede guardar la liquidación en este período.');
+    alert(_msgLiqSoloUnDia());
     return;
   }
   if(!confirm('¿Está seguro que desea guardar la entrega de liquidación de '+nombre+'?')) return;
@@ -2843,7 +2902,7 @@ function _maxDepositosLiq(){
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
   /* Un día: máximo 3 depósitos. Un rango (ej. 01–22): hay un depósito por día,
      no se pueden cortar a 3 o Liquidación queda corta vs Cierre del Día. */
-  if(desde && hasta && desde!==hasta) return 40;
+  if(desde && hasta && desde!==hasta) return 999; // [FIX] rango: mostrar todos los depósitos diarios
   return 3;
 }
 function _agregarDepositoAsesor(btn){
@@ -2951,9 +3010,7 @@ async function _cargarEntregaAsesor(nombre){
   const box=_boxEntregaAsesor(nombre);
   if(!box || typeof db==='undefined') return;
   try{
-    const d=(typeof _cargarEntregaCierreAsesor==='function')
-      ? (await _cargarEntregaCierreAsesor(nombre)) || {}
-      : {};
+    const d=(await _cargarEntregaLiquidacion(nombre)) || {};
     const snap={ exists: !!(d && (d.efectivo || d.deposito || d.depositos || d.transferencia || d.totalEntregar)) };
     const setN=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.value=_fmtMontoLiq(v); };
     const chk=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.checked=!!v; };
@@ -2983,7 +3040,9 @@ async function _cargarEntregaAsesor(nombre){
     const st=box.querySelector('.liq-entrega-status');
     if(st){
       if(!_filtroLiquidacionEsHoy()){
-        st.textContent=(snap.exists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+'Pulsa Editar para cambiar entrega o ajuste de saldos.';
+        st.textContent=_liqEsRango()
+          ? ((snap.exists?'Entrega del período (suma de los días). ':'Sin entrega registrada. ')+'Para editar, filtra un solo día.')
+          : ((snap.exists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+'Pulsa Editar para cambiar entrega o ajuste de saldos.');
       } else {
         st.textContent=snap.exists?'Entrega guardada de este asesor.':'Sin entrega registrada aún.';
       }
@@ -3145,7 +3204,7 @@ async function _htmlEntregaPrintDeAsesorAsync(nombre, tot){
     const html=_htmlEntregaPrintDeAsesor(nombre);
     if(html) return html;
   }
-  const d=await _cargarEntregaCierreAsesor(nombre);
+  const d=await _cargarEntregaLiquidacion(nombre);
   if(!d || !Object.keys(d).length) return box?_htmlBloqueEntregaPrint(nombre, tot, _leerEntregaDesdeBox(box)):'';
   return _htmlBloqueEntregaPrint(nombre, tot, {
     efectivo:d.efectivo||{marcado:false,monto:0},
