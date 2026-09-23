@@ -922,6 +922,9 @@ async function renderLiquidacionDash(){
   const boxGlobal=document.getElementById('liqEntregaBox');
   if(boxGlobal) boxGlobal.style.display='none';
   await Promise.all(asesores.map(nombre=>_cargarEntregaAsesor(nombre)));
+  if(document.getElementById('seccion-cierreDelDia')?.classList.contains('active') && typeof renderCierreDelDia==='function'){
+    renderCierreDelDia();
+  }
 }
 /* [NEW] Cierre del Día — vista consolidada en formato matriz (una columna por
    asesor + columna Total), igual a la hoja de papel "Cierre del Día" que se
@@ -1451,8 +1454,13 @@ async function renderCierreDelDia(){
   // Tabla 2 — Forma de Entrega de Dinero (lee lo guardado por cada asesor en Liquidación)
   const entregas = await Promise.all(rutasFull.map(async nombre=>{
     try{
-      if(!_asesorTieneMovimientoLiq(porAsesor[nombre])) return _entregaLiqVacia();
-      return await _cargarEntregaCierreAsesor(nombre);
+      const box=_boxEntregaAsesor(nombre);
+      if(box){
+        const u=_leerEntregaDesdeBox(box);
+        if(u && !u.invalido && typeof _entregaTieneDatos==='function' && _entregaTieneDatos(u)) return u;
+      }
+      const loaded=await _cargarEntregaCierreAsesor(nombre);
+      return loaded && Object.keys(loaded).length ? loaded : _entregaLiqVacia();
     }catch(err){ console.warn('cierreDelDia lectura entrega:', err); return _entregaLiqVacia(); }
   }));
   if(token!==_cierreRenderToken) return;
@@ -2608,7 +2616,7 @@ function _fusionarEntregasLiq(docs){
     if(tr>0){ acc.transferencia.marcado=true; acc.transferencia.monto+=tr; }
     (e.faltantes||[]).forEach((f,i)=>{
       if(i>2) return;
-      acc.faltantes[i].monto += Number(f && f.monto)||0;
+      acc.faltantes[i].monto = _redondearMontoLiq((Number(acc.faltantes[i].monto)||0) + (Number(f && f.monto)||0));
       if(!acc.faltantes[i].motivo && f && f.motivo) acc.faltantes[i].motivo=f.motivo;
     });
     const sb=_montoEntregaMarcado(e.sobrante);
@@ -2752,14 +2760,21 @@ function _confirmarGuardarEntregaAsesor(nombre){
   });
 }
 
+function _redondearMontoLiq(n){
+  const v=Number(n);
+  if(!isFinite(v)) return 0;
+  return Math.round((v + Number.EPSILON) * 100) / 100;
+}
+function _fmtMontoLiq(n){
+  const v=_redondearMontoLiq(n);
+  return v ? v.toFixed(2) : '';
+}
 function _parseMontoLiq(raw){
   const s=String(raw||'').trim();
   if(!s) return {ok:true, valor:0};
-  const comas=(s.match(/,/g)||[]).length;
-  const puntos=(s.match(/\./g)||[]).length;
-  if(comas+puntos>1) return {ok:false, valor:0};
-  if(!/^\d+([.,]\d{1,2})?$/.test(s)) return {ok:false, valor:0};
-  const v=parseFloat(s.replace(',','.'));
+  const norm=s.replace(/\s/g,'').replace(',','.');
+  if(!/^\d+(\.\d+)?$/.test(norm)) return {ok:false, valor:0};
+  const v=_redondearMontoLiq(parseFloat(norm));
   if(!isFinite(v)||v<0) return {ok:false, valor:0};
   return {ok:true, valor:v};
 }
@@ -2799,7 +2814,7 @@ function _leerEntregaDesdeBox(box){
   };
 }
 function _htmlFilaFaltanteAsesor(i,monto,motivo){
-  const val=monto?String(monto):'';
+  const val=_fmtMontoLiq(monto);
   return `<div class="liq-faltante-row" style="margin-bottom:8px">
     <div style="display:flex;align-items:center;gap:10px">
       <span style="min-width:90px;font-weight:700">Faltante ${i+1}</span>
@@ -2810,7 +2825,7 @@ function _htmlFilaFaltanteAsesor(i,monto,motivo){
   </div>`;
 }
 function _htmlFilaDepositoAsesor(i,marcado,monto){
-  const val=monto?String(monto):'';
+  const val=_fmtMontoLiq(monto);
   return `<label class="liq-deposito-row" style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
     <input type="checkbox" class="liq-chk-dep" ${marcado?'checked':''} onchange="_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))">
     <span style="min-width:130px;font-weight:700">Depósito ${i+1}</span>
@@ -2899,8 +2914,8 @@ function _actualizarCuadreBox(box){
     el.textContent='Hay un monto inválido.';
     return;
   }
-  const sob=(u.sobrante && u.sobrante.montoOk)?(Number(u.sobrante.monto)||0):0;
-  const suma=(u.efectivo.marcado?u.efectivo.monto:0)+_sumaDepositosEntrega(u)+(u.transferencia.marcado?u.transferencia.monto:0)+(u.faltantes||[]).reduce((s,f)=>s+(f.montoOk?f.monto:0),0)-sob;
+  const sob=_redondearMontoLiq((u.sobrante && u.sobrante.montoOk)?(Number(u.sobrante.monto)||0):0);
+  const suma=_redondearMontoLiq((u.efectivo.marcado?u.efectivo.monto:0)+_sumaDepositosEntrega(u)+(u.transferencia.marcado?u.transferencia.monto:0)+(u.faltantes||[]).reduce((s,f)=>s+(f.montoOk?f.monto:0),0)-sob);
   const hayDep=(u.depositos||[]).some(d=>d.marcado)||u.deposito?.marcado;
   if(suma===0 && !u.efectivo.marcado && !hayDep && !u.transferencia.marcado){
     el.textContent=''; return;
