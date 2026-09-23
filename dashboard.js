@@ -2609,6 +2609,11 @@ function _fusionarEntregasLiq(docs){
     const sb=Number(e.sobrante && e.sobrante.monto)||0;
     if(sb>0) acc.sobrante.monto += sb;
   });
+  acc.efectivo.monto=_redondearCentavosLiq(acc.efectivo.monto);
+  acc.transferencia.monto=_redondearCentavosLiq(acc.transferencia.monto);
+  acc.depositos=acc.depositos.map(d=>({marcado:true, monto:_redondearCentavosLiq(d.monto)}));
+  acc.faltantes=acc.faltantes.map(f=>({monto:_redondearCentavosLiq(f.monto)}));
+  acc.sobrante.monto=_redondearCentavosLiq(acc.sobrante.monto);
   return acc;
 }
 async function _cargarEntregaCierreAsesor(nombre){
@@ -2735,14 +2740,24 @@ function _confirmarGuardarEntregaAsesor(nombre){
   });
 }
 
+function _redondearCentavosLiq(n){
+  const v=Number(n);
+  if(!isFinite(v)) return 0;
+  return Math.round((v + Number.EPSILON) * 100) / 100;
+}
+function _fmtMontoLiq(n){
+  const v=_redondearCentavosLiq(n);
+  if(!v) return '';
+  return v.toFixed(2);
+}
 function _parseMontoLiq(raw){
   const s=String(raw||'').trim();
   if(!s) return {ok:true, valor:0};
   const comas=(s.match(/,/g)||[]).length;
   const puntos=(s.match(/\./g)||[]).length;
   if(comas+puntos>1) return {ok:false, valor:0};
-  if(!/^\d+([.,]\d{1,2})?$/.test(s)) return {ok:false, valor:0};
-  const v=parseFloat(s.replace(',','.'));
+  if(!/^\d+([.,]\d+)?$/.test(s)) return {ok:false, valor:0};
+  const v=_redondearCentavosLiq(parseFloat(s.replace(',','.')));
   if(!isFinite(v)||v<0) return {ok:false, valor:0};
   return {ok:true, valor:v};
 }
@@ -2752,6 +2767,7 @@ function _filtrarInputMontoLiq(el){
   const sep=v.includes(',')&&!v.includes('.')?',':'.';
   const partes=v.split(/[.,]/);
   if(partes.length>2) v=partes[0]+sep+partes.slice(1).join('');
+  if(partes.length>=2 && partes[1].length>2) v=partes[0]+sep+partes[1].slice(0,2);
   el.value=v;
 }
 
@@ -2782,7 +2798,7 @@ function _leerEntregaDesdeBox(box){
   };
 }
 function _htmlFilaFaltanteAsesor(i,monto,motivo){
-  const val=monto?String(monto):'';
+  const val=_fmtMontoLiq(monto);
   return `<div class="liq-faltante-row" style="margin-bottom:8px">
     <div style="display:flex;align-items:center;gap:10px">
       <span style="min-width:90px;font-weight:700">Faltante ${i+1}</span>
@@ -2793,7 +2809,7 @@ function _htmlFilaFaltanteAsesor(i,monto,motivo){
   </div>`;
 }
 function _htmlFilaDepositoAsesor(i,marcado,monto){
-  const val=monto?String(monto):'';
+  const val=_fmtMontoLiq(monto);
   return `<label class="liq-deposito-row" style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
     <input type="checkbox" class="liq-chk-dep" ${marcado?'checked':''} onchange="_actualizarCuadreBox(this.closest('.liq-entrega-asesor'))">
     <span style="min-width:130px;font-weight:700">Depósito ${i+1}</span>
@@ -2908,7 +2924,7 @@ async function _cargarEntregaAsesor(nombre){
       ? (await _cargarEntregaCierreAsesor(nombre)) || {}
       : {};
     const snap={ exists: !!(d && (d.efectivo || d.deposito || d.depositos || d.transferencia || d.totalEntregar)) };
-    const setN=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.value=(v?Number(v).toFixed(2):''); };
+    const setN=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.value=_fmtMontoLiq(v); };
     const chk=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.checked=!!v; };
     chk('.liq-chk-ef', d.efectivo?.marcado);
     chk('.liq-chk-tr', d.transferencia?.marcado);
@@ -2966,8 +2982,8 @@ async function _guardarEntregaAsesor(nombre){
   if(u.invalido) return;
   const st=box.querySelector('.liq-entrega-status');
   try{
-    const faltantes=(u.faltantes||[]).map(f=>({monto:f.montoOk?Number(f.monto)||0:0, motivo:f.motivo||''}));
-    const depositos=(u.depositos||[]).map(d=>({marcado:!!d.marcado, monto:d.montoOk?Number(d.monto)||0:0}));
+    const faltantes=(u.faltantes||[]).map(f=>({monto:_redondearCentavosLiq(f.montoOk?f.monto:0), motivo:f.motivo||''}));
+    const depositos=(u.depositos||[]).map(d=>({marcado:!!d.marcado, monto:_redondearCentavosLiq(d.montoOk?d.monto:0)}));
     const depSuma=_sumaDepositosEntrega(u);
     const tot=parseFloat(box.dataset.total||0)||0;
     const card=box.closest('.liq-card-asesor');
