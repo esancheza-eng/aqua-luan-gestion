@@ -1469,14 +1469,14 @@ async function renderCierreDelDia(){
     }catch(err){ console.warn('cierreDelDia lectura entrega:', err); return _entregaLiqVacia(); }
   }));
   if(token!==_cierreRenderToken) return;
-  const _montoEfectivo = e => (e.efectivo?.marcado ? (Number(e.efectivo.monto)||0) : 0);
+  const _montoEfectivo = e => _montoEntregaMarcado(e && e.efectivo);
   const _montoDeposito = e => {
     if(Array.isArray(e.depositos) && e.depositos.length){
-      return e.depositos.reduce((s,d)=>s+((d.marcado)?(Number(d.monto)||0):0),0);
+      return e.depositos.reduce((s,d)=>s+_montoEntregaMarcado(d),0);
     }
-    return (e.deposito?.marcado ? (Number(e.deposito.monto)||0) : 0);
+    return _montoEntregaMarcado(e && e.deposito);
   };
-  const _montoTransferencia = e => (e.transferencia?.marcado ? (Number(e.transferencia.monto)||0) : 0);
+  const _montoTransferencia = e => _montoEntregaMarcado(e && e.transferencia);
   const _montoFaltante1 = e => Number(e.faltantes?.[0]?.monto)||0;
   const _montoFaltante2 = e => Number(e.faltantes?.[1]?.monto)||0;
   const _montoFaltante3 = e => Number(e.faltantes?.[2]?.monto)||0;
@@ -2579,72 +2579,91 @@ async function _limpiarCierreSiSinMovimiento(asesor, fecha){
     console.warn('limpiar cierre tras eliminación:', err);
   }
 }
+function _montoEntregaMarcado(obj){
+  if(!obj) return 0;
+  const m=Number(typeof obj==='object' ? obj.monto : obj)||0;
+  if(!(m>0)) return 0;
+  if(typeof obj==='object' && obj.marcado===false && !(m>0)) return 0;
+  return m;
+}
+function _entregaTieneDatos(e){
+  if(!e || typeof e!=='object') return false;
+  if(_montoEntregaMarcado(e.efectivo)>0) return true;
+  if(_montoEntregaMarcado(e.deposito)>0) return true;
+  if(_montoEntregaMarcado(e.transferencia)>0) return true;
+  if(_montoEntregaMarcado(e.sobrante)>0) return true;
+  if(Array.isArray(e.depositos) && e.depositos.some(d=>_montoEntregaMarcado(d)>0)) return true;
+  if(Array.isArray(e.faltantes) && e.faltantes.some(f=>Number(f&&f.monto)>0)) return true;
+  if(Number(e.ajusteSaldos)>0) return true;
+  return false;
+}
 function _fusionarEntregasLiq(docs){
   const acc={
     efectivo:{marcado:false, monto:0},
+    deposito:{marcado:false, monto:0},
     depositos:[],
     transferencia:{marcado:false, monto:0},
-    faltantes:[{monto:0},{monto:0},{monto:0}],
-    sobrante:{monto:0, motivo:''}
+    faltantes:[{monto:0,motivo:''},{monto:0,motivo:''},{monto:0,motivo:''}],
+    sobrante:{monto:0, motivo:''},
+    ajusteSaldos:0
   };
   (docs||[]).forEach(e=>{
     if(!e) return;
-    const ef=(e.efectivo && e.efectivo.marcado) ? (Number(e.efectivo.monto)||0) : 0;
+    const ef=_montoEntregaMarcado(e.efectivo);
     if(ef>0){ acc.efectivo.marcado=true; acc.efectivo.monto+=ef; }
     let deps=[];
     if(Array.isArray(e.depositos) && e.depositos.length) deps=e.depositos;
     else if(e.deposito) deps=[e.deposito];
     deps.forEach(d=>{
-      const m=d && d.marcado ? (Number(d.monto)||0) : 0;
+      const m=_montoEntregaMarcado(d);
       if(m>0) acc.depositos.push({marcado:true, monto:m});
     });
-    const tr=(e.transferencia && e.transferencia.marcado) ? (Number(e.transferencia.monto)||0) : 0;
+    const tr=_montoEntregaMarcado(e.transferencia);
     if(tr>0){ acc.transferencia.marcado=true; acc.transferencia.monto+=tr; }
     (e.faltantes||[]).forEach((f,i)=>{
       if(i>2) return;
       acc.faltantes[i].monto += Number(f && f.monto)||0;
+      if(!acc.faltantes[i].motivo && f && f.motivo) acc.faltantes[i].motivo=f.motivo;
     });
-    const sb=Number(e.sobrante && e.sobrante.monto)||0;
-    if(sb>0) acc.sobrante.monto += sb;
+    const sb=_montoEntregaMarcado(e.sobrante);
+    if(sb>0){
+      acc.sobrante.monto += sb;
+      if(!acc.sobrante.motivo && e.sobrante && e.sobrante.motivo) acc.sobrante.motivo=e.sobrante.motivo;
+    }
+    acc.ajusteSaldos += Number(e.ajusteSaldos)||0;
   });
+  const depSuma=acc.depositos.reduce((s,d)=>s+(Number(d.monto)||0),0);
+  acc.deposito={marcado:depSuma>0, monto:depSuma};
   return acc;
 }
 async function _cargarEntregaCierreAsesor(nombre){
-  if(typeof db==='undefined') return {};
+  if(typeof db==='undefined' || !nombre) return {};
   const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
   const sl=_slugAsesorLiq(nombre);
   const slCorto=_slugAsesorLiq((nombre.split(':')[1]||nombre).trim());
+  const slugs=[...new Set([sl, slCorto].filter(Boolean))];
   const dias=_diasISOInclusive(desde, hasta);
-  const diarios=[];
-  for(const dia of dias){
-    const ids=[dia+'_'+dia+'__'+sl];
-    if(slCorto!==sl) ids.push(dia+'_'+dia+'__'+slCorto);
-    for(const id of ids){
-      try{
-        const snap=await db.collection('cierresLiquidacion').doc(id).get();
-        if(!snap.exists) continue;
-        if(!_asesorTieneMovimientoEnDia(nombre, dia)){
-          db.collection('cierresLiquidacion').doc(id).delete().catch(()=>{});
-          continue;
-        }
-        diarios.push(snap.data()||{});
-      }catch(err){}
-    }
+  const ids=[];
+  dias.forEach(dia=>{
+    slugs.forEach(s=>ids.push(dia+'_'+dia+'__'+s));
+  });
+  slugs.forEach(s=>ids.push(desde+'_'+hasta+'__'+s));
+  const idRango=_idEntregaLiquidacion(nombre);
+  if(idRango) ids.push(idRango);
+  const seen=new Set();
+  const docs=[];
+  for(const id of ids){
+    if(!id || seen.has(id)) continue;
+    seen.add(id);
+    try{
+      const snap=await db.collection('cierresLiquidacion').doc(id).get();
+      if(snap.exists) docs.push(snap.data()||{});
+    }catch(err){}
   }
-  if(diarios.length) return _fusionarEntregasLiq(diarios);
-  try{
-    const snapExact=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
-    if(snapExact.exists){
-      const hayMov=dias.some(dia=>_asesorTieneMovimientoEnDia(nombre, dia));
-      if(!hayMov){
-        snapExact.ref.delete().catch(()=>{});
-        return {};
-      }
-      return snapExact.data()||{};
-    }
-  }catch(err){}
-  return {};
+  if(!docs.length) return {};
+  const conDatos=docs.filter(_entregaTieneDatos);
+  return _fusionarEntregasLiq(conDatos.length?conDatos:docs);
 }
 function _boxEntregaAsesor(nombre){
   const boxes=[...document.querySelectorAll('.liq-entrega-asesor')];
@@ -2916,8 +2935,8 @@ async function _cargarEntregaAsesor(nombre){
   const box=_boxEntregaAsesor(nombre);
   if(!box || typeof db==='undefined') return;
   try{
-    const snap=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
-    const d=snap.exists?snap.data():{};
+    const d=await _cargarEntregaCierreAsesor(nombre);
+    const snapExists=_entregaTieneDatos(d);
     const setN=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.value=(v?Number(v).toFixed(2):''); };
     const chk=(sel,v)=>{ const el=box.querySelector(sel); if(el) el.checked=!!v; };
     chk('.liq-chk-ef', d.efectivo?.marcado);
@@ -2946,9 +2965,9 @@ async function _cargarEntregaAsesor(nombre){
     const st=box.querySelector('.liq-entrega-status');
     if(st){
       if(!_filtroLiquidacionEsHoy()){
-        st.textContent=(snap.exists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+'Pulsa Editar para cambiar entrega o ajuste de saldos.';
+        st.textContent=(snapExists?'Entrega guardada de este asesor. ':'Sin entrega registrada. ')+'Pulsa Editar para cambiar entrega o ajuste de saldos.';
       } else {
-        st.textContent=snap.exists?'Entrega guardada de este asesor.':'Sin entrega registrada aún.';
+        st.textContent=snapExists?'Entrega guardada de este asesor.':'Sin entrega registrada aún.';
       }
     }
     _setEntregaEditable(box, false);
@@ -2983,13 +3002,15 @@ async function _guardarEntregaAsesor(nombre){
     const card=box.closest('.liq-card-asesor');
     const ajusteInp=card&&card.querySelector('.liq-ajuste-saldos');
     const ajusteVal=parseFloat(String((ajusteInp&&ajusteInp.value)||'0').replace(',','.'))||0;
+    const efMonto=Number(u.efectivo&&u.efectivo.monto)||0;
+    const trMonto=Number(u.transferencia&&u.transferencia.monto)||0;
     const payloadEntrega={
       asesor:nombre,
       ajusteSaldos:ajusteVal,
-      efectivo:u.efectivo,
+      efectivo:{marcado:!!(u.efectivo&&u.efectivo.marcado)||efMonto>0, monto:efMonto},
       deposito:{marcado:depSuma>0, monto:depSuma},
       depositos,
-      transferencia:u.transferencia,
+      transferencia:{marcado:!!(u.transferencia&&u.transferencia.marcado)||trMonto>0, monto:trMonto},
       faltantes,
       sobrante:{monto:(u.sobrante&&u.sobrante.montoOk)?(Number(u.sobrante.monto)||0):0, motivo:(u.sobrante&&u.sobrante.motivo)||''},
       totalEntregar:tot,
