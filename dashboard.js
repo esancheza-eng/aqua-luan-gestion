@@ -5741,16 +5741,17 @@ function _etiquetaRutaPDF(valor){
   if (raw.includes(':')) return raw.split(':')[0].trim() || raw;
   return raw;
 }
-function _tituloReporteDetallePDF(activos){
+function _tituloReporteDetallePDF(activos, rutaLabel){
   const formas = (activos && activos.length) ? activos.slice() : FORMAS_PAGO_FIJAS.slice();
   const upper = f => String(f||'').toUpperCase();
-  if (formas.length === 1) {
-    return { h1: 'REPORTE ' + upper(formas[0]), sub: '' };
-  }
+  const rutaSel = rutaLabel && rutaLabel !== 'Todas' ? String(rutaLabel).toUpperCase() : '';
   if (formas.length === FORMAS_PAGO_FIJAS.length) {
-    return { h1: 'REPORTE', sub: 'TODOS' };
+    return { h1: 'DETALLE DE PEDIDOS', sub: rutaSel };
   }
-  return { h1: 'REPORTE', sub: formas.map(upper).join(' · ') };
+  if (formas.length === 1) {
+    return { h1: 'REPORTE ' + upper(formas[0]), sub: rutaSel };
+  }
+  return { h1: 'REPORTE', sub: [formas.map(upper).join(' · '), rutaSel].filter(Boolean).join('  ·  ') };
 }
 function exportarDetallePDF() {
   const datos = _pedidosTablaFiltrados; // [NEW] exporta lo mismo que se ve en pantalla (respeta el filtro de Pago)
@@ -5764,7 +5765,7 @@ function exportarDetallePDF() {
   const etiquetaTotal=tDet.label;
   const cantDetallePdf=datos.reduce((s,r)=>s+(parseFloat(r['CANTIDAD'])||0),0);
   const cantDetallePdfTxt=cantDetallePdf%1===0?String(parseInt(cantDetallePdf)):cantDetallePdf.toFixed(1);
-  const tit=_tituloReporteDetallePDF(tDet.activos);
+  const tit=_tituloReporteDetallePDF(tDet.activos, rutaLabel);
   const pagoTxt=tDet.activos.length===FORMAS_PAGO_FIJAS.length?'Todos':tDet.activos.join(', ');
   const prodTxt=tDet.producto;
 
@@ -5803,8 +5804,10 @@ function exportarDetallePDF() {
     .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #1a3a5c;}
     .print-header img{height:46px;width:auto;}
     .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:22px;color:#1a3a5c;}
-    .print-header .sub-reporte{font-family:Georgia,'Times New Roman',serif;font-size:15px;font-weight:700;letter-spacing:0.06em;color:#1a3a5c;margin-top:2px;}
+    .print-header .sub-reporte{font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:800;letter-spacing:0.06em;color:#1a3a5c;margin-top:4px;}
+    .print-header .ruta-destacada{font-size:20px;font-weight:900;letter-spacing:0.04em;color:#0b2a4a;margin:6px 0 2px;text-transform:uppercase;}
     .print-header p{font-size:12px;color:#888;margin-top:4px;}
+    .print-header p .ruta-meta{font-size:16px;font-weight:900;color:#0b2a4a;letter-spacing:0.03em;}
     table{width:100%;border-collapse:collapse;font-size:11px;}
     thead tr{background:#1a3a5c;}
     thead th{padding:8px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#fff;}
@@ -5825,7 +5828,8 @@ function exportarDetallePDF() {
     <div>
       <h1>${escHTML(tit.h1)}</h1>
       ${tit.sub ? `<div class="sub-reporte">${escHTML(tit.sub)}</div>` : ''}
-      <p>Fecha: ${fecha} · Ruta: ${escHTML(rutaLabel)} · Pago: ${escHTML(pagoTxt)} · Producto: ${escHTML(prodTxt)} · ${datos.length} línea(s) · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
+      <div class="ruta-destacada">Ruta: ${escHTML(rutaLabel)}</div>
+      <p>Fecha: ${fecha} · Pago: ${escHTML(pagoTxt)} · Producto: ${escHTML(prodTxt)} · ${datos.length} línea(s) · Generado: ${new Date().toLocaleString('es-EC')} · ${escHTML(lineaImpresoPor())}</p>
     </div>
   </div>
   <table>
