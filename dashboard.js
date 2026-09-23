@@ -2624,19 +2624,25 @@ async function _cargarEntregaCierreAsesor(nombre){
   const slCorto=_slugAsesorLiq((nombre.split(':')[1]||nombre).trim());
   const dias=_diasISOInclusive(desde, hasta);
   const ids=[];
+  const pushId=id=>{ if(id && !ids.includes(id)) ids.push(id); };
   dias.forEach(dia=>{
-    ids.push(dia+'_'+dia+'__'+sl);
-    if(slCorto && slCorto!==sl) ids.push(dia+'_'+dia+'__'+slCorto);
+    pushId(dia+'_'+dia+'__'+sl);
+    if(slCorto && slCorto!==sl) pushId(dia+'_'+dia+'__'+slCorto);
   });
+  pushId(desde+'_'+hasta+'__'+sl);
+  if(slCorto && slCorto!==sl) pushId(desde+'_'+hasta+'__'+slCorto);
+  pushId(_idEntregaLiquidacion(nombre));
   const snaps=await Promise.all(ids.map(id=>db.collection('cierresLiquidacion').doc(id).get().catch(()=>null)));
-  const diarios=snaps.filter(s=>s && s.exists).map(s=>s.data()||{});
-  if(diarios.length) return _fusionarEntregasLiq(diarios);
-  try{
-    const snapExact=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
-    if(snapExact.exists){
-      return snapExact.data()||{};
-    }
-  }catch(err){}
+  const vistos=new Set();
+  const docs=[];
+  snaps.forEach(s=>{
+    if(!s || !s.exists) return;
+    if(vistos.has(s.id)) return;
+    vistos.add(s.id);
+    docs.push(s.data()||{});
+  });
+  if(docs.length===1) return docs[0];
+  if(docs.length>1) return _fusionarEntregasLiq(docs);
   return {};
 }
 function _boxEntregaAsesor(nombre){
@@ -2892,28 +2898,30 @@ function _actualizarCuadreBox(box){
   const el=box.querySelector('.liq-entrega-cuadre');
   if(!el) return;
   const u=_leerEntregaDesdeBox(box);
-  const tot=parseFloat(box.dataset.total||0)||0;
+  const tot=_redondearCentavosLiq(box.dataset.total||0);
   if(u.invalido){
     el.style.color='#c0392b';
     el.textContent='Hay un monto inválido.';
     return;
   }
-  const sob=(u.sobrante && u.sobrante.montoOk)?(Number(u.sobrante.monto)||0):0;
-  const suma=(u.efectivo.marcado?u.efectivo.monto:0)+_sumaDepositosEntrega(u)+(u.transferencia.marcado?u.transferencia.monto:0)+(u.faltantes||[]).reduce((s,f)=>s+(f.montoOk?f.monto:0),0)-sob;
+  const sob=_redondearCentavosLiq((u.sobrante && u.sobrante.montoOk)?u.sobrante.monto:0);
+  const suma=_redondearCentavosLiq(
+    (u.efectivo.marcado?u.efectivo.monto:0)+_sumaDepositosEntrega(u)+(u.transferencia.marcado?u.transferencia.monto:0)+(u.faltantes||[]).reduce((s,f)=>s+(f.montoOk?f.monto:0),0)-sob
+  );
   const hayDep=(u.depositos||[]).some(d=>d.marcado)||u.deposito?.marcado;
-  if(suma===0 && !u.efectivo.marcado && !hayDep && !u.transferencia.marcado){
+  if(suma===0 && !u.efectivo.marcado && !hayDep && !u.transferencia.marcado && sob===0){
     el.textContent=''; return;
   }
-  const diff=tot-suma;
+  const diff=_redondearCentavosLiq(tot-suma);
   if(Math.abs(diff)<0.009){
     el.style.color='#0f7c38';
     el.textContent='Cuadra con el total a entregar ($'+tot.toFixed(2)+').';
   } else if(diff>0){
     el.style.color='#c0392b';
-    el.textContent='Falta registrar $'+diff.toFixed(2)+' para cuadrar el total.';
+    el.textContent='Suma entrega $'+suma.toFixed(2)+' vs total $'+tot.toFixed(2)+'. Falta $'+diff.toFixed(2)+'.';
   } else {
     el.style.color='#c0392b';
-    el.textContent='La suma supera el total por $'+Math.abs(diff).toFixed(2)+'.';
+    el.textContent='Suma entrega $'+suma.toFixed(2)+' vs total $'+tot.toFixed(2)+'. Sobra $'+Math.abs(diff).toFixed(2)+'.';
   }
 }
 async function _cargarEntregaAsesor(nombre){
