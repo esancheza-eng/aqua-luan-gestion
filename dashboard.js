@@ -2524,9 +2524,8 @@ function _asesorTieneMovimientoEnDia(asesor, dia){
   return en(_pedidosRaw) || en(_pagosRaw) || en(_gastosRaw);
 }
 async function _limpiarCierreSiSinMovimiento(asesor, fecha){
-  if(!asesor || typeof db==='undefined') return;
-  const dia=_diaISORegistroLiq(fecha);
-  if(!dia) return;
+  // No borrar entregas ni cierre ya ingresados. Solo se consultan.
+  return;
   const queda=
     (_pedidosRaw||[]).some(p => _mismoAsesorLiq(p.empleado, asesor) && _diaISORegistroLiq(p.fecha)===dia) ||
     (_pagosRaw||[]).some(p => _mismoAsesorLiq(p.empleado, asesor) && _diaISORegistroLiq(p.fecha)===dia) ||
