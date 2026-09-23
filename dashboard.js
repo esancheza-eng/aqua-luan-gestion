@@ -315,7 +315,7 @@ function switchSeccionDash(sec){
     renderProductosVendidosDash();
     setTimeout(function(){ if(typeof renderProductosVendidosDash==='function') renderProductosVendidosDash(); }, 200);
   }
-  if (sec === 'cierreDelDia' && typeof renderCierreDelDia === 'function') renderCierreDelDia(); // [NEW] Cierre del Día — vista matriz, se refresca al entrar
+  if (sec === 'cierreDelDia' && typeof renderCierreDelDia === 'function' && !(_primeraCargaListenersPendiente > 0)) renderCierreDelDia(); // [NEW] Cierre del Día — vista matriz, se refresca al entrar
   if (sec === 'eliminados' && typeof renderTablaEliminados === 'function') renderTablaEliminados();
   if (sec === 'auditoria' && typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
   if (sec === 'notasAdicionalesDash' && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash(); // [NEW] sección independiente de Notas Adicionales
@@ -745,18 +745,20 @@ async function _leerAjusteSaldosAsesor(nombre){
     const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
     const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
     const sl=_slugAsesorLiq(nombre);
+    const slCorto=_slugAsesorLiq((nombre.split(':')[1]||nombre).trim());
     const dias=(typeof _diasISOInclusive==='function') ? _diasISOInclusive(desde, hasta) : [desde];
-    let suma=0;
-    let vioDiario=false;
-    for(const dia of dias){
-      try{
-        const snap=await db.collection('cierresLiquidacion').doc(dia+'_'+dia+'__'+sl).get();
-        if(snap.exists){
-          vioDiario=true;
-          suma += Number(snap.data().ajusteSaldos)||0;
-        }
-      }catch(e){}
-    }
+    const ids=[];
+    dias.forEach(dia=>{
+      ids.push(dia+'_'+dia+'__'+sl);
+      if(slCorto && slCorto!==sl) ids.push(dia+'_'+dia+'__'+slCorto);
+    });
+    const snaps=await Promise.all(ids.map(id=>db.collection('cierresLiquidacion').doc(id).get().catch(()=>null)));
+    let suma=0, vioDiario=false;
+    snaps.forEach(snap=>{
+      if(!snap || !snap.exists) return;
+      vioDiario=true;
+      suma += Number((snap.data()||{}).ajusteSaldos)||0;
+    });
     if(vioDiario) return suma;
     const snap=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
     return snap.exists ? (Number(snap.data().ajusteSaldos)||0) : 0;
@@ -1389,6 +1391,13 @@ async function renderCierreDelDia(){
   const emptyMsg = document.getElementById('cierreDelDiaEmptyMsg');
   const st = document.getElementById('cierreDelDiaStatus');
   if(!cont1 || !cont2) return;
+  /* No dejar números del filtro anterior visibles: eso es lo que se veía
+     como "el de arriba no cuadra con el de abajo" y luego se actualizaba. */
+  if(emptyMsg) emptyMsg.style.display='none';
+  if(st) st.textContent='Calculando cierre del rango filtrado…';
+  const loadingHtml='<div class="loading" style="padding:18px 8px"><div class="spinner"></div><span>Actualizando Cierre del Día…</span></div>';
+  cont1.innerHTML=loadingHtml;
+  cont2.innerHTML='';
   // Lista MAESTRA de todos los asesores activos (_asesoresCache, la misma que llena el
   // dropdown "ASESOR" de arriba) — así siempre aparecen todas las rutas como columna,
   // aunque alguna no haya tenido movimiento ese día (se muestra en $0.00).
@@ -1424,17 +1433,13 @@ async function renderCierreDelDia(){
 
   // Tabla 1 — Cierre del Día (mismos campos que ya calcula la Liquidación,
   // incluyendo el ajuste de saldos de cada ruta).
-  const ajustes={};
-  await Promise.all(rutasFull.map(async n=>{
-    const card=[...document.querySelectorAll('.liq-card-asesor')].find(c=>(c.dataset.asesor||'')===n);
-    if(card){
-      const inp=card.querySelector('.liq-ajuste-saldos');
-      ajustes[n]=parseFloat(String((inp&&inp.value)||'0').replace(',','.'))||0;
-    }else{
-      ajustes[n]=await _leerAjusteSaldosAsesor(n);
-    }
-  }));
+  /* [FIX] Nunca leer el ajuste desde las tarjetas de Liquidación: esas cards
+     pueden ser de OTRO rango de fechas si esa pestaña no se redibujó todavía.
+     Eso descuadraba "Valor total del día" vs el TOTAL de abajo unos segundos. */
+  const ajustesArr = await Promise.all(rutasFull.map(n=>_leerAjusteSaldosAsesor(n)));
   if(token!==_cierreRenderToken) return;
+  const ajustes={};
+  rutasFull.forEach((n,i)=>{ ajustes[n]=Number(ajustesArr[i])||0; });
   const datosAsesores = rutasFull.map(r => {
     const d0 = porAsesor[r] || _asesorVacio;
     const ajuste = Number(ajustes[r])||0;
@@ -1512,6 +1517,12 @@ async function renderCierreDelDia(){
   // No se copia el "Valor total del día" de la Tabla 1.
   cont1.innerHTML = _htmlTablaCierreDelDia(1, rutasFull, nombresDisplay, datosAsesores, filas1, t1Live);
   cont2.innerHTML = _htmlTablaCierreDelDia(2, rutasFull, nombresDisplay, entregas, filas2, tabla2Liq);
+  /* Recalcula el pie TOTAL con las mismas celdas que acaba de pintar,
+     para que el valor de arriba y el de abajo salgan iguales al instante. */
+  [document.getElementById('cierreDelDiaTabla1'), document.getElementById('cierreDelDiaTabla2')].forEach(tb=>{
+    const inp=tb && tb.querySelector('.cdd-input');
+    if(inp && typeof _recalcularFilaCierreDelDia==='function') _recalcularFilaCierreDelDia(inp);
+  });
   if(st) st.textContent = guardado && guardado.actualizadoPor ? ('Última vez guardado por '+guardado.actualizadoPor) : 'Aún no se ha guardado este Cierre del Día — mostrando valores calculados automáticamente.';
   _setCierreDelDiaEditable(false);
 }
@@ -2607,18 +2618,13 @@ async function _cargarEntregaCierreAsesor(nombre){
   const sl=_slugAsesorLiq(nombre);
   const slCorto=_slugAsesorLiq((nombre.split(':')[1]||nombre).trim());
   const dias=_diasISOInclusive(desde, hasta);
-  const diarios=[];
-  for(const dia of dias){
-    const ids=[dia+'_'+dia+'__'+sl];
-    if(slCorto!==sl) ids.push(dia+'_'+dia+'__'+slCorto);
-    for(const id of ids){
-      try{
-        const snap=await db.collection('cierresLiquidacion').doc(id).get();
-        if(!snap.exists) continue;
-        diarios.push(snap.data()||{});
-      }catch(err){}
-    }
-  }
+  const ids=[];
+  dias.forEach(dia=>{
+    ids.push(dia+'_'+dia+'__'+sl);
+    if(slCorto && slCorto!==sl) ids.push(dia+'_'+dia+'__'+slCorto);
+  });
+  const snaps=await Promise.all(ids.map(id=>db.collection('cierresLiquidacion').doc(id).get().catch(()=>null)));
+  const diarios=snaps.filter(s=>s && s.exists).map(s=>s.data()||{});
   if(diarios.length) return _fusionarEntregasLiq(diarios);
   try{
     const snapExact=await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).get();
@@ -3519,7 +3525,8 @@ function _recalcularTodosLosDatos() {
   // [NEW] misma lógica de refresco perezoso para Cierre del Día — antes solo se
   // actualizaba al ENTRAR a la pestaña, no al cambiar el filtro de fecha estando ya adentro
   const seccionCierreDelDiaVisible = document.getElementById('seccion-cierreDelDia')?.classList.contains('active');
-  if (seccionCierreDelDiaVisible && typeof renderCierreDelDia === 'function') renderCierreDelDia();
+  /* Si todavía faltan snapshots del nuevo rango, no pintes con data vieja. */
+  if (seccionCierreDelDiaVisible && typeof renderCierreDelDia === 'function' && !(_primeraCargaListenersPendiente > 0)) renderCierreDelDia();
   // [NEW] misma lógica de refresco perezoso para la sección independiente de Notas Adicionales
   const seccionNotasAdicionalesVisible = document.getElementById('seccion-notasAdicionalesDash')?.classList.contains('active');
   if (seccionNotasAdicionalesVisible && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash();
@@ -3591,6 +3598,12 @@ function iniciarListenersDashboard() {
   if (_unsubPagosAll) _unsubPagosAll();
   if (_unsubGastosAll) _unsubGastosAll();
   document.getElementById('kpiGrid').innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando datos...</span></div>';
+  const wrapCierre1=document.getElementById('cierreDelDiaTabla1Wrap');
+  const wrapCierre2=document.getElementById('cierreDelDiaTabla2Wrap');
+  if(wrapCierre1) wrapCierre1.innerHTML='<div class="loading" style="padding:18px 8px"><div class="spinner"></div><span>Cargando Cierre del Día…</span></div>';
+  if(wrapCierre2) wrapCierre2.innerHTML='';
+  const stCierre=document.getElementById('cierreDelDiaStatus');
+  if(stCierre) stCierre.textContent='Cargando el rango de fechas…';
   /* [FIX] Antes esto traía TODA la colección completa (todos los pedidos/pagos/gastos
      de toda la historia), sin importar el filtro de fecha elegido arriba -- por eso el
      Dashboard se ponía cada vez más lento a medida que se acumulaban más registros con
