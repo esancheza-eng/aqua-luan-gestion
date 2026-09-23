@@ -5436,13 +5436,22 @@ function imprimirCierre() {
 /* [NEW] Exportar Pagos registrados a PDF */
 /* [NEW] Reemplaza a exportarPagosPDF() + exportarGastosPDF() por separado —
    ahora un solo botón imprime Pagos y Gastos juntos, en un solo documento. */
+function _etiquetaRutaParaImpresion(valor){
+  const s = String(valor||'').trim();
+  if (!s) return 'Todas las rutas';
+  const m = s.match(/ruta\s*(\d+)/i);
+  if (m) return 'Ruta ' + m[1];
+  const izq = s.split(':')[0].trim();
+  if (/ruta/i.test(izq)) return izq.replace(/ruta/ig, 'Ruta');
+  return s;
+}
 function exportarPagosGastosPDF() {
   const pagos = pagosDetalleActuales || [];
   const gastos = gastosDetalleActuales || [];
   if (!pagos.length && !gastos.length) { alert('No hay pagos ni gastos para exportar. Aplica los filtros primero.'); return; }
   const fecha = _textoRangoFecha();
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-  const asesorLabel = asesorSel.split(':')[1]?.trim() || 'Todas las rutas';
+  const asesorLabel = _etiquetaRutaParaImpresion(asesorSel);
   const totalPagos = pagos.reduce((s,r) => s + (parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
   const totalGastos = gastos.reduce((s,r) => s + Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
   const filasPagos = pagos.map(r => `<tr>
