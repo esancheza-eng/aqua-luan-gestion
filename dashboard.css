@@ -779,3 +779,7 @@ tr.clickable:hover td { background: rgba(10,124,110,0.05); }
   .kpi-grid { grid-template-columns: 1fr; }
   .asesor-cards-grid { grid-template-columns: 1fr; }
 }
+
+/* [FIX] Productos vendidos: el dropdown PRODUCTO/PRECIO no debe recortarse cuando la lista queda vacía */
+#seccion-productosVendidosDash .table-card { overflow: visible; }
+#seccion-productosVendidosDash .filtro-pago-dropdown { left: auto; right: 0; min-width: 240px; }
