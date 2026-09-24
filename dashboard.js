@@ -1221,7 +1221,7 @@ function renderFiltrosProductosVendidos(){
   if(contP){
     contP.innerHTML=cat.productos.map(n=>`
       <label class="filtro-pago-item">
-        <input type="checkbox" ${_pvProdExcluidos.has(n)?'':'checked'} onchange="toggleFiltroPvProducto(${JSON.stringify(n)}, this.checked)">
+        <input type="checkbox" ${_pvProdExcluidos.has(n)?'':'checked'} data-val="${escHTML(n)}" onchange="toggleFiltroPvProducto(this.dataset.val, this.checked)">
         ${escHTML(n)}
       </label>`).join('') || '<div class="filtro-pago-item">Sin productos</div>';
   }
@@ -1229,7 +1229,7 @@ function renderFiltrosProductosVendidos(){
   if(contPr){
     contPr.innerHTML=cat.precios.map(pr=>`
       <label class="filtro-pago-item">
-        <input type="checkbox" ${_pvPrecioExcluidos.has(pr)?'':'checked'} onchange="toggleFiltroPvPrecio('${pr}', this.checked)">
+        <input type="checkbox" ${_pvPrecioExcluidos.has(pr)?'':'checked'} data-val="${escHTML(pr)}" onchange="toggleFiltroPvPrecio(this.dataset.val, this.checked)">
         $${pr}
       </label>`).join('') || '<div class="filtro-pago-item">Sin precios</div>';
   }
