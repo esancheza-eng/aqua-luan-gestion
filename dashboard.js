@@ -1537,6 +1537,34 @@ async function renderCierreDelDia(){
    nota registrada (ej. regalías pendientes de entregas anteriores,
    condiciones especiales, etc.), para que no se pierdan dentro del detalle
    de cada pedido. */
+/* [FIX] Filtro de Notas Adicionales. _pedidosRaw es la caché de Firestore y puede
+   traer un rango MÁS AMPLIO que el filtro actual (cuando el rango pedido ya está en
+   memoria no se vuelve a descargar) — por eso antes salía todo lo ingresado.
+   Aquí se aplica el mismo Desde/Hasta y Asesor de la barra superior, igual que en
+   getDatosFiltrados(). Al abrir el dashboard Desde = Hasta = hoy, así que muestra
+   las notas del día. */
+function _pedidosNotasAdicionalesFiltrados(){
+  const desde = (document.getElementById('filtroFecha')?.value || '').trim();
+  const hasta = (document.getElementById('filtroFechaHasta')?.value || '').trim();
+  const asesorSel = (document.getElementById('filtroAsesor')?.value || '').trim();
+  return (_pedidosRaw || [])
+    .filter(p => String(p.notas||'').trim() !== '')
+    .filter(p => {
+      if(!desde && !hasta) return true;
+      const f = (typeof _isoFechaDash==='function' ? _isoFechaDash(p.fecha||'', p.creadoEn) : '') || String(p.fecha||'').slice(0,10);
+      if(!f) return false;
+      if(desde && f < desde) return false;
+      if(hasta && f > hasta) return false;
+      return true;
+    })
+    .filter(p => {
+      if(!asesorSel) return true;
+      const emp = String(p.empleado||'').trim();
+      if(emp === asesorSel) return true;
+      return (typeof _mismoAsesorLiq==='function') ? _mismoAsesorLiq(emp, asesorSel) : false;
+    })
+    .sort((a,b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
+}
 function renderNotasAdicionalesDash(){
   const tbody = document.getElementById('notasAdicionalesTbody');
   const tabla = document.getElementById('notasAdicionalesTabla');
@@ -1547,11 +1575,7 @@ function renderNotasAdicionalesDash(){
   // hubiera elegido una en el dropdown. La fecha sí se respetaba (_pedidosRaw ya
   // viene filtrado por fecha desde la consulta a Firestore), pero el asesor no.
   // Mismo patrón que _calcularLiquidacionDash().
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-  const pedidosConNota = _pedidosRaw
-    .filter(p => (p.notas||'').trim() !== '')
-    .filter(p => !asesorSel || (p.empleado||'') === asesorSel)
-    .sort((a,b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
+  const pedidosConNota = _pedidosNotasAdicionalesFiltrados(); // [FIX] respeta Desde/Hasta y Asesor de arriba
   if(!pedidosConNota.length){
     tbody.innerHTML = '';
     if(tabla) tabla.style.display = 'none';
@@ -1629,10 +1653,7 @@ function imprimirNotasAdicionalesDash(){
   const fecha = _textoRangoFecha();
   const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
   const asesorLabel = asesorSel.split(':')[1]?.trim() || 'Todos';
-  const pedidosConNota = _pedidosRaw
-    .filter(p => (p.notas||'').trim() !== '')
-    .filter(p => !asesorSel || (p.empleado||'') === asesorSel)
-    .sort((a,b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
+  const pedidosConNota = _pedidosNotasAdicionalesFiltrados(); // [FIX] imprime exactamente lo del filtro de fecha/asesor
   const filas = pedidosConNota.map(p => `<tr>
     <td style="font-weight:700;color:#1a3a5c">${escHTML(p.fecha||'-')}</td>
     <td style="font-weight:700;color:#1a3a5c">${escHTML(p.empleado||'-')}</td>
