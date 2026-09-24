@@ -165,6 +165,11 @@
             <select id="clienteFiltroAsesorTabla" onchange="mostrarDetalleCliente()" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer">
               <option value="">Todos los asesores</option>
             </select>
+            <select id="clienteOrdenTabla" onchange="mostrarDetalleCliente()" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer">
+              <option value="">Más reciente primero</option>
+              <option value="az">Nombre A → Z</option>
+              <option value="za">Nombre Z → A</option>
+            </select>
             <button class="btn-filter" id="btnExportarClientesSeleccionados" style="background:#c0392b;display:none;align-items:center;gap:6px" onclick="exportarClientesSeleccionadosPDF()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM7.5 12h2c.83 0 1.5.67 1.5 1.5S10.33 15 9.5 15H8v2H7v-5zm1 2h1c.28 0 .5-.22.5-.5s-.22-.5-.5-.5h-1v1zM12 12h2c.55 0 1 .45 1 1v3c0 .55-.45 1-1 1h-2v-5zm1 4h1v-3h-1v3zM16 12h2v1h-1v1h1v1h-1v2h-1v-5z"/></svg>
               <span id="btnExportarClientesTexto">Exportar seleccionados a PDF</span>
@@ -723,10 +728,42 @@
     <div class="editar-footer" style="justify-content:flex-start;gap:10px">
       <a id="modalClienteWa" href="#" target="_blank" class="btn-guardar-edicion" style="background:#25d366;text-decoration:none;display:inline-flex;align-items:center;gap:6px">💬 WhatsApp</a>
       <button class="btn-guardar-edicion" style="background:#c0392b" onclick="imprimirClienteModal()">🖨 Imprimir / PDF</button>
+      <button class="btn-guardar-edicion" style="background:var(--navy)" onclick="abrirEditarNombreCliente()">✏️ Editar nombre</button>
       <button class="btn-cancelar-edicion" onclick="cerrarDetalleClienteModal()">Cerrar</button>
     </div>
   </div>
 </div>
 
+
+<!-- ═══════════════════ [NEW] MODAL — Editar / unificar nombre de cliente ═══════════════════ -->
+<div class="editar-overlay" id="modalEditarNombreClienteOverlay" onclick="if(event.target===this)cerrarEditarNombreCliente()">
+  <div class="editar-modal" style="max-width:560px">
+    <div class="editar-header">
+      <div>
+        <div class="editar-header-title">✏️ Editar nombre de cliente</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.7);margin-top:2px" id="editNomClienteActual">—</div>
+      </div>
+      <button class="btn-cerrar-editar" onclick="cerrarEditarNombreCliente()">✕</button>
+    </div>
+    <div class="editar-body">
+      <div class="editar-grid full">
+        <div class="editar-field">
+          <label>Nombre correcto</label>
+          <input type="text" id="editNomClienteNuevo" maxlength="100" autocomplete="off" list="editNomClienteDatalist" placeholder="Ej. Thajeang">
+          <datalist id="editNomClienteDatalist"></datalist>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Si escribes el nombre de otro cliente que ya existe, ambos se unificarán en uno solo.</div>
+      <div class="editar-seccion-label" style="margin-top:1.1rem;padding-top:0.9rem;border-top:1px solid var(--border)">Posibles duplicados (unificar también)</div>
+      <div id="editNomClienteSimilares" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">Las sugerencias salen del período cargado arriba. Para ver todas las variantes del historial, usa el filtro "Todo". El cambio se aplica siempre sobre TODO el historial (pedidos, pagos, pedidos web y respaldos de eliminados).</div>
+      <div id="editNomClienteEstado" style="font-size:12px;font-weight:700;color:var(--navy);margin-top:12px"></div>
+    </div>
+    <div class="editar-footer">
+      <button class="btn-cancelar-edicion" onclick="cerrarEditarNombreCliente()">Cancelar</button>
+      <button class="btn-guardar-edicion" id="btnGuardarNombreCliente" onclick="guardarNombreCliente()">💾 Guardar y unificar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
