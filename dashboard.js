@@ -4788,6 +4788,12 @@ function mostrarDetalleCliente() {
   });
   // Ya vienen en orden de llegada (más reciente primero) desde poblarClienteSelect, gracias
   // al orden de gruposPedido — el filtro de arriba solo reduce la lista, no cambia el orden.
+  // [NEW] Orden opcional por nombre (A→Z / Z→A); sin elegir, se mantiene el orden de llegada.
+  const ordenNombre = document.getElementById('clienteOrdenTabla')?.value || '';
+  if (ordenNombre) {
+    filtrados = filtrados.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+    if (ordenNombre === 'za') filtrados.reverse();
+  }
 
   if (contador) contador.textContent = filtrados.length + ' cliente' + (filtrados.length!==1?'s':'');
 
@@ -4802,7 +4808,7 @@ function mostrarDetalleCliente() {
     const deudaTexto = c.deudaVigente > 0.005 ? `<div style="font-size:11px;font-weight:700;color:var(--red)">$${c.deudaVigente.toFixed(2)}</div>` : '<span style="color:var(--muted);font-size:11px">—</span>';
     return `<tr class="clickable" style="cursor:pointer" onclick="if(event.target.type!=='checkbox')abrirDetalleClienteModal('${encodeURIComponent(c.nombre)}')">
       <td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleClienteSeleccionadoPdf('${encodeURIComponent(c.nombre)}',this.checked)" style="width:16px;height:16px;accent-color:var(--teal);cursor:pointer"></td>
-      <td style="font-weight:700;color:var(--navy)">${escHTML(c.nombre)}</td>
+      <td style="font-weight:700;color:var(--navy)">${escHTML(c.nombre)}${ROL_ACTUAL !== 'secretaria' ? ` <button type="button" title="Editar nombre" onclick="event.stopPropagation();abrirEditarNombreCliente('${encodeURIComponent(c.nombre).replace(/'/g,'%27')}')" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;opacity:.7">✏️</button>` : ''}</td>
       <td style="font-size:12px;color:var(--muted)">${escHTML(c.telefono||'-')}</td>
       <td style="font-size:12px;color:var(--muted);max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeAttr(c.direccion||'')}">${escHTML(c.direccion||'-')}</td>
       <td style="text-align:center">${c.pedidos}</td>
@@ -4874,6 +4880,124 @@ function abrirDetalleClienteModal(nombreCodificado) {
 function cerrarDetalleClienteModal() {
   document.getElementById('modalClienteOverlay').classList.remove('open');
   document.body.style.overflow = '';
+}
+
+/* ════════════════════════════════════════
+   [NEW] EDITAR / UNIFICAR NOMBRE DE CLIENTE
+   Corrige el nombre de un cliente (ej. "thajeang", "Tajean", "tayeang" → "Thajeang")
+   en TODO el historial de Firestore — no solo en el período cargado — para que el
+   sistema completo (Resumen, Detalle, Cobranzas, Deuda, Liquidación, app de asesores)
+   lo vea como un solo cliente. Solo cambia el campo "cliente"; nada más del registro.
+════════════════════════════════════════ */
+const _COLECCIONES_CON_CLIENTE = ['pedidos', 'pagos', 'pedidosWeb', 'pedidosEliminados'];
+let _editNomClienteOriginal = '';
+
+function _normalizarNombreCliente(s) {
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9ñ ]/g,'').replace(/\s+/g,' ').trim();
+}
+function _distanciaLevenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({length: b.length + 1}, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function _nombresClienteSimilares(nombre) {
+  const base = _normalizarNombreCliente(nombre);
+  if (!base) return [];
+  const todos = [...new Set((todosLosDatos||[]).map(r => r['CLIENTE']).filter(Boolean))];
+  return todos.filter(n => {
+    if (n === nombre) return false;
+    const x = _normalizarNombreCliente(n);
+    if (!x) return false;
+    if (x === base) return true;
+    const tope = Math.max(1, Math.floor(Math.max(x.length, base.length) * 0.25));
+    return _distanciaLevenshtein(x, base) <= tope;
+  }).sort((a,b) => a.localeCompare(b));
+}
+
+function abrirEditarNombreCliente(nombreCodificado) {
+  if (ROL_ACTUAL === 'secretaria') { alert('Solo el administrador puede editar nombres de clientes.'); return; }
+  const nombre = nombreCodificado ? decodeURIComponent(nombreCodificado) : (window._clienteModalActual && window._clienteModalActual.nombre);
+  if (!nombre) return;
+  if (nombre === 'Sin nombre') { alert('Estos pedidos no tienen nombre de cliente registrado. Edítalos uno por uno desde "Detalle de Pedidos".'); return; }
+  _editNomClienteOriginal = nombre;
+  document.getElementById('editNomClienteActual').textContent = 'Nombre actual: ' + nombre;
+  const input = document.getElementById('editNomClienteNuevo');
+  input.value = nombre;
+  const todos = [...new Set((todosLosDatos||[]).map(r => r['CLIENTE']).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+  document.getElementById('editNomClienteDatalist').innerHTML = todos.map(n => `<option value="${escapeAttr(n)}">`).join('');
+  const similares = _nombresClienteSimilares(nombre);
+  document.getElementById('editNomClienteSimilares').innerHTML = similares.length
+    ? similares.map(n => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer"><input type="checkbox" class="chkNomClienteSimilar" value="${escapeAttr(n)}" style="width:16px;height:16px;accent-color:var(--teal)"> ${escHTML(n)}</label>`).join('')
+    : '<div style="font-size:12px;color:var(--muted)">No se encontraron nombres parecidos en el período cargado.</div>';
+  document.getElementById('editNomClienteEstado').textContent = '';
+  const btn = document.getElementById('btnGuardarNombreCliente');
+  btn.disabled = false; btn.textContent = '💾 Guardar y unificar';
+  document.getElementById('modalEditarNombreClienteOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+function cerrarEditarNombreCliente() {
+  document.getElementById('modalEditarNombreClienteOverlay').classList.remove('open');
+  if (!document.getElementById('modalClienteOverlay').classList.contains('open')) document.body.style.overflow = '';
+}
+
+async function guardarNombreCliente() {
+  if (ROL_ACTUAL === 'secretaria') { alert('Solo el administrador puede editar nombres de clientes.'); return; }
+  const nuevo = (document.getElementById('editNomClienteNuevo').value || '').replace(/\s+/g,' ').trim();
+  if (!nuevo) { alert('Escribe el nombre correcto del cliente.'); return; }
+  const marcados = [...document.querySelectorAll('.chkNomClienteSimilar:checked')].map(c => c.value);
+  const viejos = [...new Set([_editNomClienteOriginal, ...marcados])].filter(n => n && n !== nuevo);
+  if (!viejos.length) { alert('El nombre no cambió.'); return; }
+  if (!confirm(`Se cambiará el nombre del cliente en TODO el historial:\n\n${viejos.map(v => `"${v}"`).join('\n')}\n\n→ "${nuevo}"\n\nTodos quedarán unificados como un solo cliente. ¿Continuar?`)) return;
+
+  const btn = document.getElementById('btnGuardarNombreCliente');
+  const estado = document.getElementById('editNomClienteEstado');
+  btn.disabled = true; btn.textContent = '⏳ Guardando...';
+  const conteo = {}; const errores = [];
+  try {
+    for (const col of _COLECCIONES_CON_CLIENTE) {
+      conteo[col] = 0;
+      for (const viejo of viejos) {
+        estado.textContent = `Actualizando ${col}: "${viejo}"...`;
+        try {
+          const snap = await db.collection(col).where('cliente', '==', viejo).get();
+          let lote = db.batch(); let n = 0;
+          for (const d of snap.docs) {
+            lote.update(d.ref, { cliente: nuevo });
+            n++;
+            if (n % 400 === 0) { await lote.commit(); lote = db.batch(); }
+          }
+          if (n % 400 !== 0) await lote.commit();
+          conteo[col] += n;
+        } catch (e) {
+          console.error(`Editar nombre cliente — ${col}:`, e);
+          errores.push(`${col}: ${e.message}`);
+        }
+      }
+    }
+    const resumen = `pedidos ${conteo.pedidos||0}, pagos ${conteo.pagos||0}, pedidos web ${conteo.pedidosWeb||0}, eliminados ${conteo.pedidosEliminados||0}`;
+    await _registrarAuditoria('cliente', 'edición', null, `Nombre de cliente ${viejos.map(v => `"${v}"`).join(', ')} → "${nuevo}" (${resumen}) por ${actorAuditoria()}`);
+    viejos.forEach(v => _clientesSeleccionadosPdf.delete(v));
+    cerrarEditarNombreCliente();
+    cerrarDetalleClienteModal();
+    if (errores.length) alert(`⚠️ Se actualizó parcialmente (${resumen}).\n\nNo se pudo actualizar:\n${errores.join('\n')}`);
+    else mostrarToastEdicion(`✅ Cliente unificado como "${nuevo}" — ${resumen}`);
+  } catch (err) {
+    console.error(err);
+    alert('❌ No se pudo cambiar el nombre: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 Guardar y unificar';
+    estado.textContent = '';
+  }
 }
 
 /* [NEW] Imprimir / PDF de UN cliente, desde el modal 360° */
