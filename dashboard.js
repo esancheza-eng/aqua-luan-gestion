@@ -4843,6 +4843,15 @@ function _actualizarBotonExportarClientes() {
   if (txt) txt.textContent = `Exportar ${n} seleccionado${n!==1?'s':''} a PDF`;
 }
 
+/* [NEW] Precio por unidad tal como lo ingresó el asesor en la app de pedidos (productos[].precio).
+   Si un pedido antiguo no lo tiene guardado, se deduce de SUBTOTAL ÷ CANTIDAD. Solo se muestra. */
+function _precioUnitCliente(r) {
+  const pu = r['PRECIO UNIT.'];
+  if (pu !== '' && pu != null && !isNaN(parseFloat(pu))) return '$' + parseFloat(pu).toFixed(2);
+  const sub = parseFloat(r['SUBTOTAL']), cant = parseFloat(r['CANTIDAD']);
+  if (!isNaN(sub) && cant > 0) return '$' + (sub / cant).toFixed(2);
+  return '-';
+}
 /* [NEW] Modal 360° del cliente — KPIs, Deuda Vigente e historial de pedidos completo */
 function abrirDetalleClienteModal(nombreCodificado) {
   const nombre = decodeURIComponent(nombreCodificado);
@@ -4866,10 +4875,11 @@ function abrirDetalleClienteModal(nombreCodificado) {
     <td style="font-size:12px">${limpiarFecha(r['FECHA'])}</td>
     <td style="font-size:12px">${escHTML(r['PRODUCTO']||'-')}</td>
     <td style="text-align:center">${r['CANTIDAD']||'-'}</td>
+    <td style="text-align:right">${_precioUnitCliente(r)}</td>
     <td style="text-align:right;font-weight:700;color:var(--teal)">$${parseFloat(r['SUBTOTAL']||0).toFixed(2)}</td>
     <td><span class="badge badge-teal">${escHTML(r['FORMA DE PAGO']||'-')}</span></td>
   </tr>`).join('');
-  document.getElementById('modalClienteHistorial').innerHTML = filasHistorial || '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Sin historial de productos</td></tr>';
+  document.getElementById('modalClienteHistorial').innerHTML = filasHistorial || '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Sin historial de productos</td></tr>';
   const tel = (c.telefono||'').replace(/\D/g,'');
   const waBtn = document.getElementById('modalClienteWa');
   if (waBtn) waBtn.href = tel ? `https://wa.me/593${tel.replace(/^0/,'')}` : '#';
@@ -5014,7 +5024,7 @@ function exportarClientesSeleccionadosPDF() {
 }
 function _imprimirClientesPDF(clientesArr) {
   const bloques = clientesArr.map(c => {
-    const filas = c.items.map(r => `<tr><td>${escHTML(r['PRODUCTO']||'-')}</td><td style="text-align:center">${r['CANTIDAD']||'-'}</td><td style="text-align:right">$${parseFloat(r['SUBTOTAL']||0).toFixed(2)}</td><td>${escHTML(r['FORMA DE PAGO']||'-')}</td></tr>`).join('');
+    const filas = c.items.map(r => `<tr><td>${escHTML(r['PRODUCTO']||'-')}</td><td style="text-align:center">${r['CANTIDAD']||'-'}</td><td style="text-align:right">${_precioUnitCliente(r)}</td><td style="text-align:right">$${parseFloat(r['SUBTOTAL']||0).toFixed(2)}</td><td>${escHTML(r['FORMA DE PAGO']||'-')}</td></tr>`).join('');
     return `<div class="bloque-cliente-pdf">
       <h2>${escHTML(c.nombre)}</h2>
       <p class="sub">${escHTML(c.telefono||'-')} · ${escHTML(c.direccion||'-')}</p>
@@ -5025,7 +5035,7 @@ function _imprimirClientesPDF(clientesArr) {
         <div><label>Estado</label><span>${c.estado}</span></div>
         <div><label>Deuda Vigente</label><span>${c.deudaVigente>0.005?'$'+c.deudaVigente.toFixed(2):'Al día'}</span></div>
       </div>
-      <table><thead><tr><th>Producto</th><th>Cant.</th><th>Subtotal</th><th>Pago</th></tr></thead><tbody>${filas}</tbody></table>
+      <table><thead><tr><th>Producto</th><th>Cant.</th><th>P. Unit.</th><th>Subtotal</th><th>Pago</th></tr></thead><tbody>${filas}</tbody></table>
     </div>`;
   }).join('<hr>');
   // [NEW] Título de pestaña según la selección real: nombre del cliente si es
