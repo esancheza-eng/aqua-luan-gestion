@@ -1034,8 +1034,13 @@ function _actualizarBotonesCierreDelDia(editando){
 function _setCierreDelDiaEditable(on){
   const puede=_cierreDelDiaPuedeEditar();
   const activo=!!on && puede;
-  document.querySelectorAll('#cierreDelDiaTabla1 .cdd-input, #cierreDelDiaTabla2 .cdd-input').forEach(el => {
+  /* [CAMBIO] Solo la Tabla 1 se edita. La Tabla 2 (Forma de Entrega de Dinero)
+     es de solo lectura: refleja lo registrado en Liquidación. */
+  document.querySelectorAll('#cierreDelDiaTabla1 .cdd-input').forEach(el => {
     el.disabled = !activo;
+  });
+  document.querySelectorAll('#cierreDelDiaTabla2 .cdd-input').forEach(el => {
+    el.disabled = true;
   });
   _actualizarBotonesCierreDelDia(activo);
 }
@@ -1082,23 +1087,9 @@ async function _guardarCierreDelDia(){
       actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
       actualizadoPor: (typeof actorAuditoria==='function') ? actorAuditoria() : ''
     }, {merge:true});
-    const asesoresSync=_cierreDelDiaAsesoresCache||[];
-    await Promise.all(asesoresSync.map(async nombre=>{
-      const get=etiq=>Number(tabla2[etiq]&&tabla2[etiq][nombre])||0;
-      const ef=get('Efectivo'), dep=get('Depósito'), tr=get('Transferencia');
-      const f1=get('Faltante 1'), f2=get('Faltante 2'), f3=get('Faltante 3');
-      const sob=Math.abs(get('Sobrante'));
-      await db.collection('cierresLiquidacion').doc(_idEntregaLiquidacion(nombre)).set({
-        efectivo:{marcado:ef>0, monto:ef},
-        deposito:{marcado:dep>0, monto:dep},
-        depositos:dep>0?[{marcado:true,monto:dep}]:[],
-        transferencia:{marcado:tr>0, monto:tr},
-        faltantes:[{monto:f1,motivo:''},{monto:f2,motivo:''},{monto:f3,motivo:''}],
-        sobrante:{monto:sob, motivo:''},
-        actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
-        actualizadoPor: (typeof actorAuditoria==='function') ? actorAuditoria() : ''
-      }, {merge:true});
-    }));
+    /* [CAMBIO] Ya no se reescribe cierresLiquidacion desde aquí. La Forma de
+       Entrega es de solo lectura en el Cierre, así la Liquidación conserva sus
+       faltantes, motivos, depósitos separados y sobrante tal como se registraron. */
     if (typeof _registrarAuditoria === 'function') {
       _registrarAuditoria('cierreDelDia', 'edición', _idCierreDelDia(), 'Cierre del Día guardado por '+actorAuditoria());
     }
@@ -1476,21 +1467,22 @@ async function renderCierreDelDia(){
     return (e.deposito?.marcado ? (Number(e.deposito.monto)||0) : 0);
   };
   const _montoTransferencia = e => (e.transferencia?.marcado ? (Number(e.transferencia.monto)||0) : 0);
-  const _montoFaltante1 = e => Number(e.faltantes?.[0]?.monto)||0;
-  const _montoFaltante2 = e => Number(e.faltantes?.[1]?.monto)||0;
-  const _montoFaltante3 = e => Number(e.faltantes?.[2]?.monto)||0;
+  /* [CAMBIO] Faltantes sin límite fijo: se muestran tantas columnas como el
+     asesor que más faltantes tenga en el período (mínimo 3). */
+  const _montoFaltanteN = (e, i) => Number(e.faltantes?.[i]?.monto)||0;
+  const _numFaltantes = Math.max(3, ...entregas.map(e => Array.isArray(e && e.faltantes) ? e.faltantes.length : 0));
+  const _indicesFaltantes = Array.from({length:_numFaltantes}, (_, i) => i);
+  const _sumaFaltantes = e => _indicesFaltantes.reduce((s, i) => s + _montoFaltanteN(e, i), 0);
   const _montoSobrante = e => Number(e.sobrante?.monto)||0;
   const filas2 = [
     { etiqueta:'Efectivo', valor: _montoEfectivo },
     { etiqueta:'Depósito', valor: _montoDeposito },
     { etiqueta:'Transferencia', valor: _montoTransferencia },
-    { etiqueta:'Faltante 1', valor: _montoFaltante1 },
-    { etiqueta:'Faltante 2', valor: _montoFaltante2 },
-    { etiqueta:'Faltante 3', valor: _montoFaltante3 },
+    ..._indicesFaltantes.map(i => ({ etiqueta:'Faltante '+(i+1), valor: e => _montoFaltanteN(e, i) })),
     { etiqueta:'Sobrante', valor: e => -_montoSobrante(e) },
     { etiqueta:'TOTAL GENERAL', destacado:true, valor: e =>
         _montoEfectivo(e) + _montoDeposito(e) + _montoTransferencia(e) +
-        _montoFaltante1(e) + _montoFaltante2(e) + _montoFaltante3(e) - _montoSobrante(e)
+        _sumaFaltantes(e) - _montoSobrante(e)
     }
   ];
 
@@ -2630,7 +2622,8 @@ function _fusionarEntregasLiq(docs){
     const tr=(e.transferencia && e.transferencia.marcado) ? (Number(e.transferencia.monto)||0) : 0;
     if(tr>0){ acc.transferencia.marcado=true; acc.transferencia.monto+=tr; }
     (e.faltantes||[]).forEach((f,i)=>{
-      if(i>2) return;
+      /* [CAMBIO] Sin límite: si un día trae más faltantes, se agregan posiciones. */
+      while(acc.faltantes.length<=i) acc.faltantes.push({monto:0});
       acc.faltantes[i].monto += Number(f && f.monto)||0;
     });
     const sb=Number(e.sobrante && e.sobrante.monto)||0;
@@ -3135,23 +3128,23 @@ async function _syncEntregaHaciaCierreDelDia(nombre, payload){
     dep=Number(payload.deposito.monto)||0;
   }
   const tr=payload.transferencia&&payload.transferencia.marcado ? (Number(payload.transferencia.monto)||0) : 0;
-  const f1=Number(payload.faltantes&&payload.faltantes[0]&&payload.faltantes[0].monto)||0;
-  const f2=Number(payload.faltantes&&payload.faltantes[1]&&payload.faltantes[1].monto)||0;
-  const f3=Number(payload.faltantes&&payload.faltantes[2]&&payload.faltantes[2].monto)||0;
+  /* [CAMBIO] Faltantes sin límite fijo. */
+  const listaFalt=Array.isArray(payload.faltantes)?payload.faltantes:[];
+  const montosFalt=listaFalt.map(f=>Number(f&&f.monto)||0);
+  while(montosFalt.length<3) montosFalt.push(0);
+  const sumaFalt=montosFalt.reduce((a,b)=>a+b,0);
   const sob=Number(payload.sobrante&&payload.sobrante.monto)||0;
-  const total=ef+dep+tr+f1+f2+f3-sob;
+  const total=ef+dep+tr+sumaFalt-sob;
   const patch={
     ['tabla2.Efectivo.'+nombre]: ef,
     ['tabla2.Depósito.'+nombre]: dep,
     ['tabla2.Transferencia.'+nombre]: tr,
-    ['tabla2.Faltante 1.'+nombre]: f1,
-    ['tabla2.Faltante 2.'+nombre]: f2,
-    ['tabla2.Faltante 3.'+nombre]: f3,
     ['tabla2.Sobrante.'+nombre]: -sob,
     ['tabla2.TOTAL GENERAL.'+nombre]: total,
     actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(),
     actualizadoPor: (typeof actorAuditoria==='function')?actorAuditoria():''
   };
+  montosFalt.forEach((m,i)=>{ patch['tabla2.Faltante '+(i+1)+'.'+nombre]=m; });
   await db.collection('cierresDelDia').doc(idCierre).set(patch, {merge:true});
 }
 function _htmlEntregaLiquidacionPrint(){
