@@ -4090,7 +4090,7 @@ function onChangeFiltroProducto() {
 function renderTabla(pedidos) {
   const tbody = document.getElementById('tablaPedidos');
   if (!pedidos.length) {
-    tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="icon">📋</div>No hay pedidos en este período</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13"><div class="empty-state"><div class="icon">📋</div>No hay pedidos en este período</div></td></tr>';
     const foot0=document.getElementById('tablaPedidosFoot');
     if(foot0) foot0.innerHTML='';
     return;
@@ -4135,6 +4135,7 @@ function renderTabla(pedidos) {
       <td style="font-size:12px;color:var(--muted)">${escHTML(r['TELÉFONO']||'-')}</td>
       <td style="font-size:12px">${escHTML(r['PRODUCTO']||'-')}</td>
       <td style="text-align:center;font-size:12px">${r['CANTIDAD']||'-'}</td>
+      <td style="text-align:right;font-size:12px">${_precioUnitCliente(r)}</td>
       <td style="text-align:right;font-size:12px;color:var(--muted)">$${parseFloat(r['SUBTOTAL']||0).toFixed(2)}</td>
       <td style="text-align:right">${total}</td>
       <td>${pago}</td>
@@ -4143,14 +4144,14 @@ function renderTabla(pedidos) {
     </tr>`;
     const este = String(r['CLIENTE']||'').trim().toLowerCase();
     const sig = String(lista[idx+1]?.['CLIENTE']||'').trim().toLowerCase();
-    return fila + ((idx < lista.length-1 && este !== sig) ? '<tr class="sep-cliente"><td colspan="12"></td></tr>' : '');
+    return fila + ((idx < lista.length-1 && este !== sig) ? '<tr class="sep-cliente"><td colspan="13"></td></tr>' : '');
   }).join('');
   const foot=document.getElementById('tablaPedidosFoot');
   if(foot){
     const t=_totalYEtiquetaDetalleFiltrado(pedidos);
     const cantTotal=pedidos.reduce((s,r)=>s+(parseFloat(r['CANTIDAD'])||0),0);
     const cantTxt=cantTotal%1===0?String(parseInt(cantTotal)):cantTotal.toFixed(1);
-    foot.innerHTML=`<tr style="background:#e6f4f2;font-weight:800;color:#085f54"><td colspan="6" style="text-align:right;padding:10px">${escHTML(t.label)}</td><td style="text-align:center;padding:10px">${cantTxt}</td><td></td><td style="text-align:right;padding:10px">$${t.total.toFixed(2)}</td><td colspan="3" style="font-size:11px;font-weight:600;color:var(--muted)">${pedidos.length} línea(s)</td></tr>`;
+    foot.innerHTML=`<tr style="background:#e6f4f2;font-weight:800;color:#085f54"><td colspan="6" style="text-align:right;padding:10px">${escHTML(t.label)}</td><td style="text-align:center;padding:10px">${cantTxt}</td><td></td><td></td><td style="text-align:right;padding:10px">$${t.total.toFixed(2)}</td><td colspan="3" style="font-size:11px;font-weight:600;color:var(--muted)">${pedidos.length} línea(s)</td></tr>`;
   }
 }
 
@@ -4270,7 +4271,7 @@ function actualizarTablaCentral(datos) {
   pedidosDetalleActuales = datos;
   poblarClienteSelect(datos);
   document.getElementById('clienteCard').style.display = 'block';
-  if (!datos.length) { tbody.innerHTML='<tr><td colspan="12"><div class="empty-state"><div class="icon">📋</div>No hay pedidos con estos filtros</div></td></tr>'; return; }
+  if (!datos.length) { tbody.innerHTML='<tr><td colspan="13"><div class="empty-state"><div class="icon">📋</div>No hay pedidos con estos filtros</div></td></tr>'; return; }
   tbody.innerHTML = datos.map((r, idx) => {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
@@ -4288,6 +4289,7 @@ function actualizarTablaCentral(datos) {
       <td style="font-size:12px;color:var(--muted)">${escHTML(r['TELÉFONO']||'-')}</td>
       <td style="font-size:12px">${escHTML(r['PRODUCTO']||'-')}</td>
       <td style="text-align:center;font-size:12px">${r['CANTIDAD']||'-'}</td>
+      <td style="text-align:right;font-size:12px">${_precioUnitCliente(r)}</td>
       <td style="text-align:right;font-size:12px;color:var(--muted)">$${parseFloat(r['SUBTOTAL']||0).toFixed(2)}</td>
       <td style="text-align:right">${total}</td>
       <td>${pago}</td>
@@ -4296,7 +4298,7 @@ function actualizarTablaCentral(datos) {
     </tr>`;
     const este = String(r['CLIENTE']||'').trim().toLowerCase();
     const sig = String(datos[idx+1]?.['CLIENTE']||'').trim().toLowerCase();
-    return fila + ((idx < datos.length-1 && este !== sig) ? '<tr class="sep-cliente"><td colspan="12"></td></tr>' : '');
+    return fila + ((idx < datos.length-1 && este !== sig) ? '<tr class="sep-cliente"><td colspan="13"></td></tr>' : '');
   }).join('');
 }
 
