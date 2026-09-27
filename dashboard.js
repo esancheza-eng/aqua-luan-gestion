@@ -4241,7 +4241,6 @@ function _datosVentaParaImprimir(p) {
   const ruta = rutaRaw.includes(':') ? rutaRaw.split(':')[0].trim() : rutaRaw;
   const asesor = rutaRaw.includes(':') ? rutaRaw.split(':').slice(1).join(':').trim() : '';
   return {
-    numero: String(p._id || '').slice(0, 8).toUpperCase(),
     fecha: limpiarFecha(p.fecha), hora: _horaDeTs(p.creadoEn),
     ruta: ruta || '-', asesor,
     cliente: p.cliente || 'Consumidor final', telefono: p.telefono || '', direccion: p.direccion || '',
@@ -4279,7 +4278,7 @@ function _htmlTicketVenta(d) {
     </div>`).join('');
   const pagos = d.pagos.map(pg => `<div class="row"><span>${escHTML(pg.forma)}</span><span>${m(pg.monto)}</span></div>`).join('');
   const saldo = d.cred > 0.004 ? `<div class="row fuerte"><span>SALDO PENDIENTE</span><span>${m(d.cred)}</span></div>` : '';
-  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Ticket ${d.numero} — Aqua Luan</title>
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Ticket — ${escHTML(d.cliente)} — Aqua Luan</title>
   <style>
     @page{size:80mm auto;margin:0}
     *{box-sizing:border-box;margin:0;padding:0}
@@ -4305,7 +4304,6 @@ function _htmlTicketVenta(d) {
       <div class="tipo">COMPROBANTE DE VENTA</div>
     </div>
     <div class="sep"></div>
-    <div class="row"><span class="lbl">N°</span><span>${escHTML(d.numero)}</span></div>
     <div class="row"><span class="lbl">Fecha</span><span>${escHTML(d.fecha)}${d.hora ? ' ' + escHTML(d.hora) : ''}</span></div>
     <div class="row"><span class="lbl">Ruta</span><span>${escHTML(d.ruta)}</span></div>
     ${d.asesor ? `<div class="row"><span class="lbl">Asesor</span><span>${escHTML(d.asesor)}</span></div>` : ''}
@@ -4339,7 +4337,7 @@ function _htmlPdfVenta(d) {
       <td style="text-align:right">${it.esRegalo ? '$0.00' : m(it.sub)}</td>
     </tr>`).join('');
   const pagos = d.pagos.map(pg => `<tr><td>${escHTML(pg.forma)}</td><td style="text-align:right">${m(pg.monto)}</td></tr>`).join('');
-  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Venta ${d.numero} — ${escHTML(d.cliente)} — Aqua Luan</title>
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Venta — ${escHTML(d.cliente)} — Aqua Luan</title>
   <style>
     @page{size:A4;margin:14mm}
     *{box-sizing:border-box;margin:0;padding:0}
@@ -4348,8 +4346,6 @@ function _htmlPdfVenta(d) {
     .head img{height:54px;width:auto}
     .head .doc{text-align:right}
     .head h1{font-family:Georgia,'Times New Roman',serif;font-size:20px;letter-spacing:.04em}
-    .head .num{font-size:13px;font-weight:700;margin-top:4px}
-    .head .num span{color:#0a7c6e}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
     .box{background:#f0f5f8;border-radius:8px;padding:10px 14px}
     .box h3{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b7f93;margin-bottom:6px}
@@ -4380,8 +4376,7 @@ function _htmlPdfVenta(d) {
       <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
       <div class="doc">
         <h1>COMPROBANTE DE VENTA</h1>
-        <div class="num">N° <span>${escHTML(d.numero)}</span></div>
-        <div style="font-size:11px;color:#6b7f93;margin-top:2px">${escHTML(d.fecha)}${d.hora ? ' · ' + escHTML(d.hora) : ''}</div>
+        <div style="font-size:12px;color:#6b7f93;margin-top:6px">${escHTML(d.fecha)}${d.hora ? ' · ' + escHTML(d.hora) : ''}</div>
       </div>
     </div>
     <div class="grid">
