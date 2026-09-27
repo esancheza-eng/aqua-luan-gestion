@@ -4096,6 +4096,7 @@ function renderTabla(pedidos) {
     return;
   }
   const lista = pedidos.slice(0,100);
+  const _idsConBotonImprimir = new Set(); // [NEW] un solo botón Imprimir por venta (en su primera fila visible)
   tbody.innerHTML = lista.map((r, idx) => {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
@@ -4122,11 +4123,7 @@ function renderTabla(pedidos) {
       }
     }
     const pago  = etiquetaPago ? `<span class="badge badge-teal">${escHTML(etiquetaPago)}</span>${detallePago}` : '';
-    const puedeEditar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
-    const puedeEliminar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
-    const accion = (puedeEditar || puedeEliminar)
-      ? `${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}`
-      : '<span style="color:var(--muted);font-size:11px">—</span>';
+    const accion = _accionesFilaPedido(r, _idsConBotonImprimir); // [NEW] incluye Imprimir (Ticket/PDF)
     const fila = `<tr>
       <td style="white-space:nowrap;font-size:12px">${limpiarFecha(r['FECHA'])}</td>
       <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${escHTML(r['HORA REGISTRO']||'-')}</td>
@@ -4153,6 +4150,274 @@ function renderTabla(pedidos) {
     const cantTxt=cantTotal%1===0?String(parseInt(cantTotal)):cantTotal.toFixed(1);
     foot.innerHTML=`<tr style="background:#e6f4f2;font-weight:800;color:#085f54"><td colspan="6" style="text-align:right;padding:10px">${escHTML(t.label)}</td><td style="text-align:center;padding:10px">${cantTxt}</td><td></td><td></td><td style="text-align:right;padding:10px">$${t.total.toFixed(2)}</td><td colspan="3" style="font-size:11px;font-weight:600;color:var(--muted)">${pedidos.length} línea(s)</td></tr>`;
   }
+}
+
+/* ════════════════════════════════════════════════════════════
+   [NEW] IMPRIMIR VENTA — Ticket (80 mm) o PDF (A4)
+   Botón por venta en "Detalle de Pedidos", disponible para Admin y
+   Secretaria (no depende del permiso de Editar/Eliminar). Toma el pedido
+   completo desde _pedidosRaw, así que imprime TODOS sus productos y
+   regalías aunque la tabla esté filtrada por producto o forma de pago.
+════════════════════════════════════════════════════════════ */
+function _accionesFilaPedido(r, idsConBoton) {
+  const id = r['_pedidoId'];
+  const puedeEditar = id && _puedeEditarCuadreCaja(r['FECHA']);
+  const puedeEliminar = id && _puedeEditarCuadreCaja(r['FECHA']);
+  let btnImprimir = '';
+  if (id && (ROL_ACTUAL === 'admin' || ROL_ACTUAL === 'secretaria') && !idsConBoton.has(id)) {
+    idsConBoton.add(id);
+    btnImprimir = `<button class="btn-imprimir-fila" onclick="abrirOpcionesImpresionVenta('${id}')" title="Imprimir esta venta en ticket o PDF">🖨 Imprimir</button>`;
+  }
+  if (!puedeEditar && !puedeEliminar && !btnImprimir) return '<span style="color:var(--muted);font-size:11px">—</span>';
+  return `<div class="acciones-fila-pedido">${btnImprimir}${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${id}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${id}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}</div>`;
+}
+
+function abrirOpcionesImpresionVenta(pedidoId) {
+  const p = (_pedidosRaw || []).find(x => x._id === pedidoId);
+  if (!p) { alert('No se encontró esta venta. Actualiza el período e intenta de nuevo.'); return; }
+  let ov = document.getElementById('impVentaOverlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'impVentaOverlay';
+    ov.className = 'imp-venta-overlay';
+    ov.addEventListener('click', e => { if (e.target === ov) cerrarOpcionesImpresionVenta(); });
+    document.body.appendChild(ov);
+  }
+  const total = (parseFloat(p.total) || 0).toFixed(2);
+  ov.innerHTML = `<div class="imp-venta-box" role="dialog" aria-modal="true" aria-labelledby="impVentaTitulo">
+    <div class="imp-venta-head">
+      <div>
+        <div class="imp-venta-titulo" id="impVentaTitulo">Imprimir venta</div>
+        <div class="imp-venta-sub">${escHTML(p.cliente || 'Sin nombre')} · ${limpiarFecha(p.fecha)} · $${total}</div>
+      </div>
+      <button class="btn-cerrar-editar" onclick="cerrarOpcionesImpresionVenta()" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="imp-venta-opciones">
+      <button class="imp-venta-opcion" onclick="imprimirVenta('${pedidoId}','ticket')">
+        <span class="imp-venta-ico">🧾</span>
+        <span><strong>Ticket</strong><small>Impresora térmica de 80 mm</small></span>
+      </button>
+      <button class="imp-venta-opcion" onclick="imprimirVenta('${pedidoId}','pdf')">
+        <span class="imp-venta-ico">📄</span>
+        <span><strong>PDF / Hoja A4</strong><small>Comprobante completo · "Guardar como PDF"</small></span>
+      </button>
+    </div>
+  </div>`;
+  ov.style.display = 'flex';
+  document.addEventListener('keydown', _escCerrarImpVenta);
+}
+function _escCerrarImpVenta(e) { if (e.key === 'Escape') cerrarOpcionesImpresionVenta(); }
+function cerrarOpcionesImpresionVenta() {
+  const ov = document.getElementById('impVentaOverlay');
+  if (ov) ov.style.display = 'none';
+  document.removeEventListener('keydown', _escCerrarImpVenta);
+}
+
+/* Arma los datos de una venta a partir del documento crudo de Firestore. */
+function _datosVentaParaImprimir(p) {
+  const filas = _expandirPedido(p);
+  const primera = filas[0] || _filaProducto(p, {}, true, false);
+  const items = filas.map(r => {
+    const esRegalo = String(r['PRODUCTO'] || '').includes('REGALO:');
+    const nombre = String(r['PRODUCTO'] || '-').replace(/🎁\s*REGALO:\s*/, '').trim();
+    const cant = parseFloat(r['CANTIDAD']) || 0;
+    const sub = parseFloat(r['SUBTOTAL']) || 0;
+    let pu = parseFloat(r['PRECIO UNIT.']);
+    if (isNaN(pu)) pu = cant > 0 ? sub / cant : 0;
+    return { nombre, cant, pu, sub, esRegalo };
+  });
+  const total = parseFloat(p.total) || 0;
+  const cred = parseFloat(primera['CREDITO_PENDIENTE'] || 0) || 0;
+  const pagos = [];
+  if (Array.isArray(p.pagos) && p.pagos.length) {
+    p.pagos.forEach(pg => { const m = parseFloat(pg.monto) || 0; if (m > 0.004) pagos.push({ forma: pg.forma || '-', monto: m }); });
+  } else {
+    const abono = parseFloat(p.abono || 0) || 0;
+    const forma = p.formapago || '';
+    if (abono > 0.004 && cred > 0.004) pagos.push({ forma: 'Abono', monto: abono });
+    else if (forma && _normFormaPago(forma) !== 'Crédito' && String(forma).toLowerCase() !== 'mixto') pagos.push({ forma, monto: Math.max(total - cred, 0) });
+  }
+  const rutaRaw = String(p.empleado || '');
+  const ruta = rutaRaw.includes(':') ? rutaRaw.split(':')[0].trim() : rutaRaw;
+  const asesor = rutaRaw.includes(':') ? rutaRaw.split(':').slice(1).join(':').trim() : '';
+  return {
+    numero: String(p._id || '').slice(0, 8).toUpperCase(),
+    fecha: limpiarFecha(p.fecha), hora: _horaDeTs(p.creadoEn),
+    ruta: ruta || '-', asesor,
+    cliente: p.cliente || 'Consumidor final', telefono: p.telefono || '', direccion: p.direccion || '',
+    items, total, cred, pagos,
+    formaTxt: _desgloseRealPago(primera) || (p.formapago || '-'),
+    notas: p.notas || ''
+  };
+}
+
+function imprimirVenta(pedidoId, formato) {
+  const p = (_pedidosRaw || []).find(x => x._id === pedidoId);
+  if (!p) { alert('No se encontró esta venta.'); return; }
+  cerrarOpcionesImpresionVenta();
+  const d = _datosVentaParaImprimir(p);
+  const html = formato === 'ticket' ? _htmlTicketVenta(d) : _htmlPdfVenta(d);
+  const v = _abrirVentanaImpresion();
+  v.document.open();
+  v.document.write(html);
+  v.document.close();
+  // Espera a que cargue el logo (máx. 1.5 s) para que salga en la impresión.
+  const doc = v.document;
+  const imgs = Array.from(doc.images || []);
+  const cargas = imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => { img.onload = res; img.onerror = res; }));
+  Promise.race([Promise.all(cargas), new Promise(res => setTimeout(res, 1500))]).then(() => _dispararImpresion(v));
+}
+
+function _htmlTicketVenta(d) {
+  const logoUrl = location.origin + '/logo-luanaqua.png';
+  const m = n => '$' + (Number(n) || 0).toFixed(2);
+  const cantTxt = n => (n % 1 === 0 ? String(n) : n.toFixed(1));
+  const items = d.items.map(it => `
+    <div class="it">
+      <div class="it-nom">${it.esRegalo ? '[REGALO] ' : ''}${escHTML(it.nombre)}</div>
+      <div class="row"><span>${cantTxt(it.cant)} x ${it.esRegalo ? '$0.00' : m(it.pu)}</span><span>${it.esRegalo ? '$0.00' : m(it.sub)}</span></div>
+    </div>`).join('');
+  const pagos = d.pagos.map(pg => `<div class="row"><span>${escHTML(pg.forma)}</span><span>${m(pg.monto)}</span></div>`).join('');
+  const saldo = d.cred > 0.004 ? `<div class="row fuerte"><span>SALDO PENDIENTE</span><span>${m(d.cred)}</span></div>` : '';
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Ticket ${d.numero} — Aqua Luan</title>
+  <style>
+    @page{size:80mm auto;margin:0}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{width:80mm;padding:4mm 5mm 8mm;font-family:'Courier New',Courier,monospace;font-size:11.5px;color:#000;background:#fff;line-height:1.35}
+    .c{text-align:center}
+    .logo{display:block;margin:0 auto 4px;max-width:34mm;max-height:18mm;filter:grayscale(1) contrast(1.4)}
+    .marca{font-size:15px;font-weight:700;letter-spacing:.08em}
+    .tipo{font-size:11px;font-weight:700;margin-top:2px}
+    .sep{border-top:1px dashed #000;margin:6px 0}
+    .row{display:flex;justify-content:space-between;gap:8px}
+    .row span:last-child{text-align:right;white-space:nowrap}
+    .lbl{font-weight:700}
+    .it{margin-bottom:4px}
+    .it-nom{font-weight:700;word-break:break-word}
+    .total{font-size:15px;font-weight:700;margin:2px 0}
+    .fuerte{font-weight:700}
+    .nota{word-break:break-word}
+    .pie{margin-top:8px;font-size:10.5px}
+  </style></head><body>
+    <div class="c">
+      <img class="logo" src="${logoUrl}" alt="" onerror="this.style.display='none'">
+      <div class="marca">AQUA LUAN</div>
+      <div class="tipo">COMPROBANTE DE VENTA</div>
+    </div>
+    <div class="sep"></div>
+    <div class="row"><span class="lbl">N°</span><span>${escHTML(d.numero)}</span></div>
+    <div class="row"><span class="lbl">Fecha</span><span>${escHTML(d.fecha)}${d.hora ? ' ' + escHTML(d.hora) : ''}</span></div>
+    <div class="row"><span class="lbl">Ruta</span><span>${escHTML(d.ruta)}</span></div>
+    ${d.asesor ? `<div class="row"><span class="lbl">Asesor</span><span>${escHTML(d.asesor)}</span></div>` : ''}
+    <div class="sep"></div>
+    <div><span class="lbl">Cliente:</span> ${escHTML(d.cliente)}</div>
+    ${d.telefono ? `<div><span class="lbl">Tel:</span> ${escHTML(d.telefono)}</div>` : ''}
+    ${d.direccion ? `<div><span class="lbl">Dir:</span> ${escHTML(d.direccion)}</div>` : ''}
+    <div class="sep"></div>
+    ${items}
+    <div class="sep"></div>
+    <div class="row total"><span>TOTAL</span><span>${m(d.total)}</span></div>
+    <div class="sep"></div>
+    <div class="lbl">Forma de pago</div>
+    ${pagos || `<div>${escHTML(d.formaTxt)}</div>`}
+    ${saldo}
+    ${d.notas ? `<div class="sep"></div><div class="lbl">Nota</div><div class="nota">${escHTML(d.notas)}</div>` : ''}
+    <div class="sep"></div>
+    <div class="c pie">¡Gracias por su compra!<br>${escHTML(lineaImpresoPor())}<br>${new Date().toLocaleString('es-EC')}</div>
+  </body></html>`;
+}
+
+function _htmlPdfVenta(d) {
+  const logoUrl = location.origin + '/logo-luanaqua.png';
+  const m = n => '$' + (Number(n) || 0).toFixed(2);
+  const cantTxt = n => (n % 1 === 0 ? String(n) : n.toFixed(1));
+  const filas = d.items.map((it, i) => `<tr${it.esRegalo ? ' class="regalo"' : ''}>
+      <td style="text-align:center">${i + 1}</td>
+      <td>${it.esRegalo ? '<span class="tag">Regalo</span> ' : ''}${escHTML(it.nombre)}</td>
+      <td style="text-align:center">${cantTxt(it.cant)}</td>
+      <td style="text-align:right">${it.esRegalo ? '$0.00' : m(it.pu)}</td>
+      <td style="text-align:right">${it.esRegalo ? '$0.00' : m(it.sub)}</td>
+    </tr>`).join('');
+  const pagos = d.pagos.map(pg => `<tr><td>${escHTML(pg.forma)}</td><td style="text-align:right">${m(pg.monto)}</td></tr>`).join('');
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Venta ${d.numero} — ${escHTML(d.cliente)} — Aqua Luan</title>
+  <style>
+    @page{size:A4;margin:14mm}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;background:#fff;font-size:12px}
+    .head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding-bottom:14px;border-bottom:2px solid #1a3a5c;margin-bottom:18px}
+    .head img{height:54px;width:auto}
+    .head .doc{text-align:right}
+    .head h1{font-family:Georgia,'Times New Roman',serif;font-size:20px;letter-spacing:.04em}
+    .head .num{font-size:13px;font-weight:700;margin-top:4px}
+    .head .num span{color:#0a7c6e}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
+    .box{background:#f0f5f8;border-radius:8px;padding:10px 14px}
+    .box h3{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b7f93;margin-bottom:6px}
+    .box p{margin:2px 0;font-size:12px}
+    .box b{font-weight:700}
+    table{width:100%;border-collapse:collapse}
+    .items thead th{background:#1a3a5c;color:#fff;padding:8px 10px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;text-align:left}
+    .items tbody td{padding:8px 10px;border-bottom:1px solid #e5ecf1}
+    .items tbody tr:nth-child(even){background:#f7fafb}
+    .items tr.regalo td{color:#6b7f93}
+    .tag{display:inline-block;background:#e6f4f2;color:#085f54;border-radius:4px;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase}
+    .resumen{display:flex;justify-content:space-between;gap:20px;margin-top:16px;align-items:flex-start}
+    .pagos{flex:1}
+    .pagos h3,.notas h3{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b7f93;margin-bottom:6px}
+    .pagos td{padding:4px 0;border-bottom:1px dotted #d5dee6}
+    .totales{min-width:220px}
+    .totales .t{display:flex;justify-content:space-between;gap:14px;padding:6px 12px}
+    .totales .grande{background:#e6f4f2;color:#085f54;font-size:16px;font-weight:800;border-top:2px solid #0a7c6e}
+    .totales .saldo{color:#c0392b;font-weight:700}
+    .notas{margin-top:16px;background:#fffaf0;border-left:3px solid #e0a800;padding:8px 12px}
+    .firmas{display:flex;justify-content:space-between;gap:40px;margin-top:70px;page-break-inside:avoid}
+    .firma{flex:1;text-align:center}
+    .firma .l{border-top:1.5px solid #1a3a5c;margin-bottom:6px}
+    .firma .t{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+    .pie{margin-top:26px;text-align:center;font-size:10px;color:#8899aa}
+  </style></head><body>
+    <div class="head">
+      <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
+      <div class="doc">
+        <h1>COMPROBANTE DE VENTA</h1>
+        <div class="num">N° <span>${escHTML(d.numero)}</span></div>
+        <div style="font-size:11px;color:#6b7f93;margin-top:2px">${escHTML(d.fecha)}${d.hora ? ' · ' + escHTML(d.hora) : ''}</div>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="box">
+        <h3>Cliente</h3>
+        <p><b>${escHTML(d.cliente)}</b></p>
+        ${d.telefono ? `<p>Tel: ${escHTML(d.telefono)}</p>` : ''}
+        ${d.direccion ? `<p>${escHTML(d.direccion)}</p>` : ''}
+      </div>
+      <div class="box">
+        <h3>Venta</h3>
+        <p>Ruta: <b>${escHTML(d.ruta)}</b></p>
+        ${d.asesor ? `<p>Asesor: <b>${escHTML(d.asesor)}</b></p>` : ''}
+        <p>Forma de pago: <b>${escHTML(d.formaTxt)}</b></p>
+      </div>
+    </div>
+    <table class="items">
+      <thead><tr><th style="width:36px;text-align:center">#</th><th>Producto</th><th style="text-align:center">Cant.</th><th style="text-align:right">P. Unit.</th><th style="text-align:right">Subtotal</th></tr></thead>
+      <tbody>${filas || '<tr><td colspan="5" style="text-align:center;color:#8899aa">Sin productos registrados</td></tr>'}</tbody>
+    </table>
+    <div class="resumen">
+      <div class="pagos">
+        ${pagos ? `<h3>Detalle del pago</h3><table>${pagos}</table>` : ''}
+      </div>
+      <div class="totales">
+        <div class="t grande"><span>TOTAL</span><span>${m(d.total)}</span></div>
+        ${d.cred > 0.004 ? `<div class="t saldo"><span>Saldo pendiente (crédito)</span><span>${m(d.cred)}</span></div>` : ''}
+      </div>
+    </div>
+    ${d.notas ? `<div class="notas"><h3>Nota</h3><div>${escHTML(d.notas)}</div></div>` : ''}
+    <div class="firmas">
+      <div class="firma"><div class="l">&nbsp;</div><div class="t">Firma Cliente</div></div>
+      <div class="firma"><div class="l">&nbsp;</div><div class="t">Firma Asesor</div></div>
+    </div>
+    <div class="pie">Aqua Luan · ${escHTML(lineaImpresoPor())} · ${new Date().toLocaleString('es-EC')}</div>
+  </body></html>`;
 }
 
 /* [NEW] Resumen por Cliente — agrupa el detalle de pedidos por cliente,
@@ -4272,15 +4537,12 @@ function actualizarTablaCentral(datos) {
   poblarClienteSelect(datos);
   document.getElementById('clienteCard').style.display = 'block';
   if (!datos.length) { tbody.innerHTML='<tr><td colspan="13"><div class="empty-state"><div class="icon">📋</div>No hay pedidos con estos filtros</div></td></tr>'; return; }
+  const _idsConBotonImprimir = new Set(); // [NEW]
   tbody.innerHTML = datos.map((r, idx) => {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
     const pago  = r['FORMA DE PAGO'] ? `<span class="badge badge-teal">${r['FORMA DE PAGO']}</span>` : '';
-    const puedeEditar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
-    const puedeEliminar = r['_pedidoId'] && _puedeEditarCuadreCaja(r['FECHA']);
-    const accion = (puedeEditar || puedeEliminar)
-      ? `${puedeEditar?`<button class="btn-editar-fila" onclick="abrirEditarPedido('${r['_pedidoId']}')" title="Editar este pedido">✏ Editar</button>`:''}${puedeEliminar?`<button class="btn-eliminar-fila" onclick="eliminarPedidoCompleto('${r['_pedidoId']}')" title="Eliminar este pedido">🗑 Eliminar</button>`:''}`
-      : '<span style="color:var(--muted);font-size:11px">—</span>';
+    const accion = _accionesFilaPedido(r, _idsConBotonImprimir); // [NEW] incluye Imprimir (Ticket/PDF)
     const fila = `<tr>
       <td style="white-space:nowrap;font-size:12px">${limpiarFecha(r['FECHA'])}</td>
       <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${escHTML(r['HORA REGISTRO']||'-')}</td>
