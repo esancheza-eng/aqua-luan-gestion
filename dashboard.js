@@ -1292,6 +1292,8 @@ function _agruparProductosVendidos(aplicarFiltrosPv){
     if(id && por[asesor][clave].ids.indexOf(id)<0) por[asesor][clave].ids.push(id);
   };
   (_pedidosRaw||[]).forEach(p=>{
+    /* [FIX] Respeta Desde/Hasta: si el rango elegido ya estaba en memoria, _pedidosRaw trae más días que los filtrados */
+    if(typeof _estaEnRangoFiltroDash==='function' && !_estaEnRangoFiltroDash(p.fecha, p.creadoEn)) return;
     const asesor=p.empleado||'Sin asignar';
     (p.productos||[]).forEach(prod=>{
       add(asesor, prod.nombre||'Sin nombre', prod.precio, prod.cantidad, prod.subtotal, p._id);
@@ -1301,6 +1303,7 @@ function _agruparProductosVendidos(aplicarFiltrosPv){
   if(!Object.keys(por).length && Array.isArray(todosLosDatos)){
     todosLosDatos.forEach(r=>{
       const nom=r['PRODUCTO']; if(!nom) return;
+      if(typeof _estaEnRangoFiltroDash==='function' && !_estaEnRangoFiltroDash(r['FECHA'])) return; /* [FIX] mismo filtro de fecha */
       add(r['ASESOR / RUTA']||'Sin asignar', nom, r['PRECIO UNIT.'], r['CANTIDAD'], r['SUBTOTAL'], r['_pedidoId']);
     });
   }
