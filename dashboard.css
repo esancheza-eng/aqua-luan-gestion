@@ -822,3 +822,23 @@ tr.clickable:hover td { background: rgba(10,124,110,0.05); }
 .imp-venta-ico { font-size: 26px; line-height: 1; }
 .imp-venta-opcion strong { display: block; font-size: 14px; font-weight: 800; }
 .imp-venta-opcion small { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+/* [NEW] Detalle de Pedidos — la tabla cabe completa en pantalla, sin
+   desplazamiento horizontal (Administración y Secretaria). Solo CSS,
+   limitado a #tableCard: no cambia datos, cálculos ni otras tablas. */
+@media (min-width: 900px) {
+  #tableCard .table-wrap { overflow-x: visible; }
+  #tableCard table { width: 100%; table-layout: auto; font-size: 12px; }
+  #tableCard thead th {
+    padding: 9px 6px; font-size: 9.5px; letter-spacing: 0.04em;
+    white-space: normal; line-height: 1.25; vertical-align: bottom;
+  }
+  #tableCard tbody td, #tableCard tfoot td { padding: 8px 6px; vertical-align: middle; }
+  /* Montos y cantidades nunca se parten; el texto salta solo entre palabras */
+  #tableCard tbody td:nth-child(n+5):nth-child(-n+10) { white-space: nowrap; }
+  /* Detalle de pago (Abono · Saldo / desglose) puede partirse en líneas */
+  #tableCard tbody td div[style*="nowrap"] { white-space: normal !important; }
+  /* Acciones apiladas en columna para no ensanchar la tabla */
+  #tableCard .acciones-fila-pedido { flex-direction: column; align-items: stretch; gap: 4px; }
+  #tableCard .acciones-fila-pedido button { justify-content: center; padding: 4px 8px; font-size: 10.5px; }
+}
