@@ -204,6 +204,12 @@ let pedidosDetalleActuales = [];
 let _pedidosTablaFiltrados = []; // [NEW] subconjunto de pedidosDetalleActuales tras aplicar el filtro de Pago, solo para la tabla de Detalle de Pedidos y su export a PDF
 var _TAM_PAGINA_DETALLE = 100;   // [NEW] filas por página en Detalle de Pedidos
 var _paginaDetalle = 1;           // [NEW] página actual de Detalle de Pedidos
+var _paginasTablas = {};          // [NEW] página actual de las demás tablas paginadas (clave → nº de página)
+var _TAM_PAGINA_TABLAS = 100;     // [NEW] filas por página en las demás tablas
+var _rolesHistRaw = [];           // [NEW] historial de roles recibido, para poder paginarlo
+var _rutaTablaUltima = null;      // [NEW] últimos datos de la tabla de Rutas del Día, para cambiar de página
+var _cobranzasFilasActuales = []; // [NEW] clientes filtrados de Cobranzas (todas las páginas), para "Seleccionar todos"
+var _cobranzasFiltroPrev = null;  // [NEW] búsqueda/filtro anterior de Cobranzas, para volver a la página 1 al cambiarlos
 
 /* [NEW] Editar Pedido — identidad del admin actual (para el historial de cambios) */
 let ADMIN_ACTUAL = { uid: null, nombre: 'Admin', usuario: '' };
@@ -603,6 +609,42 @@ function _iniciarListenerAuditoria(){
     renderTablaAuditoria();
   }, err => console.error('listener auditoría:', err));
 }
+/* ════════════════════════════════════════════════════════════
+   [NEW] PAGINACIÓN COMÚN para las tablas grandes del Dashboard
+   (Auditoría, Pedidos Eliminados, Notas Adicionales, Cobranzas,
+   Rutas del Día, Reporte por Asesor, Inventario, Roles de Pago).
+   Muestra 100 filas por página con Anterior / Siguiente. Solo cambia
+   cuántas filas se DIBUJAN: contadores, totales, KPIs e impresiones
+   siguen usando TODOS los registros, como antes.
+════════════════════════════════════════════════════════════ */
+function _paginarTabla(clave, lista){
+  const tam = _TAM_PAGINA_TABLAS;
+  const totalPaginas = Math.max(1, Math.ceil(lista.length / tam));
+  let pag = _paginasTablas[clave] || 1;
+  if (pag > totalPaginas) pag = totalPaginas;
+  if (pag < 1) pag = 1;
+  _paginasTablas[clave] = pag;
+  const inicio = (pag - 1) * tam;
+  return { items: lista.slice(inicio, inicio + tam), pagina: pag, totalPaginas, inicio, total: lista.length };
+}
+function _htmlPaginadorTabla(clave, pg, colspan, fnRender){
+  if (pg.totalPaginas <= 1) return '';
+  const estilo = (a) => `background:${a?'var(--navy)':'#cfd8dc'};color:${a?'#fff':'#78909c'};border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12px;cursor:${a?'pointer':'default'}`;
+  const ant = pg.pagina > 1, sig = pg.pagina < pg.totalPaginas;
+  return `<tr class="fila-paginador" data-pag="${clave}"><td colspan="${colspan}" style="text-align:center;padding:12px;background:var(--surface2)">
+      <button type="button" style="${estilo(ant)}" ${ant?`onclick="event.stopPropagation();_irPaginaTabla('${clave}',${pg.pagina-1},'${fnRender}')"`:'disabled'}>◀ Anterior</button>
+      <span style="font-size:12px;font-weight:700;color:var(--navy);margin:0 12px">Página ${pg.pagina} de ${pg.totalPaginas} · registros ${pg.inicio+1}–${pg.inicio+pg.items.length} de ${pg.total}</span>
+      <button type="button" style="${estilo(sig)}" ${sig?`onclick="event.stopPropagation();_irPaginaTabla('${clave}',${pg.pagina+1},'${fnRender}')"`:'disabled'}>Siguiente ▶</button>
+    </td></tr>`;
+}
+function _irPaginaTabla(clave, n, fnRender){
+  _paginasTablas[clave] = n;
+  const fn = window[fnRender];
+  if (typeof fn === 'function') fn();
+  const fila = document.querySelector('tr.fila-paginador[data-pag="'+clave+'"]');
+  const tabla = fila && fila.closest('table');
+  if (tabla) tabla.scrollIntoView({ behavior:'smooth', block:'start' });
+}
 function renderTablaAuditoria(){
   const tbody = document.getElementById('auditoriaTbody');
   const count = document.getElementById('auditoriaCount');
@@ -618,7 +660,8 @@ function renderTablaAuditoria(){
     if (r.campo) return `<b>${r.campo}:</b> "${(r.valorAnterior||'').toString().slice(0,40)}" → "${(r.valorNuevo||'').toString().slice(0,40)}"`;
     return r.detalle || '-';
   };
-  tbody.innerHTML = registros.length ? registros.map(r => `<tr>
+  const pgAud = _paginarTabla('auditoria', registros); // [NEW] paginación de 100
+  tbody.innerHTML = registros.length ? pgAud.items.map(r => `<tr>
       <td style="font-size:12px;white-space:nowrap">${r.fecha||'-'}</td>
       <td style="font-size:12px;white-space:nowrap">${r.hora||'-'}</td>
       <td style="font-size:12px;font-weight:600">${r.usuarioAdmin||'-'}</td>
@@ -626,7 +669,7 @@ function renderTablaAuditoria(){
       <td>${badgeAccion(r.accion)}</td>
       <td style="font-size:12px;color:var(--muted)">${detalleDe(r)}</td>
       <td style="font-size:12px;color:var(--muted);font-style:italic">${escHTML(r.motivo||'-')}</td>
-    </tr>`).join('') : '<tr><td colspan="7"><div class="empty-state"><div class="icon">🕵️</div>Sin registros de auditoría en el período filtrado</div></td></tr>';
+    </tr>`).join('') + _htmlPaginadorTabla('auditoria', pgAud, 7, 'renderTablaAuditoria') : '<tr><td colspan="7"><div class="empty-state"><div class="icon">🕵️</div>Sin registros de auditoría en el período filtrado</div></td></tr>';
 }
 function detenerListenerAuditoria(){ if(_unsubAuditoria){_unsubAuditoria();_unsubAuditoria=null;} }
 
@@ -1589,7 +1632,8 @@ function renderNotasAdicionalesDash(){
     const f=p.fecha||'';
     return !hoy || !f || f<=hoy;
   };
-  tbody.innerHTML = pedidosConNota.map(p => {
+  const pgNotas = _paginarTabla('notasAdicionales', pedidosConNota); // [NEW] paginación de 100
+  tbody.innerHTML = pgNotas.items.map(p => {
     const id=escHTML(p._id||'').replace(/'/g,"\\'");
     const acc=puede(p)?`<button type="button" class="btn-editar-fila" onclick="editarNotaAdicional('${id}')">✏ Editar</button>
       <button type="button" class="btn-eliminar-fila" onclick="eliminarNotaAdicional('${id}')">🗑 Eliminar</button>`:'';
@@ -1600,7 +1644,7 @@ function renderNotasAdicionalesDash(){
       <td style="font-weight:700;color:var(--navy)">📝 ${escHTML(p.notas)}</td>
       <td style="white-space:nowrap">${acc}</td>
     </tr>`;
-  }).join('');
+  }).join('') + _htmlPaginadorTabla('notasAdicionales', pgNotas, 5, 'renderNotasAdicionalesDash');
 }
 async function editarNotaAdicional(pedidoId){
   const p=(_pedidosRaw||[]).find(x=>x._id===pedidoId);
@@ -3383,16 +3427,23 @@ function _iniciarListenerRolesHistorial(){
   // ningún total acumulado, así que limitar aquí es seguro.
   _unsubRolesHist = db.collection('rolesPago').orderBy('creadoEn','desc').limit(150).onSnapshot(snap => {
     const roles = snap.docs.map(d => d.data()).sort((a,b) => (b.creadoEn?.toMillis?.()||0) - (a.creadoEn?.toMillis?.()||0));
+    _rolesHistRaw = roles; // [NEW] se guarda para paginar sin volver a consultar Firestore
+    _renderRolesHistorial();
+  }, err => console.error('listener roles:', err));
+}
+/* [NEW] Antes se mostraban solo los primeros 100 roles (slice(0,100)); ahora se paginan de 100 en 100 */
+function _renderRolesHistorial(){
+    const roles = _rolesHistRaw || [];
     const tbody = document.getElementById('tablaRolesHistorial');
     if (!tbody) return;
-    tbody.innerHTML = roles.length ? roles.slice(0,100).map(r => `<tr>
+    const pgRoles = _paginarTabla('rolesHistorial', roles);
+    tbody.innerHTML = roles.length ? pgRoles.items.map(r => `<tr>
         <td style="font-size:12px">${r.periodoDesde||'-'} → ${r.periodoHasta||'-'}</td>
         <td style="font-weight:600">${r.asesorNombre||'-'}</td>
         <td style="text-align:right;font-weight:700;color:var(--teal)">$${(r.totalPagado||0).toFixed(2)}</td>
         <td style="font-size:12px">${r.generadoPor||'-'}</td>
         <td style="font-size:12px;color:var(--muted)">${r.fechaGeneracion||'-'}</td>
-      </tr>`).join('') : '<tr><td colspan="5"><div class="empty-state"><div class="icon">📋</div>Sin roles generados aún</div></td></tr>';
-  }, err => console.error('listener roles:', err));
+      </tr>`).join('') + _htmlPaginadorTabla('rolesHistorial', pgRoles, 5, '_renderRolesHistorial') : '<tr><td colspan="5"><div class="empty-state"><div class="icon">📋</div>Sin roles generados aún</div></td></tr>';
 }
 function detenerListenerRolesHistorial(){ if(_unsubRolesHist){_unsubRolesHist();_unsubRolesHist=null;} }
 
@@ -3700,6 +3751,7 @@ function _onSnapshotColeccionLista() {
 }
 function iniciarListenersDashboard() {
   _paginaDetalle = 1; // [NEW] al cambiar el filtro de fechas vuelve a la página 1 de Detalle de Pedidos
+  _paginasTablas = {}; // [NEW] y también vuelven a la página 1 las demás tablas paginadas
   const { desde, hasta } = _rangoFiltroActualDash();
   /* Si el rango pedido ya está en memoria (mismo Desde/Hasta o un subconjunto),
      no se desarman los listeners ni se vuelve a bajar Firestore. El asesor se
@@ -4650,6 +4702,7 @@ function rutasHoy() {
   aplicarRutas();
 }
 function aplicarRutas() {
+  _paginasTablas['rutas'] = 1; // [NEW] al aplicar un filtro de rutas vuelve a la página 1
   const fecha  = document.getElementById('rutasFecha').value;
   const asesor = document.getElementById('rutasAsesor').value;
   const lu=document.getElementById('rutasLastUpdate');
@@ -4827,9 +4880,13 @@ function renderAsesorCards(datosAll,datosGPS) {
 function renderRutaTabla(datos,markerRefs) {
   const card=document.getElementById('rutaDetailCard'),tbody=document.getElementById('tablaRutaDetalle'),badge=document.getElementById('rutaCountBadge'),note=document.getElementById('rutaTableNote');
   if(!datos.length){ card.style.display='block'; tbody.innerHTML='<tr><td colspan="11"><div class="empty-state"><div class="icon">🗺️</div>Sin registros para este filtro</div></td></tr>'; badge.textContent='0 registros'; note.textContent=''; return; }
-  const mostrar=datos.slice(0,200);
-  card.style.display='block'; badge.textContent=mostrar.length+' registro'+(mostrar.length!==1?'s':'');
-  note.textContent=datos.length>200?`Mostrando 200 de ${datos.length} registros totales.`:'';
+  /* [FIX] Antes solo se mostraban los primeros 200 registros y el resto no se podía ver.
+     Ahora se paginan de 100 en 100 con Anterior / Siguiente. */
+  _rutaTablaUltima = { datos, markerRefs };
+  const pgRuta = _paginarTabla('rutas', datos);
+  const mostrar = pgRuta.items;
+  card.style.display='block'; badge.textContent=datos.length+' registro'+(datos.length!==1?'s':'');
+  note.textContent='';
   tbody.innerHTML=mostrar.map((r,idx)=>{
     const asesorKey=r['ASESOR / RUTA']||'', color=asesorKey?colorDeAsesor(asesorKey):'#ccc', nombre=asesorKey.split(':')[1]?.trim()||asesorKey||'-';
     const total=r['TOTAL PEDIDO ($)']?`<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>`:'<span style="color:var(--muted)">—</span>';
@@ -4840,7 +4897,7 @@ function renderRutaTabla(datos,markerRefs) {
     const rowClick=hasGPS?`onclick="flyToMarker('${(r['CLIENTE']+'-'+r['HORA REGISTRO']+'-'+asesorKey).replace(/'/g,"\\'")}',${parseFloat(r['LATITUD'])},${parseFloat(r['LONGITUD'])})"`:'';
     const rowClass=hasGPS?'clickable-row':'';
     return `<tr class="${rowClass}" id="rrow-${idx}" ${rowClick} ${hasGPS?'title="Click para ver en el mapa"':''}>
-      <td style="text-align:center;font-size:11px;color:var(--muted);font-weight:700">${idx+1}</td>
+      <td style="text-align:center;font-size:11px;color:var(--muted);font-weight:700">${pgRuta.inicio+idx+1}</td>
       <td><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span><span style="font-size:11px;font-weight:700;color:${color}">${nombre}</span></span></td>
       <td style="font-size:12px;font-weight:700;white-space:nowrap">${r['HORA REGISTRO']||'-'}</td>
       <td style="font-weight:600">${escHTML(r['CLIENTE']||'-')}</td>
@@ -4852,7 +4909,11 @@ function renderRutaTabla(datos,markerRefs) {
       <td>${notas}</td>
       <td>${gps}</td>
     </tr>`;
-  }).join('');
+  }).join('') + _htmlPaginadorTabla('rutas', pgRuta, 11, '_renderRutaTablaUltima');
+}
+/* [NEW] Redibuja la tabla de Rutas del Día con los últimos datos (al cambiar de página) */
+function _renderRutaTablaUltima(){
+  if (_rutaTablaUltima) renderRutaTabla(_rutaTablaUltima.datos, _rutaTablaUltima.markerRefs);
 }
 
 function flyToMarker(key,lat,lng) {
@@ -5411,6 +5472,7 @@ function renderReporteAsesores(){
 
 function seleccionarAsesorReporte(ruta){
   _asesorReporteSeleccionado = ruta;
+  _paginasTablas['reporteAsesor'] = 1; // [NEW] al elegir otro asesor vuelve a la página 1
   document.querySelectorAll('#reporteAsesorCardsGrid .asesor-card').forEach(card=>{
     card.style.boxShadow='';
   });
@@ -5514,11 +5576,13 @@ function renderReporteAsesorDetalle(){
     ? `<tr style="background:#e6f4f2;font-weight:800"><td>TOTAL GASTOS</td><td style="text-align:right;color:var(--red)">$${totalGastos.toFixed(2)}</td><td></td></tr>`
     : '';
 
-  const filasPedidos = pedidos.slice(0,150).map(r => {
+  /* [FIX] Antes solo se mostraban los primeros 150 pedidos; ahora se paginan de 100 en 100 */
+  const pgRepAse = _paginarTabla('reporteAsesor', pedidos);
+  const filasPedidos = (pgRepAse.items.map(r => {
     const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
     const pago = r['FORMA DE PAGO'] ? `<span class="badge badge-teal">${r['FORMA DE PAGO']}</span>` : '';
     return `<tr><td style="font-size:12px">${limpiarFecha(r['FECHA'])}</td><td style="font-weight:600">${escHTML(r['CLIENTE']||'-')}</td><td style="font-size:12px">${escHTML(r['PRODUCTO']||'-')}</td><td style="text-align:center">${r['CANTIDAD']||'-'}</td><td style="text-align:right">${total}</td><td>${pago}</td></tr>`;
-  }).join('') || '<tr><td colspan="6"><div class="empty-state"><div class="icon">📋</div>Sin pedidos en este período</div></td></tr>';
+  }).join('') || '<tr><td colspan="6"><div class="empty-state"><div class="icon">📋</div>Sin pedidos en este período</div></td></tr>') + _htmlPaginadorTabla('reporteAsesor', pgRepAse, 6, 'renderReporteAsesorDetalle');
 
   const filasPagos = pagos.map(r => `<tr><td style="font-weight:600">${escHTML(r['CLIENTE']||'-')}</td><td style="text-align:right;font-weight:700;color:var(--blue)">$${(parseFloat(r['TOTAL PEDIDO ($)'])||0).toFixed(2)}</td><td>${r['FORMA DE PAGO']?`<span class="badge badge-blue">${r['FORMA DE PAGO']}</span>`:'-'}</td><td style="font-size:12px;color:var(--muted)">${limpiarFecha(r['FECHA'])}</td></tr>`).join('')
     || '<tr><td colspan="4" style="text-align:center;color:var(--muted)">Sin pagos registrados</td></tr>';
@@ -6189,7 +6253,13 @@ function renderCobranzasClientes(){
     return;
   }
   if(typeof _cobranzasSeleccion==='undefined') window._cobranzasSeleccion=new Set();
-  tbody.innerHTML=rows.map(c=>{
+  /* [NEW] Paginación de 100: al cambiar la búsqueda o el filtro de saldo vuelve a la página 1 */
+  const firmaFiltroCob=q+'|'+filtro;
+  if(_cobranzasFiltroPrev!==null && _cobranzasFiltroPrev!==firmaFiltroCob) _paginasTablas['cobranzas']=1;
+  _cobranzasFiltroPrev=firmaFiltroCob;
+  _cobranzasFilasActuales=rows;
+  const pgCob=_paginarTabla('cobranzas', rows);
+  tbody.innerHTML=pgCob.items.map(c=>{
     const saldoTxt=c.saldo>0.004 ? ('$'+c.saldo.toFixed(2)) : (c.saldo<-0.004 ? ('-$'+Math.abs(c.saldo).toFixed(2)) : '$0.00');
     const color=c.saldo>0.004 ? 'var(--red)' : (c.saldo<-0.004 ? '#0a7c6e' : 'var(--muted)');
     const key=_normNombreCliente(c.nombre);
@@ -6206,7 +6276,7 @@ function renderCobranzasClientes(){
       <td style="text-align:right;color:var(--teal);font-weight:700">$${c.cobros.toFixed(2)}</td>
       <td style="text-align:right;font-weight:800;color:${color}">${saldoTxt}</td>
     </tr>`;
-  }).join('');
+  }).join('') + _htmlPaginadorTabla('cobranzas', pgCob, 9, 'renderCobranzasClientes');
 }
 
 let _cobranzasSeleccion=new Set();
@@ -6221,6 +6291,13 @@ function toggleTodosCobranzas(el){
   document.querySelectorAll('#tablaCobranzasClientes .cob-chk').forEach(chk=>{
     chk.checked=!!el.checked;
     const key=chk.getAttribute('data-cob-key')||'';
+    if(!key) return;
+    if(el.checked) _cobranzasSeleccion.add(key); else _cobranzasSeleccion.delete(key);
+  });
+  /* [NEW] Con paginación, "Seleccionar todos" también marca/desmarca los clientes
+     filtrados de las OTRAS páginas, igual que antes cuando todos estaban en pantalla. */
+  (_cobranzasFilasActuales||[]).forEach(c=>{
+    const key=_normNombreCliente(c.nombre);
     if(!key) return;
     if(el.checked) _cobranzasSeleccion.add(key); else _cobranzasSeleccion.delete(key);
   });
@@ -6936,7 +7013,8 @@ function renderTablaEliminados(){
     tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="icon">🗑</div>No hay pedidos eliminados en el período filtrado</div></td></tr>';
     return;
   }
-  tbody.innerHTML = lista.map((p, idx) => {
+  const pgElim = _paginarTabla('eliminados', lista); // [NEW] paginación de 100
+  tbody.innerHTML = pgElim.items.map((p, idx) => {
     const total = p.total != null ? `<strong style="color:var(--red)">$${parseFloat(p.total).toFixed(2)}</strong>` : '—';
     const pago = p.formapago ? `<span class="badge badge-red">${escHTML(p.formapago)}</span>` : '';
     const asesorNombre = escHTML((p.empleado||'').split(':')[1]?.trim() || p.empleado || '-');
@@ -6981,7 +7059,7 @@ function renderTablaEliminados(){
         </table>
       </td>
     </tr>`;
-  }).join('');
+  }).join('') + _htmlPaginadorTabla('eliminados', pgElim, 10, 'renderTablaEliminados');
 }
 function toggleEliminadoDetalle(idx){
   const fila = document.getElementById('filaEliminadoDetalle-'+idx);
@@ -7018,10 +7096,12 @@ function renderInventario(){
   }
   const tbodyMov = document.getElementById('tablaMovimientosInv');
   if (tbodyMov) {
-    tbodyMov.innerHTML = _movimientosInvRaw.length ? _movimientosInvRaw.slice(0,150).map(m => {
+    /* [FIX] Antes solo se mostraban los primeros 150 movimientos; ahora se paginan de 100 en 100 */
+    const pgInv = _paginarTabla('inventarioMov', _movimientosInvRaw);
+    tbodyMov.innerHTML = _movimientosInvRaw.length ? pgInv.items.map(m => {
       const tipoBadge = m.tipo === 'entrada' ? '<span class="badge badge-teal">🟢 Entrada</span>' : '<span class="badge badge-red">🔴 Salida</span>';
       return `<tr><td style="font-size:12px">${limpiarFecha(m.fecha)}</td><td style="font-weight:600">${escHTML(m.producto)}</td><td>${tipoBadge}</td><td style="text-align:right;font-weight:700">${escHTML(String(m.cantidad))}</td><td style="font-size:12px;color:var(--muted)">${escHTML(m.motivo||'-')}</td><td style="font-size:12px">${escHTML(m.usuario||'-')}</td></tr>`;
-    }).join('') : '<tr><td colspan="6"><div class="empty-state"><div class="icon">📋</div>Sin historial</div></td></tr>';
+    }).join('') + _htmlPaginadorTabla('inventarioMov', pgInv, 6, 'renderInventario') : '<tr><td colspan="6"><div class="empty-state"><div class="icon">📋</div>Sin historial</div></td></tr>';
   }
 }
 async function registrarMovimientoInventario(){
