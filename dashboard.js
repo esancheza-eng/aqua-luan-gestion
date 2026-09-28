@@ -202,6 +202,8 @@ let mapMarkers = [];
 let mapPolylines = [];
 let pedidosDetalleActuales = [];
 let _pedidosTablaFiltrados = []; // [NEW] subconjunto de pedidosDetalleActuales tras aplicar el filtro de Pago, solo para la tabla de Detalle de Pedidos y su export a PDF
+var _PASO_FILAS_DETALLE = 500;   // [FIX] filas por bloque en Detalle de Pedidos (antes tope fijo de 100)
+var _limiteFilasDetalle = 500;   // [FIX] filas visibles actualmente (crece con "Mostrar más")
 
 /* [NEW] Editar Pedido — identidad del admin actual (para el historial de cambios) */
 let ADMIN_ACTUAL = { uid: null, nombre: 'Admin', usuario: '' };
@@ -3695,6 +3697,7 @@ function _onSnapshotColeccionLista() {
   _recalcularTodosLosDatosDebounced();
 }
 function iniciarListenersDashboard() {
+  _limiteFilasDetalle = _PASO_FILAS_DETALLE; // [FIX] al cambiar el filtro vuelve al primer bloque de filas
   const { desde, hasta } = _rangoFiltroActualDash();
   /* Si el rango pedido ya está en memoria (mismo Desde/Hasta o un subconjunto),
      no se desarman los listeners ni se vuelve a bajar Firestore. El asesor se
@@ -4090,6 +4093,11 @@ function onChangeFiltroProducto() {
   renderDashboard();
 }
 
+/* [FIX] Límite de filas visibles en Detalle de Pedidos (antes fijo en 100) */
+function _mostrarMasFilasDetalle() {
+  _limiteFilasDetalle += _PASO_FILAS_DETALLE;
+  renderTabla(_pedidosTablaFiltrados);
+}
 function renderTabla(pedidos) {
   const tbody = document.getElementById('tablaPedidos');
   if (!pedidos.length) {
@@ -4098,7 +4106,12 @@ function renderTabla(pedidos) {
     if(foot0) foot0.innerHTML='';
     return;
   }
-  const lista = pedidos.slice(0,100);
+  /* [FIX] Antes solo se mostraban las primeras 100 filas (slice(0,100)). Como la lista
+     viene ordenada de más reciente a más antigua, con un rango de varios días solo se veía
+     el último día (ej. 25 al 26 → solo salía el 26), aunque el pie sí contaba todas las
+     líneas. Ahora se muestran hasta _limiteFilasDetalle filas y, si hay más, un botón
+     "Mostrar más" carga el siguiente bloque (evita congelar la pantalla con "Todo"). */
+  const lista = pedidos.slice(0,_limiteFilasDetalle);
   const _idsConBotonImprimir = new Set(); // [NEW] un solo botón Imprimir por venta (en su primera fila visible)
   tbody.innerHTML = lista.map((r, idx) => {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
@@ -4145,7 +4158,12 @@ function renderTabla(pedidos) {
     const este = String(r['CLIENTE']||'').trim().toLowerCase();
     const sig = String(lista[idx+1]?.['CLIENTE']||'').trim().toLowerCase();
     return fila + ((idx < lista.length-1 && este !== sig) ? '<tr class="sep-cliente"><td colspan="13"></td></tr>' : '');
-  }).join('');
+  }).join('') + (pedidos.length > lista.length
+    ? `<tr><td colspan="13" style="text-align:center;padding:14px">
+         <span style="font-size:12px;color:var(--muted);margin-right:10px">Mostrando ${lista.length} de ${pedidos.length} línea(s)</span>
+         <button type="button" class="btn" style="background:var(--teal);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer" onclick="_mostrarMasFilasDetalle()">Mostrar ${Math.min(_PASO_FILAS_DETALLE, pedidos.length-lista.length)} más</button>
+       </td></tr>`
+    : '');
   const foot=document.getElementById('tablaPedidosFoot');
   if(foot){
     const t=_totalYEtiquetaDetalleFiltrado(pedidos);
