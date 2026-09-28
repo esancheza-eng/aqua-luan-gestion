@@ -202,8 +202,8 @@ let mapMarkers = [];
 let mapPolylines = [];
 let pedidosDetalleActuales = [];
 let _pedidosTablaFiltrados = []; // [NEW] subconjunto de pedidosDetalleActuales tras aplicar el filtro de Pago, solo para la tabla de Detalle de Pedidos y su export a PDF
-var _PASO_FILAS_DETALLE = 500;   // [FIX] filas por bloque en Detalle de Pedidos (antes tope fijo de 100)
-var _limiteFilasDetalle = 500;   // [FIX] filas visibles actualmente (crece con "Mostrar más")
+var _TAM_PAGINA_DETALLE = 100;   // [NEW] filas por página en Detalle de Pedidos
+var _paginaDetalle = 1;           // [NEW] página actual de Detalle de Pedidos
 
 /* [NEW] Editar Pedido — identidad del admin actual (para el historial de cambios) */
 let ADMIN_ACTUAL = { uid: null, nombre: 'Admin', usuario: '' };
@@ -328,6 +328,8 @@ function switchSeccionDash(sec){
   // Firestore si esta pestaña no está activa (ver comentario en renderDashboard) —
   // así que al entrar aquí se redibujan al instante con los últimos datos en caché.
   if (sec === 'resumen' && typeof renderCharts === 'function') renderCharts(_kpiPedidosCache, _kpiPedidosConTotalCache);
+  // [NEW] Detalle de Pedidos: se dibuja al entrar con los últimos datos ya filtrados
+  if (sec === 'pedidos' && typeof renderTabla === 'function') renderTabla(_pedidosTablaFiltrados);
   // [FIX] Mismo patrón para el resumen por cliente (pestaña "Resumen General") y la
   // tabla de "Consultar por Cliente" — se recalculan al instante solo al entrar,
   // usando los datos que ya se tenían en caché desde el último cambio de Firestore.
@@ -3697,7 +3699,7 @@ function _onSnapshotColeccionLista() {
   _recalcularTodosLosDatosDebounced();
 }
 function iniciarListenersDashboard() {
-  _limiteFilasDetalle = _PASO_FILAS_DETALLE; // [FIX] al cambiar el filtro vuelve al primer bloque de filas
+  _paginaDetalle = 1; // [NEW] al cambiar el filtro de fechas vuelve a la página 1 de Detalle de Pedidos
   const { desde, hasta } = _rangoFiltroActualDash();
   /* Si el rango pedido ya está en memoria (mismo Desde/Hasta o un subconjunto),
      no se desarman los listeners ni se vuelve a bajar Firestore. El asesor se
@@ -3851,7 +3853,11 @@ function renderDashboard() {
   renderFiltroProductoSelect(pedidos); // [NEW] filtro por producto en Detalle de Pedidos
   _pedidosTablaFiltrados = _filtrarPorPagoChecklist(_filtrarPorProducto(pedidos));
   renderFiltroPagoDropdown(pedidos);
-  renderTabla(_pedidosTablaFiltrados);
+  // [NEW] La tabla de Detalle de Pedidos solo se dibuja si esa pestaña está abierta.
+  // Si no, los datos quedan listos en _pedidosTablaFiltrados y se dibuja al entrar
+  // (ver switchSeccionDash). Así no se trabaja en balde con cada pedido en tiempo real.
+  const seccionPedidosVisible = document.getElementById('seccion-pedidos')?.classList.contains('active');
+  if (seccionPedidosVisible) renderTabla(_pedidosTablaFiltrados);
   // [FIX] LA PANTALLA SE CONGELABA con muchos clientes acumulados: renderResumenPorCliente()
   // arma una tarjeta HTML completa por cada cliente único, y poblarClienteSelect() calcula
   // sus estadísticas — ambas cosas corrían en CADA cambio de Firestore sin importar si el
@@ -4051,9 +4057,11 @@ function renderFiltroPagoDropdown(pedidosSinFiltrarPago) {
 }
 function toggleFiltroPago(valor, marcado) {
   if (marcado) _pagoFiltroExcluidos.delete(valor); else _pagoFiltroExcluidos.add(valor);
+  _paginaDetalle = 1; // [NEW]
   renderDashboard();
 }
 function marcarTodosFiltroPago(marcarTodo) {
+  _paginaDetalle = 1; // [NEW]
   if (marcarTodo) { _pagoFiltroExcluidos.clear(); }
   else { FORMAS_PAGO_FIJAS.forEach(o => _pagoFiltroExcluidos.add(o)); }
   renderDashboard();
@@ -4090,13 +4098,15 @@ function renderFiltroProductoSelect(pedidos) {
 function onChangeFiltroProducto() {
   const sel = document.getElementById('filtroProducto');
   _productoFiltroSeleccionado = sel ? sel.value : '';
+  _paginaDetalle = 1; // [NEW]
   renderDashboard();
 }
 
-/* [FIX] Límite de filas visibles en Detalle de Pedidos (antes fijo en 100) */
-function _mostrarMasFilasDetalle() {
-  _limiteFilasDetalle += _PASO_FILAS_DETALLE;
+/* [NEW] Paginación de Detalle de Pedidos: 100 filas por página, sin ocultar nada */
+function _irPaginaDetalle(n) {
+  _paginaDetalle = n;
   renderTabla(_pedidosTablaFiltrados);
+  document.getElementById('tableCard')?.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 function renderTabla(pedidos) {
   const tbody = document.getElementById('tablaPedidos');
@@ -4106,12 +4116,15 @@ function renderTabla(pedidos) {
     if(foot0) foot0.innerHTML='';
     return;
   }
-  /* [FIX] Antes solo se mostraban las primeras 100 filas (slice(0,100)). Como la lista
-     viene ordenada de más reciente a más antigua, con un rango de varios días solo se veía
-     el último día (ej. 25 al 26 → solo salía el 26), aunque el pie sí contaba todas las
-     líneas. Ahora se muestran hasta _limiteFilasDetalle filas y, si hay más, un botón
-     "Mostrar más" carga el siguiente bloque (evita congelar la pantalla con "Todo"). */
-  const lista = pedidos.slice(0,_limiteFilasDetalle);
+  /* [FIX] Antes solo se mostraban las primeras 100 filas (slice(0,100)) y el resto quedaba
+     oculto: con un rango de varios días solo se veía el último día (ej. 25 al 26 → solo
+     salía el 26), aunque el pie sí contaba todas las líneas. Ahora se pagina de 100 en 100
+     con botones Anterior / Siguiente, así no se oculta nada y la pantalla sigue liviana. */
+  const totalPaginas = Math.max(1, Math.ceil(pedidos.length / _TAM_PAGINA_DETALLE));
+  if (_paginaDetalle > totalPaginas) _paginaDetalle = totalPaginas;
+  if (_paginaDetalle < 1) _paginaDetalle = 1;
+  const inicio = (_paginaDetalle - 1) * _TAM_PAGINA_DETALLE;
+  const lista = pedidos.slice(inicio, inicio + _TAM_PAGINA_DETALLE);
   const _idsConBotonImprimir = new Set(); // [NEW] un solo botón Imprimir por venta (en su primera fila visible)
   tbody.innerHTML = lista.map((r, idx) => {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
@@ -4158,18 +4171,21 @@ function renderTabla(pedidos) {
     const este = String(r['CLIENTE']||'').trim().toLowerCase();
     const sig = String(lista[idx+1]?.['CLIENTE']||'').trim().toLowerCase();
     return fila + ((idx < lista.length-1 && este !== sig) ? '<tr class="sep-cliente"><td colspan="13"></td></tr>' : '');
-  }).join('') + (pedidos.length > lista.length
-    ? `<tr><td colspan="13" style="text-align:center;padding:14px">
-         <span style="font-size:12px;color:var(--muted);margin-right:10px">Mostrando ${lista.length} de ${pedidos.length} línea(s)</span>
-         <button type="button" class="btn" style="background:var(--teal);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer" onclick="_mostrarMasFilasDetalle()">Mostrar ${Math.min(_PASO_FILAS_DETALLE, pedidos.length-lista.length)} más</button>
-       </td></tr>`
-    : '');
+  }).join('');
   const foot=document.getElementById('tablaPedidosFoot');
   if(foot){
     const t=_totalYEtiquetaDetalleFiltrado(pedidos);
     const cantTotal=pedidos.reduce((s,r)=>s+(parseFloat(r['CANTIDAD'])||0),0);
     const cantTxt=cantTotal%1===0?String(parseInt(cantTotal)):cantTotal.toFixed(1);
-    foot.innerHTML=`<tr style="background:#e6f4f2;font-weight:800;color:#085f54"><td colspan="6" style="text-align:right;padding:10px">${escHTML(t.label)}</td><td style="text-align:center;padding:10px">${cantTxt}</td><td></td><td></td><td style="text-align:right;padding:10px">$${t.total.toFixed(2)}</td><td colspan="3" style="font-size:11px;font-weight:600;color:var(--muted)">${pedidos.length} línea(s)</td></tr>`;
+    // [NEW] Controles de página (solo si hay más de una página)
+    const estiloBtn = (activo) => `background:${activo?'var(--navy)':'#cfd8dc'};color:${activo?'#fff':'#78909c'};border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12px;cursor:${activo?'pointer':'default'}`;
+    const hayAnt = _paginaDetalle > 1, haySig = _paginaDetalle < totalPaginas;
+    const paginador = totalPaginas > 1 ? `<tr><td colspan="13" style="text-align:center;padding:12px">
+        <button type="button" style="${estiloBtn(hayAnt)}" ${hayAnt?`onclick="_irPaginaDetalle(${_paginaDetalle-1})"`:'disabled'}>◀ Anterior</button>
+        <span style="font-size:12px;font-weight:700;color:var(--navy);margin:0 12px">Página ${_paginaDetalle} de ${totalPaginas} · líneas ${inicio+1}–${inicio+lista.length} de ${pedidos.length}</span>
+        <button type="button" style="${estiloBtn(haySig)}" ${haySig?`onclick="_irPaginaDetalle(${_paginaDetalle+1})"`:'disabled'}>Siguiente ▶</button>
+      </td></tr>` : '';
+    foot.innerHTML=`<tr style="background:#e6f4f2;font-weight:800;color:#085f54"><td colspan="6" style="text-align:right;padding:10px">${escHTML(t.label)}</td><td style="text-align:center;padding:10px">${cantTxt}</td><td></td><td></td><td style="text-align:right;padding:10px">$${t.total.toFixed(2)}</td><td colspan="3" style="font-size:11px;font-weight:600;color:var(--muted)">${pedidos.length} línea(s)</td></tr>` + paginador;
   }
 }
 
