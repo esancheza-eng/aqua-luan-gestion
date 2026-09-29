@@ -5455,6 +5455,44 @@ function exportarClientesSeleccionadosPDF() {
   if (!seleccionados.length) { alert('Selecciona al menos un cliente primero.'); return; }
   _imprimirClientesPDF(seleccionados);
 }
+/* [NEW] Versión para impresión del "🔗 Cruce de deudas vs pagos" y "💳 Pagos registrados en
+   Cuadre de Caja" — misma lógica que _pintarCruceDeudaPagosCliente() del modal (pagos
+   aplicados a las deudas más antiguas primero). */
+function _htmlCruceClientePrint(c) {
+  const deudas = (c.deudasDetalle || []).slice().sort((a,b) => String(a.fecha).localeCompare(String(b.fecha)) || (a.ms||0)-(b.ms||0));
+  const pagos = (c.pagosDetalle || []).slice().sort((a,b) => String(a.fecha).localeCompare(String(b.fecha)) || (a.ms||0)-(b.ms||0));
+  if (!deudas.length && !pagos.length) return '';
+  let disponible = pagos.reduce((s,p) => s + (Number(p.monto)||0), 0);
+  const filasDeuda = deudas.map(d => {
+    const aplicado = Math.min(d.credito, Math.max(0, disponible));
+    disponible -= aplicado;
+    const saldo = d.credito - aplicado;
+    const estado = saldo <= 0.004
+      ? '<span class="est est-ok">Cancelada</span>'
+      : (aplicado > 0.004 ? '<span class="est est-parcial">Abono parcial</span>' : '<span class="est est-pend">Pendiente</span>');
+    return `<tr>
+      <td>${limpiarFecha(d.fecha)}</td>
+      <td style="text-align:right">$${(d.total||0).toFixed(2)}</td>
+      <td style="text-align:right;font-weight:700">$${d.credito.toFixed(2)}</td>
+      <td style="text-align:right;font-weight:700;color:#0a7c6e">$${aplicado.toFixed(2)}</td>
+      <td style="text-align:right;font-weight:800;color:${saldo>0.004?'#c0392b':'#888'}">$${Math.max(0,saldo).toFixed(2)}</td>
+      <td>${estado}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#888">Sin ventas a crédito en el período</td></tr>';
+  const aFavor = disponible > 0.004 ? `<div class="a-favor">Saldo a favor del cliente (pagó más que la deuda del período): $${disponible.toFixed(2)}</div>` : '';
+  const filasPagos = pagos.map(p => `<tr>
+      <td>${limpiarFecha(p.fecha)}</td>
+      <td>${escHTML(p.forma||'-')}</td>
+      <td>${escHTML((p.asesor||'').split(':')[1]?.trim()||p.asesor||'-')}</td>
+      <td style="text-align:right;font-weight:700">$${(Number(p.monto)||0).toFixed(2)}</td>
+    </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#888">Sin pagos registrados en Cuadre de Caja en el período</td></tr>';
+  return `
+    <div class="sec-cruce">🔗 Cruce de deudas vs pagos</div>
+    <table><thead><tr><th>Fecha venta</th><th style="text-align:right">Venta</th><th style="text-align:right">Deuda</th><th style="text-align:right">Abonado</th><th style="text-align:right">Saldo</th><th>Estado</th></tr></thead><tbody>${filasDeuda}</tbody></table>
+    ${aFavor}
+    <div class="sec-cruce">💳 Pagos registrados en Cuadre de Caja</div>
+    <table><thead><tr><th>Fecha</th><th>Forma de Pago</th><th>Asesor</th><th style="text-align:right">Monto</th></tr></thead><tbody>${filasPagos}</tbody></table>`;
+}
 function _imprimirClientesPDF(clientesArr) {
   const bloques = clientesArr.map(c => {
     const filas = c.items.map(r => `<tr><td>${escHTML(r['PRODUCTO']||'-')}</td><td style="text-align:center">${r['CANTIDAD']||'-'}</td><td style="text-align:right">${_precioUnitCliente(r)}</td><td style="text-align:right">$${parseFloat(r['SUBTOTAL']||0).toFixed(2)}</td><td>${escHTML(r['FORMA DE PAGO']||'-')}</td></tr>`).join('');
@@ -5469,6 +5507,7 @@ function _imprimirClientesPDF(clientesArr) {
         <div><label>Deuda Vigente</label><span>${c.deudaVigente>0.005?'$'+c.deudaVigente.toFixed(2):'Al día'}</span></div>
       </div>
       <table><thead><tr><th>Producto</th><th>Cant.</th><th>P. Unit.</th><th>Subtotal</th><th>Pago</th></tr></thead><tbody>${filas}</tbody></table>
+      ${_htmlCruceClientePrint(c)}
     </div>`;
   }).join('<hr>');
   // [NEW] Título de pestaña según la selección real: nombre del cliente si es
@@ -5488,6 +5527,11 @@ function _imprimirClientesPDF(clientesArr) {
     th{background:#1a3a5c;color:#fff;padding:8px 10px;text-align:left}
     td{padding:7px 10px;border-bottom:1px solid #eee}
     hr{border:none;border-top:2px dashed #ccc;margin:24px 0}
+    .sec-cruce{font-size:13px;font-weight:800;color:#1a3a5c;margin:6px 0 8px}
+    .est{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700}
+    .est-ok{background:#e0f5f1;color:#0a7c6e}.est-parcial{background:#fdf0e2;color:#c05800}.est-pend{background:#fbe9e7;color:#c0392b}
+    .a-favor{font-size:12px;font-weight:700;color:#0a7c6e;margin:-12px 0 16px}
+    @media print{thead{display:table-header-group;} tr{page-break-inside:avoid;}}
   </style></head><body><p style="font-size:12px;color:#888;margin-bottom:12px">${escHTML(lineaImpresoPor())} · ${new Date().toLocaleString('es-EC')}</p>${bloques}<script>
     var _impresoPagina=false;
     function _intentarImprimirPagina(){ if(_impresoPagina)return; _impresoPagina=true; window.print(); }
