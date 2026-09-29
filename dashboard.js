@@ -3419,7 +3419,7 @@ function _iniciarListenerInventario(){
 function detenerListenerInventario(){ if(_unsubInventario){_unsubInventario();_unsubInventario=null;} }
 
 /* [NEW] Roles de Pago — historial de roles ya generados, en vivo */
-let _unsubRolesHist=null, _rolesConfig={};
+let _unsubRolesHist=null;
 function _iniciarListenerRolesHistorial(){
   if(_unsubRolesHist){_unsubRolesHist();_unsubRolesHist=null;}
   // [NEW] Limitado a los 150 roles más recientes — la tabla ya solo
@@ -3438,12 +3438,14 @@ function _renderRolesHistorial(){
     if (!tbody) return;
     const pgRoles = _paginarTabla('rolesHistorial', roles);
     tbody.innerHTML = roles.length ? pgRoles.items.map(r => `<tr>
-        <td style="font-size:12px">${r.periodoDesde||'-'} → ${r.periodoHasta||'-'}</td>
-        <td style="font-weight:600">${r.asesorNombre||'-'}</td>
-        <td style="text-align:right;font-weight:700;color:var(--teal)">$${(r.totalPagado||0).toFixed(2)}</td>
-        <td style="font-size:12px">${r.generadoPor||'-'}</td>
-        <td style="font-size:12px;color:var(--muted)">${r.fechaGeneracion||'-'}</td>
-      </tr>`).join('') + _htmlPaginadorTabla('rolesHistorial', pgRoles, 5, '_renderRolesHistorial') : '<tr><td colspan="5"><div class="empty-state"><div class="icon">📋</div>Sin roles generados aún</div></td></tr>';
+        <td style="font-size:12px">${escHTML(r.periodoDesde||'-')} → ${escHTML(r.periodoHasta||'-')}</td>
+        <td style="font-weight:600">${escHTML(r.asesorNombre||'-')}</td>
+        <td style="text-align:right;color:${(r.totalFaltantes||0)>0?'#c0392b':'var(--muted)'}">${(r.totalFaltantes||0)>0?'−$'+Number(r.totalFaltantes).toFixed(2):'$0.00'}</td>
+        <td style="text-align:right;font-weight:700;color:var(--teal)">$${(Number(r.totalPagado)||0).toFixed(2)}</td>
+        <td style="font-size:12px">${escHTML(r.generadoPor||'-')}</td>
+        <td style="font-size:12px;color:var(--muted)">${escHTML(r.fechaGeneracion||'-')}</td>
+        <td><button class="btn-editar-fila" onclick="imprimirRolHistorial(${roles.indexOf(r)})">🖨️ PDF</button></td>
+      </tr>`).join('') + _htmlPaginadorTabla('rolesHistorial', pgRoles, 7, '_renderRolesHistorial') : '<tr><td colspan="7"><div class="empty-state"><div class="icon">📋</div>Sin roles generados aún</div></td></tr>';
 }
 function detenerListenerRolesHistorial(){ if(_unsubRolesHist){_unsubRolesHist();_unsubRolesHist=null;} }
 
@@ -3462,7 +3464,7 @@ function iniciar() {
     // a esa pestaña (ver switchSeccionDash), para que el login sea más rápido.
   }
   document.getElementById('invFecha').value = hoy; // [NEW]
-  document.getElementById('rolesDesde').value = hoy; // [NEW]
+  document.getElementById('rolesDesde').value = hoy.slice(0,8) + '01'; // período por defecto: del 1 del mes a hoy
   document.getElementById('rolesHasta').value = hoy; // [NEW]
   aplicarRestriccionesRol(); // [NEW]
 }
@@ -7292,66 +7294,385 @@ async function corregirAsesoresPedidosExistentes(){
 }
 
 /* ════════════════════════════════════════════════════════════
-   [NEW] ROLES DE PAGO — sueldo base + comisión por ventas
-   El % de comisión por asesor está en 0 por defecto (aún no hay
-   tabla de comisiones); se edita fila por fila y se recuerda para
-   los próximos cálculos hasta que definan la tabla oficial.
+   ROLES DE PAGO — sueldo base + comisión por producto − faltantes
+   Reglas de comisión (definidas por administración, 29-09-2026):
+   · JEFFERSON y LUIS: 10% sobre botellones (20 LT, con llave, premium)
+     vendidos a $1,00 o menos. Solo comisiona el día en que la ruta vende
+     50 botellones o más (suma de los 3 tipos, a cualquier precio, sin
+     regalías ni líneas en $0). Si llega, comisiona todos los del día.
+   · LISTER: igual que Jefferson/Luis, pero el mínimo diario es 75.
+   · VICENTE y WILSON: 8% sin mínimo diario sobre botellón 20 LT a $0,80
+     o más, botellón con llave / premium a $1,00 o más, y pacas 600, 625,
+     400 y 1 litro a cualquier precio mayor a $0.
+   · Resto de asesores: sin comisión (solo sueldo).
+   Otras piezas:
+   · Sueldo base se guarda por asesor en rolesConfig.
+   · Pedidos del período se consultan directo (no dependen del filtro
+     de fecha del dashboard).
+   · Faltantes se traen de cierresLiquidacion (solo docs diarios).
+   · Un rol por asesor y período; reemplazar pide confirmación.
 ════════════════════════════════════════════════════════════ */
 let _rolesCalculados = [];
-function calcularRolesPago(){
+let _rolesPeriodo = { desde:'', hasta:'' };
+const _r2 = n => Math.round((Number(n)||0)*100)/100;
+const _EPS_ROL = 1e-9;
+function _idRolConfig(ruta){ return _slugAsesorLiq(ruta); }
+function _idRolPago(desde, hasta, ruta){ return desde + '_' + hasta + '__' + _slugAsesorLiq(ruta); }
+function _normRol(t){ return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim(); }
+
+/* Tipo de producto a partir del nombre guardado en el pedido */
+function _tipoProductoRol(nombre){
+  const n = _normRol(nombre);
+  if (n.includes('BOTELL')) {
+    if (n.includes('LLAVE')) return 'BOT_LLAVE';
+    if (n.includes('PREMI')) return 'BOT_PREMIUM';
+    if (/\b20\s*L/.test(n)) return 'BOT_20';
+    return null;
+  }
+  if (n.includes('PACA')) {
+    if (/\b600\b|600\s*ML/.test(n)) return 'PACA_600';
+    if (/\b625\b|625\s*ML/.test(n)) return 'PACA_625';
+    if (/\b400\b|400\s*ML/.test(n)) return 'PACA_400';
+    if (/1000\s*ML|\b1\s*(L|LT|LTS|LITRO)\b/.test(n)) return 'PACA_1L';
+  }
+  return null;
+}
+const _BOTELLONES_ROL = ['BOT_20','BOT_LLAVE','BOT_PREMIUM'];
+
+/* Reglas por asesor — si cambian, se cambian SOLO aquí */
+const REGLAS_COMISION_ROL = {
+  JEFFERSON: { pct:10, minimoDiario:50, descripcion:'10% botellones a $1,00 o menos · mínimo 50 botellones al día',
+               califica:(tipo, precio) => _BOTELLONES_ROL.includes(tipo) && precio <= 1 + _EPS_ROL },
+  LUIS:      { pct:10, minimoDiario:50, descripcion:'10% botellones a $1,00 o menos · mínimo 50 botellones al día',
+               califica:(tipo, precio) => _BOTELLONES_ROL.includes(tipo) && precio <= 1 + _EPS_ROL },
+  LISTER:    { pct:10, minimoDiario:75, descripcion:'10% botellones a $1,00 o menos · mínimo 75 botellones al día',
+               califica:(tipo, precio) => _BOTELLONES_ROL.includes(tipo) && precio <= 1 + _EPS_ROL },
+  VICENTE:   { pct:8, minimoDiario:0, descripcion:'8% sin mínimo · 20 LT desde $0,80 · con llave/premium desde $1,00 · pacas 600/625/400/1 L',
+               califica:(tipo, precio) => (tipo === 'BOT_20' && precio >= 0.80 - _EPS_ROL) || ((tipo === 'BOT_LLAVE' || tipo === 'BOT_PREMIUM') && precio >= 1 - _EPS_ROL) || (/^PACA_/.test(tipo||'') && precio > 0) },
+  WILSON:    { pct:8, minimoDiario:0, descripcion:'8% sin mínimo · 20 LT desde $0,80 · con llave/premium desde $1,00 · pacas 600/625/400/1 L',
+               califica:(tipo, precio) => (tipo === 'BOT_20' && precio >= 0.80 - _EPS_ROL) || ((tipo === 'BOT_LLAVE' || tipo === 'BOT_PREMIUM') && precio >= 1 - _EPS_ROL) || (/^PACA_/.test(tipo||'') && precio > 0) }
+};
+function _reglaComisionRol(ruta){
+  const n = _normRol(ruta);
+  const clave = Object.keys(REGLAS_COMISION_ROL).find(k => new RegExp('\\b' + k + '\\b').test(n));
+  return clave ? { clave, ...REGLAS_COMISION_ROL[clave] } : null;
+}
+/* Productos que se muestran en el detalle de cada regla */
+function _tipoRelevanteRol(regla, tipo){
+  if (!regla || !tipo) return false;
+  if (_BOTELLONES_ROL.includes(tipo)) return true;
+  return regla.clave === 'VICENTE' || regla.clave === 'WILSON';
+}
+
+/* Calcula la comisión de un asesor a partir de sus pedidos del período */
+function _calcularComisionAsesorRol(ruta, pedidos){
+  const regla = _reglaComisionRol(ruta);
+  const lineas = {};           // clave producto|precio → detalle
+  const porDia = {};           // fecha → { botellones, lineas:[...] }
+  pedidos.forEach(p => {
+    const dia = p.fecha || '';
+    if (!porDia[dia]) porDia[dia] = { botellones:0, items:[] };
+    (p.productos || []).forEach(prod => {
+      const precio = _r2(prod.precio);
+      const cant = Number(prod.cantidad) || 0;
+      if (!(precio > 0) || !(cant > 0)) return;           // regalías / líneas en $0 no cuentan
+      const tipo = _tipoProductoRol(prod.nombre);
+      if (_BOTELLONES_ROL.includes(tipo)) porDia[dia].botellones += cant;
+      porDia[dia].items.push({ nombre: prod.nombre || 'Sin nombre', tipo, precio, cant });
+    });
+  });
+  let comision = 0, diasConVenta = 0, diasCumplen = 0;
+  Object.keys(porDia).sort().forEach(dia => {
+    const d = porDia[dia];
+    if (!d.items.length) return;
+    diasConVenta++;
+    const cumple = !!regla && d.botellones >= (regla.minimoDiario || 0);
+    if (regla && regla.minimoDiario && cumple) diasCumplen++;
+    d.items.forEach(it => {
+      if (!_tipoRelevanteRol(regla, it.tipo)) return;
+      const k = _normRol(it.nombre) + '|' + it.precio.toFixed(2);
+      if (!lineas[k]) lineas[k] = { producto: _normRol(it.nombre), precio: it.precio, cantidad:0, cantComisiona:0, comision:0 };
+      const L = lineas[k];
+      L.cantidad += it.cant;
+      if (cumple && regla.califica(it.tipo, it.precio)) {
+        const c = it.cant * it.precio * (regla.pct / 100);
+        L.cantComisiona += it.cant;
+        L.comision += c;
+        comision += c;
+      }
+    });
+  });
+  const detalle = Object.values(lineas)
+    .map(L => ({ ...L, comision: _r2(L.comision) }))
+    .sort((a,b) => a.producto.localeCompare(b.producto,'es') || b.precio - a.precio);
+  return {
+    regla: regla ? { clave: regla.clave, pct: regla.pct, minimoDiario: regla.minimoDiario, descripcion: regla.descripcion } : null,
+    detalle, comision: _r2(comision), diasConVenta, diasCumplen
+  };
+}
+function _recalcularTotalRol(r){
+  r.totalFaltantes = _r2((r.faltantes||[]).reduce((s,f)=>s+(Number(f.monto)||0),0));
+  r.total = _r2((Number(r.sueldoBase)||0) + (Number(r.comision)||0) - r.totalFaltantes);
+}
+
+async function _leerConfigRoles(){
+  const out = {};
+  try {
+    const snap = await db.collection('rolesConfig').get();
+    snap.forEach(d => { out[d.id] = d.data() || {}; });
+  } catch(err) {
+    console.warn('rolesConfig lectura:', err);
+    if (err && err.code === 'permission-denied') mostrarToastEdicion('⚠️ Sin permiso para leer rolesConfig en Firestore — revisa las reglas.');
+  }
+  return out;
+}
+async function _pedidosPorAsesorPeriodo(desde, hasta){
+  const snap = await db.collection('pedidos').where('fecha','>=',desde).where('fecha','<=',hasta).get();
+  const out = {};
+  snap.forEach(d => { const p = d.data() || {}; const a = p.empleado || 'Sin asignar'; (out[a] = out[a] || []).push(p); });
+  return out;
+}
+async function _faltantesAsesorPeriodo(ruta, dias){
+  const res = await Promise.all(dias.map(dia =>
+    _leerDocsUnicosAsesorLiq(ruta, [dia], false).then(r => ({ dia, doc: (r.diarios||[])[0] || null })).catch(() => ({ dia, doc:null }))
+  ));
+  const lista = [];
+  res.forEach(({dia, doc}) => {
+    (doc && Array.isArray(doc.faltantes) ? doc.faltantes : []).forEach(f => {
+      const m = _r2(f && f.monto);
+      if (m > 0) lista.push({ fecha: dia, monto: m, motivo: (f.motivo||'').toString() });
+    });
+  });
+  return lista;
+}
+
+async function calcularRolesPago(){
   const desde = document.getElementById('rolesDesde').value;
   const hasta = document.getElementById('rolesHasta').value;
   if (!desde || !hasta) { alert('Selecciona el rango de fechas del período.'); return; }
-  const pedidosPeriodo = _pedidosRaw.filter(p => p.fecha >= desde && p.fecha <= hasta);
-  const ventasPorAsesor = {};
-  pedidosPeriodo.forEach(p => { const a = p.empleado || 'Sin asignar'; ventasPorAsesor[a] = (ventasPorAsesor[a]||0) + (parseFloat(p.total)||0); });
-  _rolesCalculados = _asesoresCache.map(ruta => {
-    const nombre = ruta.split(':')[1]?.trim() || ruta;
-    const ventas = ventasPorAsesor[ruta] || 0;
-    const existente = _rolesConfig[ruta] || { sueldoBase: 0, comisionPct: 0 };
-    const comision = ventas * (existente.comisionPct/100);
-    return { ruta, nombre, sueldoBase: existente.sueldoBase, ventas, comisionPct: existente.comisionPct, comision, total: existente.sueldoBase + comision };
-  });
-  renderTablaRolesPago();
+  if (desde > hasta) { alert('La fecha Desde no puede ser mayor que Hasta.'); return; }
+  const dias = _diasISOInclusive(desde, hasta);
+  if (dias.length > 62) { alert('El período máximo es de 62 días.'); return; }
+  if (!_asesoresCache.length) { alert('Aún no se cargan los asesores. Intenta en unos segundos.'); return; }
+  const btn = document.getElementById('btnCalcularRoles');
+  const tbody = document.getElementById('tablaRolesPago');
+  if (btn) { btn.disabled = true; btn.textContent = 'Calculando…'; }
+  tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">⏳</div>Consultando pedidos y faltantes del período…</div></td></tr>';
+  document.getElementById('rolesTotalGeneral').innerHTML = '';
+  try {
+    const [config, pedidos, faltantesPorAsesor] = await Promise.all([
+      _leerConfigRoles(),
+      _pedidosPorAsesorPeriodo(desde, hasta),
+      Promise.all(_asesoresCache.map(ruta => _faltantesAsesorPeriodo(ruta, dias)))
+    ]);
+    _rolesPeriodo = { desde, hasta };
+    _rolesCalculados = _asesoresCache.map((ruta, i) => {
+      const cfg = config[_idRolConfig(ruta)] || {};
+      const com = _calcularComisionAsesorRol(ruta, pedidos[ruta] || []);
+      const r = { ruta, nombre: ruta.split(':')[1]?.trim() || ruta, sueldoBase: _r2(cfg.sueldoBase), faltantes: faltantesPorAsesor[i] || [], ...com };
+      _recalcularTotalRol(r);
+      return r;
+    });
+    renderTablaRolesPago();
+  } catch(err) {
+    console.error(err);
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">⚠️</div>No se pudo calcular: ' + escHTML(err.message) + '</div></td></tr>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Calcular período'; }
+  }
 }
 function renderTablaRolesPago(){
   const tbody = document.getElementById('tablaRolesPago');
-  if (!_rolesCalculados.length) { tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">💵</div>Calcula un período para ver los roles</div></td></tr>'; document.getElementById('rolesTotalGeneral').innerHTML = ''; return; }
+  if (!_rolesCalculados.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">💵</div>Calcula un período para ver los roles</div></td></tr>'; document.getElementById('rolesTotalGeneral').innerHTML = ''; return; }
   let totalGeneral = 0;
+  const inp = 'padding:5px 8px;border:1px solid var(--border);border-radius:6px;text-align:right';
   tbody.innerHTML = _rolesCalculados.map((r,i) => {
     totalGeneral += r.total;
-    return `<tr>
-      <td style="font-weight:600">${r.nombre}</td>
-      <td style="text-align:right"><input type="number" min="0" step="0.01" value="${r.sueldoBase}" style="width:90px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;text-align:right" onchange="actualizarRolCampo(${i},'sueldoBase',this.value)"></td>
-      <td style="text-align:right;color:var(--teal);font-weight:700">$${r.ventas.toFixed(2)}</td>
-      <td style="text-align:right"><input type="number" min="0" max="100" step="0.1" value="${r.comisionPct}" style="width:65px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;text-align:right" onchange="actualizarRolCampo(${i},'comisionPct',this.value)">%</td>
-      <td style="text-align:right">$${r.comision.toFixed(2)}</td>
-      <td style="text-align:right;font-weight:800;color:var(--navy)">$${r.total.toFixed(2)}</td>
-      <td><button class="btn-editar-fila" onclick="guardarRolPago(${i})">💾 Guardar rol</button></td>
-    </tr>`;
+    const infoRegla = r.regla
+      ? escHTML(r.regla.descripcion) + (r.regla.minimoDiario ? ` · <b>días que cumplieron: ${r.diasCumplen} de ${r.diasConVenta}</b>` : '')
+      : 'Sin comisión — solo sueldo';
+    const tipF = r.faltantes.map(f => f.fecha + ': $' + f.monto.toFixed(2) + (f.motivo ? ' — ' + f.motivo : '')).join('\n');
+    const filas = r.detalle.length ? r.detalle.map(L => `<tr>
+        <td style="padding-left:28px">${escHTML(L.producto)}</td>
+        <td style="text-align:right">$${L.precio.toFixed(2)}</td>
+        <td style="text-align:right">${L.cantidad}</td>
+        <td style="text-align:right;color:${L.cantComisiona?'var(--teal)':'var(--muted)'};font-weight:${L.cantComisiona?700:400}">${L.cantComisiona}</td>
+        <td style="text-align:right">${L.cantComisiona ? r.regla.pct + '%' : '—'}</td>
+        <td style="text-align:right">$${L.comision.toFixed(2)}</td>
+      </tr>`).join('')
+      : (r.regla ? '<tr><td colspan="6" style="padding-left:28px;color:var(--muted);font-size:12px">Sin ventas de productos que comisionan en el período</td></tr>' : '');
+    return `<tr style="background:var(--surface2)">
+        <td colspan="4"><div style="font-weight:800;color:var(--navy)">${escHTML(r.nombre)}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${infoRegla}</div></td>
+        <td colspan="2" style="text-align:right;white-space:nowrap"><span style="font-size:11px;color:var(--muted);margin-right:6px">Sueldo base $</span><input type="number" min="0" step="0.01" value="${r.sueldoBase}" style="width:95px;${inp}" onchange="actualizarSueldoRol(${i},this.value)"></td>
+      </tr>
+      ${filas}
+      <tr style="border-bottom:2px solid var(--border)">
+        <td colspan="4" style="font-size:12px;color:var(--muted)">Sueldo $${r.sueldoBase.toFixed(2)} + Comisión <b style="color:var(--teal)">$${r.comision.toFixed(2)}</b> − Faltantes <b style="color:${r.totalFaltantes>0?'#c0392b':'inherit'}" title="${escHTML(tipF)}">$${r.totalFaltantes.toFixed(2)}</b>${r.faltantes.length?' ('+r.faltantes.length+')':''} = <b style="font-size:14px;color:${r.total<0?'#c0392b':'var(--navy)'}">$${r.total.toFixed(2)}</b></td>
+        <td colspan="2" style="text-align:right;white-space:nowrap"><button class="btn-editar-fila" onclick="guardarRolPago(${i})">💾 Guardar</button> <button class="btn-editar-fila" onclick="imprimirRolPago(${i})">🖨️ PDF</button></td>
+      </tr>`;
   }).join('');
-  document.getElementById('rolesTotalGeneral').innerHTML = `<div class="editar-total-box"><span class="lbl">Total general del período</span><span class="val">$${totalGeneral.toFixed(2)}</span></div>`;
+  document.getElementById('rolesTotalGeneral').innerHTML = `<div class="editar-total-box"><span class="lbl">Total general del período ${_rolesPeriodo.desde} → ${_rolesPeriodo.hasta}</span><span class="val">$${_r2(totalGeneral).toFixed(2)}</span></div>`;
 }
-function actualizarRolCampo(i, campo, valor){
-  _rolesCalculados[i][campo] = parseFloat(valor) || 0;
+async function actualizarSueldoRol(i, valor){
   const r = _rolesCalculados[i];
-  r.comision = r.ventas * (r.comisionPct/100);
-  r.total = r.sueldoBase + r.comision;
-  _rolesConfig[r.ruta] = { sueldoBase: r.sueldoBase, comisionPct: r.comisionPct }; // se recuerda para futuros cálculos
+  let v = parseFloat(valor); if (!isFinite(v) || v < 0) v = 0;
+  r.sueldoBase = _r2(v);
+  _recalcularTotalRol(r);
   renderTablaRolesPago();
+  try {
+    await db.collection('rolesConfig').doc(_idRolConfig(r.ruta)).set({
+      asesorRuta: r.ruta, sueldoBase: r.sueldoBase,
+      actualizadoPor: actorAuditoria(), actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch(err) {
+    console.error(err);
+    alert('❌ No se pudo guardar el sueldo de ' + r.nombre + ': ' + err.message + (err.code === 'permission-denied' ? '\n\nFalta la regla de Firestore para la colección rolesConfig.' : ''));
+  }
+}
+function _payloadRol(r){
+  return {
+    asesorRuta: r.ruta, asesorNombre: r.nombre, periodoDesde: _rolesPeriodo.desde, periodoHasta: _rolesPeriodo.hasta,
+    sueldoBase: r.sueldoBase, regla: r.regla, detalle: r.detalle, diasConVenta: r.diasConVenta, diasCumplen: r.diasCumplen,
+    comisionCalculada: r.comision, faltantes: r.faltantes, totalFaltantes: r.totalFaltantes, totalPagado: r.total,
+    generadoPor: actorAuditoria(), fechaGeneracion: fechaHoy(),
+    creadoEn: firebase.firestore.FieldValue.serverTimestamp()
+  };
 }
 async function guardarRolPago(i){
   const r = _rolesCalculados[i];
-  const desde = document.getElementById('rolesDesde').value, hasta = document.getElementById('rolesHasta').value;
+  if (!r || !_rolesPeriodo.desde) return;
+  const ref = db.collection('rolesPago').doc(_idRolPago(_rolesPeriodo.desde, _rolesPeriodo.hasta, r.ruta));
   try {
-    await db.collection('rolesPago').add({
-      asesorRuta: r.ruta, asesorNombre: r.nombre, periodoDesde: desde, periodoHasta: hasta,
-      sueldoBase: r.sueldoBase, ventasPeriodo: r.ventas, comisionPct: r.comisionPct, comisionCalculada: r.comision, totalPagado: r.total,
-      generadoPor: ADMIN_ACTUAL.nombre || 'admin', fechaGeneracion: fechaHoy(),
-      creadoEn: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    const prev = await ref.get();
+    if (prev.exists) {
+      const d = prev.data() || {};
+      if (!confirm(`Ya existe un rol de ${r.nombre} para ${_rolesPeriodo.desde} → ${_rolesPeriodo.hasta} por $${(Number(d.totalPagado)||0).toFixed(2)} (generado ${d.fechaGeneracion||''} por ${d.generadoPor||'-'}).\n\n¿Reemplazarlo por el nuevo de $${r.total.toFixed(2)}?`)) return;
+    }
+    await ref.set(_payloadRol(r));
     mostrarToastEdicion('✅ Rol de pago guardado para ' + r.nombre + '.');
   } catch(err) { console.error(err); alert('❌ No se pudo guardar el rol: ' + err.message); }
+}
+function imprimirRolPago(i){
+  const r = _rolesCalculados[i];
+  if (!r) return;
+  _imprimirRolPagoDoc({ ..._payloadRol(r), fechaGeneracion: fechaHoy() });
+}
+function imprimirRolHistorial(idx){
+  const r = (_rolesHistRaw || [])[idx];
+  if (r) _imprimirRolPagoDoc(r);
+}
+
+/* Monto en letras (dólares) para el "Recibí conforme" del rol */
+function _numeroALetras(n){
+  const U=['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE','VEINTE','VEINTIUNO','VEINTIDÓS','VEINTITRÉS','VEINTICUATRO','VEINTICINCO','VEINTISÉIS','VEINTISIETE','VEINTIOCHO','VEINTINUEVE'];
+  const D=['','','','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+  const C=['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+  const menosMil = x => {
+    if (x === 0) return '';
+    if (x === 100) return 'CIEN';
+    const c = Math.floor(x/100), r = x%100;
+    let t = C[c];
+    if (r) t += (t?' ':'') + (r < 30 ? U[r] : D[Math.floor(r/10)] + (r%10 ? ' Y ' + U[r%10] : ''));
+    return t;
+  };
+  const entero = x => {
+    if (x === 0) return 'CERO';
+    let t = '';
+    const mill = Math.floor(x/1e6), miles = Math.floor((x%1e6)/1000), resto = x%1000;
+    if (mill) t += (mill === 1 ? 'UN MILLÓN' : menosMil(mill).replace(/UNO$/,'UN') + ' MILLONES');
+    if (miles) t += (t?' ':'') + (miles === 1 ? 'MIL' : menosMil(miles).replace(/UNO$/,'UN') + ' MIL');
+    if (resto) t += (t?' ':'') + menosMil(resto);
+    return t;
+  };
+  const v = Math.abs(_r2(n)), e = Math.floor(v), c = Math.round((v-e)*100);
+  return entero(e) + ' CON ' + String(c).padStart(2,'0') + '/100 DÓLARES';
+}
+
+function _imprimirRolPagoDoc(r){
+  const v = _abrirVentanaImpresion();
+  if (!v) { alert('No se pudo abrir la ventana de impresión.'); return; }
+  const f2 = n => '$' + (Number(n)||0).toFixed(2);
+  const faltantes = Array.isArray(r.faltantes) ? r.faltantes : [];
+  const totalFalt = Number(r.totalFaltantes)||0;
+  const ingresos = _r2((Number(r.sueldoBase)||0) + (Number(r.comisionCalculada)||0));
+  const neto = Number(r.totalPagado)||0;
+  const detalle = Array.isArray(r.detalle) ? r.detalle : [];
+  const htmlDetalle = detalle.length
+    ? `<table class="det"><tr class="th"><td>Producto</td><td class="num">Precio unit.</td><td class="num">Cantidad</td><td class="num">Comisiona</td><td class="num">Comisión</td></tr>` +
+      detalle.map(L => `<tr><td>${escHTML(L.producto)}</td><td class="num">${f2(L.precio)}</td><td class="num">${L.cantidad}</td><td class="num">${L.cantComisiona}</td><td class="num">${f2(L.comision)}</td></tr>`).join('') +
+      `<tr class="sub"><td colspan="4">Total comisión${r.regla ? ' (' + r.regla.pct + '%)' : ''}</td><td class="num">${f2(r.comisionCalculada)}</td></tr></table>`
+    : `<table><tr><td style="color:#888">${r.regla ? 'Sin ventas de productos que comisionan en el período' : 'Este asesor no comisiona'}</td><td class="num">${f2(r.comisionCalculada)}</td></tr></table>`;
+  const logoUrl = location.origin + '/logo-luanaqua.png';
+  const filasFalt = faltantes.length
+    ? faltantes.map(f => `<tr><td>Faltante ${escHTML(f.fecha||'')}${f.motivo?' — '+escHTML(f.motivo):''}</td><td class="num">${f2(f.monto)}</td></tr>`).join('')
+    : '<tr><td style="color:#888">Sin faltantes en el período</td><td class="num">$0.00</td></tr>';
+  v.document.open();
+  v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rol de Pago — ${escHTML(r.asesorNombre||'')} — ${escHTML(r.periodoDesde||'')} a ${escHTML(r.periodoHasta||'')}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a3a5c;padding:28px;background:#fff;max-width:760px;margin:0 auto;}
+    .print-header{display:flex;align-items:center;justify-content:center;gap:14px;text-align:center;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid #1a3a5c;}
+    .print-header img{height:46px;width:auto;}
+    .print-header h1{font-family:Georgia,'Times New Roman',serif;font-size:21px;}
+    .print-header p{font-size:11px;color:#888;margin-top:3px;}
+    .datos{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;background:#f0f5f8;border-radius:8px;padding:12px 14px;font-size:12px;margin-bottom:16px;}
+    .datos b{display:block;font-size:9px;letter-spacing:.08em;color:#888;text-transform:uppercase;margin-bottom:1px;}
+    h2{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;margin:14px 0 6px;}
+    table{width:100%;border-collapse:collapse;font-size:12px;}
+    td{padding:6px 8px;border-bottom:1px solid #e6ebf0;}
+    .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+    .sub td{font-weight:800;border-top:1.5px solid #1a3a5c;border-bottom:none;}
+    .desc .num{color:#c0392b;}
+    .det .th td{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#888;}
+    .datos div:nth-child(4){grid-column:1/-1;}
+    .neto{background:#1a3a5c;border-radius:10px;padding:14px 18px;margin-top:18px;display:flex;justify-content:space-between;align-items:center;}
+    .neto span:first-child{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.7);}
+    .neto span:last-child{font-family:Georgia,'Times New Roman',serif;font-size:24px;color:#4ec9a0;}
+    .recibi{font-size:12px;line-height:1.6;margin-top:18px;}
+    .firmas-box{display:flex;justify-content:space-between;gap:48px;margin-top:70px;padding:0 8px;}
+    .firma-linea{flex:1;text-align:center;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;}
+    .firma-linea .raya{border-top:1px solid #1a3a5c;margin:0 auto 8px;width:90%;}
+    .firma-linea small{display:block;font-weight:400;text-transform:none;letter-spacing:0;color:#555;margin-top:4px;}
+    @media print{body{padding:10px;}}
+  </style></head><body>
+  <div class="print-header">
+    <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
+    <div><h1>ROL DE PAGO</h1><p>Aqua Luan · Generado ${escHTML(r.fechaGeneracion||fechaHoy())} por ${escHTML(r.generadoPor||'-')}</p></div>
+  </div>
+  <div class="datos">
+    <div><b>Asesor</b>${escHTML(r.asesorNombre||'-')}</div>
+    <div><b>Ruta</b>${escHTML(r.asesorRuta||'-')}</div>
+    <div><b>Período</b>${escHTML(r.periodoDesde||'-')} al ${escHTML(r.periodoHasta||'-')}</div>
+    <div><b>Regla de comisión</b>${escHTML(r.regla ? r.regla.descripcion : 'Sin comisión')}${r.regla && r.regla.minimoDiario ? ' · Días que cumplieron: ' + (r.diasCumplen||0) + ' de ' + (r.diasConVenta||0) : ''}</div>
+  </div>
+  <h2>Detalle de comisión</h2>
+  ${htmlDetalle}
+  <h2>Ingresos</h2>
+  <table>
+    <tr><td>Sueldo base</td><td class="num">${f2(r.sueldoBase)}</td></tr>
+    <tr><td>Comisión</td><td class="num">${f2(r.comisionCalculada)}</td></tr>
+    <tr class="sub"><td>Total ingresos</td><td class="num">${f2(ingresos)}</td></tr>
+  </table>
+  <h2>Descuentos</h2>
+  <table class="desc">
+    ${filasFalt}
+    <tr class="sub"><td>Total descuentos</td><td class="num">${f2(totalFalt)}</td></tr>
+  </table>
+  <div class="neto"><span>Neto a recibir</span><span>${f2(neto)}</span></div>
+  <p class="recibi">Recibí conforme la cantidad de <b>${neto < 0 ? 'MENOS ' : ''}${_numeroALetras(neto)}</b> (${f2(neto)}) por concepto de sueldo y comisiones del período ${escHTML(r.periodoDesde||'')} al ${escHTML(r.periodoHasta||'')}.</p>
+  <div class="firmas-box">
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Entregué conforme<small>Aqua Luan</small></div>
+    <div class="firma-linea"><div class="raya">&nbsp;</div>Recibí conforme<small>${escHTML(r.asesorNombre||'')}<br>C.I.: ____________________</small></div>
+  </div>
+  <script>
+    var _impresoRol=false;
+    function _intentarImprimirRol(){ if(_impresoRol)return; _impresoRol=true; window.print(); }
+    window.onload=_intentarImprimirRol;
+    setTimeout(_intentarImprimirRol,180);
+  <\/script>
+  </body></html>`);
+  v.document.close();
+  _dispararImpresion(v);
 }
 
 /* ════════════════════════════════════════════════════════════

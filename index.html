@@ -311,26 +311,26 @@
         </div>
         </div>
         <div class="dash-section" id="seccion-roles">
-        <!-- [NEW] Roles de Pago — sueldo + comisión por ventas (comisión configurable por asesor) -->
+        <!-- Roles de Pago — sueldo + comisión por producto (reglas por asesor) − faltantes de Liquidación -->
         <div class="table-card">
           <div class="table-header"><div class="table-title">💵 Roles de Pago — Calcular período</div></div>
           <div style="padding:1rem 1.25rem;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
             <div class="editar-field" style="margin-bottom:0"><label>Desde</label><input type="date" id="rolesDesde"></div>
             <div class="editar-field" style="margin-bottom:0"><label>Hasta</label><input type="date" id="rolesHasta"></div>
-            <button class="btn-filter" onclick="calcularRolesPago()">Calcular período</button>
+            <button class="btn-filter" id="btnCalcularRoles" onclick="calcularRolesPago()">Calcular período</button>
           </div>
-          <div style="padding:0 1.25rem 10px;font-size:11px;color:var(--muted)">⚠️ El % de comisión de cada asesor arranca en 0% — aún no tenemos la tabla de comisiones. Edítalo directamente en la columna "% Comisión" de cada fila (se recuerda para los próximos cálculos).</div>
+          <div style="padding:0 1.25rem 10px;font-size:11px;color:var(--muted)">Jefferson y Luis: 10% botellones a $1,00 o menos, solo los días con 50+ botellones · Lister: igual con mínimo 75 · Vicente y Wilson: 8% sin mínimo (20 LT desde $0,80; con llave/premium desde $1,00; pacas 600/625/400/1 L). Regalías y líneas en $0 no cuentan. "Comisiona" = unidades que sí generaron comisión. Sueldo base se guarda por asesor; faltantes vienen de Liquidación. Total = sueldo + comisión − faltantes.</div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Asesor</th><th style="text-align:right">Sueldo base</th><th style="text-align:right">Ventas período</th><th style="text-align:right">% Comisión</th><th style="text-align:right">Comisión $</th><th style="text-align:right">Total a pagar</th><th></th></tr></thead>
-              <tbody id="tablaRolesPago"><tr><td colspan="7"><div class="empty-state"><div class="icon">💵</div>Calcula un período para ver los roles</div></td></tr></tbody>
+              <thead><tr><th>Asesor / Producto</th><th style="text-align:right">Precio unitario</th><th style="text-align:right">Cantidad</th><th style="text-align:right">Comisiona</th><th style="text-align:right">%</th><th style="text-align:right">Comisión $</th></tr></thead>
+              <tbody id="tablaRolesPago"><tr><td colspan="6"><div class="empty-state"><div class="icon">💵</div>Calcula un período para ver los roles</div></td></tr></tbody>
             </table>
           </div>
           <div style="padding:1rem 1.25rem" id="rolesTotalGeneral"></div>
         </div>
         <div class="table-card">
           <div class="table-header"><div class="table-title">📋 Roles generados (historial)</div></div>
-          <div class="table-wrap"><table><thead><tr><th>Período</th><th>Asesor</th><th style="text-align:right">Total pagado</th><th>Generado por</th><th>Fecha</th></tr></thead><tbody id="tablaRolesHistorial"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Período</th><th>Asesor</th><th style="text-align:right">Faltantes</th><th style="text-align:right">Total pagado</th><th>Generado por</th><th>Fecha</th><th></th></tr></thead><tbody id="tablaRolesHistorial"></tbody></table></div>
         </div>
         </div>
         <div class="dash-section" id="seccion-importar">
