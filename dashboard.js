@@ -5093,13 +5093,16 @@ function poblarClienteSelect(datos) {
   try {
     const _normCli = n => String(n||'').trim().replace(/\s+/g,' ').toLowerCase();
     const _yaListados = new Set(Object.keys(porCliente).map(_normCli));
-    const _pagosPeriodo = getDatosFiltrados().filter(r => !r['PRODUCTO'] && r['CLIENTE'] && parseFloat(r['TOTAL PEDIDO ($)']||0) > 0 && String(r['TOTAL PEDIDO ($)']).indexOf('-') === -1);
-    _pagosPeriodo.forEach(r => {
-      const nombre = r['CLIENTE'];
+    // Misma fuente y mismo filtro que "Consulta Cobranzas" (_pagosRaw + filtro de asesor),
+    // para que ambas pantallas muestren exactamente los mismos clientes con cobros.
+    const _asesorSelCli = document.getElementById('filtroAsesor')?.value || '';
+    (_pagosRaw || []).forEach(pg => {
+      if (_asesorSelCli && (pg.empleado || '') !== _asesorSelCli) return;
+      const nombre = pg.cliente || '';
       const k = _normCli(nombre);
       if (!k || _yaListados.has(k)) return;
       _yaListados.add(k);
-      porCliente[nombre] = { pedidos: 0, total: 0, ultimoFecha: '', asesor: r['ASESOR / RUTA'] || '', telefono: '', direccion: '', items: [] };
+      porCliente[nombre] = { pedidos: 0, total: 0, ultimoFecha: '', asesor: pg.empleado || '', telefono: '', direccion: '', items: [] };
     });
   } catch (e) { console.error('poblarClienteSelect (clientes solo con cobros):', e); }
 
