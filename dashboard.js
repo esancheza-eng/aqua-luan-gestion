@@ -5106,45 +5106,31 @@ function poblarClienteSelect(datos) {
     });
   } catch (e) { console.error('poblarClienteSelect (clientes solo con cobros):', e); }
 
-  // [FIX] LA PANTALLA SE CONGELABA con muchos clientes/pedidos acumulados: antes, por
-  // CADA cliente se recorría TODO "todosLosDatos" dos veces completas (una para sumar
-  // sus ventas a crédito, otra para sumar sus pagos) — con cientos de clientes y miles
-  // de filas eso son millones de comparaciones repetidas en cada recálculo. Ahora se
-  // recorre "todosLosDatos" UNA SOLA VEZ, acumulando crédito y pagos por cliente en un
-  // mapa, y luego cada cliente solo consulta su propia entrada en ese mapa (instantáneo).
-  // Mismo resultado exacto, verificado comparando ambos cálculos sobre miles de filas
-  // simuladas antes de aplicar este cambio — solo cambia cómo se calcula, no el número.
-  const _mapaDeudaPorCliente = {};
-  todosLosDatos.forEach(r => {
-    const cliente = r['CLIENTE'];
-    if (!cliente) return;
-    if (!_mapaDeudaPorCliente[cliente]) _mapaDeudaPorCliente[cliente] = { credito: 0, pagos: 0 };
-    // [FIX] NUEVO FORMATO DE PAGO MÚLTIPLE — antes esto comparaba FORMA DE PAGO
-    // contra el string exacto 'Crédito', lo cual dejaba de funcionar en cuanto
-    // formapago pasó a valer 'Mixto' (varias formas marcadas + saldo a crédito).
-    // Ahora usa CREDITO_PENDIENTE, un campo numérico ya calculado en _filaProducto()
-    // que da el mismo resultado para pedidos viejos (con 'abono') y nuevos (con
-    // 'pagos'+'creditoPendiente'), sin depender de ningún string de forma de pago.
-    const creditoPendiente = parseFloat(r['CREDITO_PENDIENTE']||0);
-    if (r['PRODUCTO'] && creditoPendiente > 0) {
-      _mapaDeudaPorCliente[cliente].credito += creditoPendiente;
-    } else if (!r['PRODUCTO'] && parseFloat(r['TOTAL PEDIDO ($)']||0) > 0 && String(r['TOTAL PEDIDO ($)']).indexOf('-') === -1) {
-      _mapaDeudaPorCliente[cliente].pagos += parseFloat(r['TOTAL PEDIDO ($)']||0);
-    }
-  });
+  // [FIX] "Consultar por Cliente" no reflejaba lo que el cliente iba cancelando en
+  // Cuadre de Caja: la deuda se buscaba por el nombre EXACTO del cliente, así que un
+  // pago registrado como "juan perez" no descontaba la deuda de "Juan Perez" (o con
+  // espacios de más). Ahora usa exactamente el mismo cálculo que "Consulta Cobranzas"
+  // (_datosCobranzasClientes): mismo cruce por nombre normalizado, mismo filtro de
+  // fecha/asesor que Cuadre de Caja — así las 3 pantallas muestran los mismos valores.
+  const _mapaCobranzaPorCliente = {};
+  try {
+    _datosCobranzasClientes().forEach(cb => { _mapaCobranzaPorCliente[_normNombreCliente(cb.nombre)] = cb; });
+  } catch (e) { console.error('poblarClienteSelect (cruce cobranzas):', e); }
 
   const hoyMs = Date.now();
   _clientesTablaDatos = Object.entries(porCliente).map(([nombre, c]) => {
     const ultimoDate = c.ultimoFecha ? new Date(c.ultimoFecha + 'T00:00:00') : null;
     const diasSinPedido = ultimoDate ? Math.max(0, Math.floor((hoyMs - ultimoDate.getTime()) / 86400000)) : 9999;
     const estado = _calcularEstadoCliente(diasSinPedido, c.total);
-    // Deuda Vigente — sobre TODO el historial del cliente, sin filtro de fecha (igual que
-    // antes), ahora leída del mapa precalculado en una sola pasada arriba.
-    const _deuda = _mapaDeudaPorCliente[nombre] || { credito: 0, pagos: 0 };
-    const deudaVigente = _deuda.credito - _deuda.pagos;
+    // Deuda Vigente = deuda generada − lo abonado en Cuadre de Caja (mismo cruce que Cobranzas)
+    const _cb = _mapaCobranzaPorCliente[_normNombreCliente(nombre)] || null;
+    const deudaGenerada = _cb ? _cb.deuda : 0;
+    const abonado = _cb ? _cb.cobros : 0;
+    const deudaVigente = deudaGenerada - abonado;
     return {
       nombre, telefono: c.telefono, direccion: c.direccion, pedidos: c.pedidos, total: c.total,
-      ultimoFecha: c.ultimoFecha, diasSinPedido, asesor: c.asesor, estado, deudaVigente, items: c.items
+      ultimoFecha: c.ultimoFecha, diasSinPedido, asesor: c.asesor, estado, deudaVigente, items: c.items,
+      deudaGenerada, abonado, deudasDetalle: _cb ? _cb.deudas : [], pagosDetalle: _cb ? _cb.ingresos : []
     };
   });
 
@@ -5196,7 +5182,11 @@ function mostrarDetalleCliente() {
   const filas = filtrados.map(c => {
     const checked = _clientesSeleccionadosPdf.has(c.nombre) ? 'checked' : '';
     const asesorNombre = (c.asesor||'').split(':')[1]?.trim() || c.asesor || '-';
-    const deudaTexto = c.deudaVigente > 0.005 ? `<div style="font-size:11px;font-weight:700;color:var(--red)">$${c.deudaVigente.toFixed(2)}</div>` : '<span style="color:var(--muted);font-size:11px">—</span>';
+    // [NEW] muestra también lo abonado en Cuadre de Caja, para ver que la deuda se va cancelando
+    const abonoTxt = c.abonado > 0.005 ? `<div style="font-size:10px;color:var(--teal);font-weight:600">Abonó $${c.abonado.toFixed(2)}</div>` : '';
+    const deudaTexto = c.deudaVigente > 0.005
+      ? `<div style="font-size:11px;font-weight:700;color:var(--red)">$${c.deudaVigente.toFixed(2)}</div>${abonoTxt}`
+      : (c.abonado > 0.005 ? `<div style="font-size:11px;font-weight:700;color:var(--teal)">✅ Cancelado</div>${abonoTxt}` : '<span style="color:var(--muted);font-size:11px">—</span>');
     return `<tr class="clickable" style="cursor:pointer" onclick="if(event.target.type!=='checkbox')abrirDetalleClienteModal('${encodeURIComponent(c.nombre)}')">
       <td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleClienteSeleccionadoPdf('${encodeURIComponent(c.nombre)}',this.checked)" style="width:16px;height:16px;accent-color:var(--teal);cursor:pointer"></td>
       <td style="font-weight:700;color:var(--navy)">${escHTML(c.nombre)}${ROL_ACTUAL !== 'secretaria' ? ` <button type="button" title="Editar nombre" onclick="event.stopPropagation();abrirEditarNombreCliente('${encodeURIComponent(c.nombre).replace(/'/g,'%27')}')" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;opacity:.7">✏️</button>` : ''}</td>
@@ -5253,6 +5243,10 @@ function abrirDetalleClienteModal(nombreCodificado) {
   const deudaHtml = c.deudaVigente > 0.005
     ? `<div class="detail-item-dash"><label>Deuda Vigente</label><strong style="color:var(--red)">$${c.deudaVigente.toFixed(2)}</strong></div>`
     : `<div class="detail-item-dash"><label>Deuda Vigente</label><strong style="color:var(--teal)">✅ Al día</strong></div>`;
+  const abonoModalHtml = (c.deudaGenerada > 0.005 || c.abonado > 0.005)
+    ? `<div class="detail-item-dash"><label>Deuda generada</label><strong>$${(c.deudaGenerada||0).toFixed(2)}</strong></div>
+       <div class="detail-item-dash"><label>Abonado (Cuadre de Caja)</label><strong style="color:var(--teal)">$${(c.abonado||0).toFixed(2)}</strong></div>`
+    : '';
   document.getElementById('modalClienteStats').innerHTML = `
     <div class="detail-item-dash"><label>Pedidos</label><strong>${c.pedidos}</strong></div>
     <div class="detail-item-dash"><label>Valor total</label><strong>$${c.total.toFixed(2)}</strong></div>
@@ -5260,8 +5254,10 @@ function abrirDetalleClienteModal(nombreCodificado) {
     <div class="detail-item-dash"><label>Días sin compra</label><strong>${c.diasSinPedido}</strong></div>
     <div class="detail-item-dash"><label>Asesor</label><strong>${escHTML((c.asesor||'').split(':')[1]?.trim()||c.asesor||'-')}</strong></div>
     <div class="detail-item-dash"><label>Estado</label>${_badgeEstadoCliente(c.estado)}</div>
+    ${abonoModalHtml}
     ${deudaHtml}
   `;
+  _pintarCruceDeudaPagosCliente(c);
   const filasHistorial = c.items.map(r => `<tr>
     <td style="font-size:12px">${limpiarFecha(r['FECHA'])}</td>
     <td style="font-size:12px">${escHTML(r['PRODUCTO']||'-')}</td>
@@ -5277,6 +5273,52 @@ function abrirDetalleClienteModal(nombreCodificado) {
   window._clienteModalActual = c; // para el botón de imprimir
   document.getElementById('modalClienteOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+}
+/* [NEW] Cruce (match) de las deudas del cliente contra los pagos registrados en Cuadre de
+   Caja: los pagos se aplican a las deudas más antiguas primero, así se ve cuáles ya
+   quedaron canceladas, cuáles van con abono parcial y cuáles siguen pendientes. */
+function _pintarCruceDeudaPagosCliente(c) {
+  const box = document.getElementById('modalClienteCruce');
+  if (!box) return;
+  const deudas = (c.deudasDetalle || []).slice().sort((a,b) => String(a.fecha).localeCompare(String(b.fecha)) || (a.ms||0)-(b.ms||0));
+  const pagos = (c.pagosDetalle || []).slice().sort((a,b) => String(a.fecha).localeCompare(String(b.fecha)) || (a.ms||0)-(b.ms||0));
+  if (!deudas.length && !pagos.length) { box.innerHTML = ''; return; }
+  let disponible = pagos.reduce((s,p) => s + (Number(p.monto)||0), 0);
+  const filasDeuda = deudas.map(d => {
+    const aplicado = Math.min(d.credito, Math.max(0, disponible));
+    disponible -= aplicado;
+    const saldo = d.credito - aplicado;
+    const estado = saldo <= 0.004
+      ? '<span class="badge badge-teal">Cancelada</span>'
+      : (aplicado > 0.004 ? '<span class="badge" style="background:#fdf0e2;color:#c05800">Abono parcial</span>' : '<span class="badge" style="background:#fbe9e7;color:var(--red)">Pendiente</span>');
+    return `<tr>
+      <td style="font-size:12px">${limpiarFecha(d.fecha)}</td>
+      <td style="text-align:right">$${(d.total||0).toFixed(2)}</td>
+      <td style="text-align:right;font-weight:700">$${d.credito.toFixed(2)}</td>
+      <td style="text-align:right;color:var(--teal);font-weight:700">$${aplicado.toFixed(2)}</td>
+      <td style="text-align:right;font-weight:800;color:${saldo>0.004?'var(--red)':'var(--muted)'}">$${Math.max(0,saldo).toFixed(2)}</td>
+      <td>${estado}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Sin ventas a crédito en el período</td></tr>';
+  const aFavor = disponible > 0.004 ? `<div style="font-size:12px;font-weight:700;color:#0a7c6e;margin-top:6px">Saldo a favor del cliente (pagó más que la deuda del período): $${disponible.toFixed(2)}</div>` : '';
+  const filasPagos = pagos.map(p => `<tr>
+      <td style="font-size:12px">${limpiarFecha(p.fecha)}</td>
+      <td><span class="badge badge-blue">${escHTML(p.forma||'-')}</span></td>
+      <td style="font-size:12px">${escHTML((p.asesor||'').split(':')[1]?.trim()||p.asesor||'-')}</td>
+      <td style="text-align:right;font-weight:700;color:var(--blue)">$${(Number(p.monto)||0).toFixed(2)}</td>
+    </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--muted)">Sin pagos registrados en Cuadre de Caja en el período</td></tr>';
+  box.innerHTML = `
+    <div style="font-size:13px;font-weight:800;color:var(--navy);margin-bottom:10px">🔗 Cruce de deudas vs pagos</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha venta</th><th style="text-align:right">Venta</th><th style="text-align:right">Deuda</th><th style="text-align:right">Abonado</th><th style="text-align:right">Saldo</th><th>Estado</th></tr></thead>
+      <tbody>${filasDeuda}</tbody>
+    </table></div>
+    ${aFavor}
+    <div style="font-size:13px;font-weight:800;color:var(--navy);margin:16px 0 10px">💳 Pagos registrados en Cuadre de Caja</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha</th><th>Forma de Pago</th><th>Asesor</th><th style="text-align:right">Monto</th></tr></thead>
+      <tbody>${filasPagos}</tbody>
+    </table></div>`;
 }
 function cerrarDetalleClienteModal() {
   document.getElementById('modalClienteOverlay').classList.remove('open');
@@ -6208,32 +6250,50 @@ function _pagadoEnVentaPedido(p){
   const cred=_creditoDePedido(p);
   return Math.max(0, tot-cred);
 }
+/* [FIX] Mismo filtro de fecha que getDatosFiltrados() (el que usa Cuadre de Caja).
+   Antes Cobranzas leía _pedidosRaw/_pagosRaw sin filtrar la fecha: si el rango
+   elegido era un subconjunto de uno ya cargado en memoria, sumaba cobros que
+   Cuadre de Caja no mostraba y los números no cuadraban entre pantallas. */
+function _enRangoFechaFiltroDash(fecha){
+  const desde=document.getElementById('filtroFecha')?.value||'';
+  const hasta=document.getElementById('filtroFechaHasta')?.value||'';
+  if(!desde && !hasta) return true;
+  const f=_isoFechaDash(fecha||'') || String(fecha||'');
+  if(desde && f<desde) return false;
+  if(hasta && f>hasta) return false;
+  return true;
+}
 function _datosCobranzasClientes(){
   const asesorSel=document.getElementById('filtroAsesor')?.value||'';
   const map={};
   const asegurar=(nombre)=>{
     const key=_normNombreCliente(nombre)||'sin-nombre';
-    if(!map[key]) map[key]={nombre:nombre||'Sin nombre', telefono:'', asesor:'', ventas:0, pagadoVenta:0, deuda:0, cobros:0, pedidos:0, ingresos:[]};
+    if(!map[key]) map[key]={nombre:nombre||'Sin nombre', telefono:'', asesor:'', ventas:0, pagadoVenta:0, deuda:0, cobros:0, pedidos:0, ingresos:[], deudas:[]};
     return map[key];
   };
   (_pedidosRaw||[]).forEach(p=>{
     if (asesorSel && (p.empleado||'')!==asesorSel) return;
+    if (!_enRangoFechaFiltroDash(p.fecha)) return;
     const c=asegurar(p.cliente);
     const tot=parseFloat(p.total)||0;
     c.ventas+=tot;
     c.pagadoVenta+=_pagadoEnVentaPedido(p);
-    c.deuda+=_creditoDePedido(p);
+    const cred=_creditoDePedido(p);
+    c.deuda+=cred;
+    // [NEW] detalle de cada venta a crédito, para el cruce deuda ↔ pagos en "Consultar por Cliente"
+    if (cred>0.004) c.deudas.push({fecha:p.fecha||'', total:tot, credito:cred, ms:(p.creadoEn?.toMillis?.()||0)});
     c.pedidos+=1;
     if (p.telefono) c.telefono=p.telefono;
     if (p.empleado) c.asesor=p.empleado;
   });
   (_pagosRaw||[]).forEach(pg=>{
     if (asesorSel && (pg.empleado||'')!==asesorSel) return;
+    if (!_enRangoFechaFiltroDash(pg.fecha)) return;
     const cliente=pg.cliente||'Sin nombre';
     const c=asegurar(cliente);
     const monto=parseFloat(pg.monto)||0;
     c.cobros+=monto;
-    c.ingresos.push({fecha:pg.fecha||'', monto, forma:pg.forma||'', asesor:pg.empleado||'', notas:pg.notas||''});
+    c.ingresos.push({fecha:pg.fecha||'', monto, forma:pg.forma||'', asesor:pg.empleado||'', notas:pg.notas||'', ms:(pg.creadoEn?.toMillis?.()||0)});
     if (pg.empleado && !c.asesor) c.asesor=pg.empleado;
   });
   return Object.values(map).map(c=>{
