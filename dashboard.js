@@ -5086,6 +5086,23 @@ function poblarClienteSelect(datos) {
     if (!c.ultimoFecha) { c.ultimoFecha = primeraLinea['FECHA'] || ''; c.asesor = primeraLinea['ASESOR / RUTA'] || ''; }
   });
 
+  // [FIX] Clientes que en el período SOLO tienen cobros/pagos (sin pedidos) no aparecían
+  // aquí, pero sí en "Consulta Cobranzas" (que también lee los pagos). Ej.: un cliente con
+  // Ventas $0.00 y un cobro de $10 en el período. Ahora se agregan también, sin duplicar a
+  // los que ya están (comparando el nombre sin mayúsculas ni espacios extra).
+  try {
+    const _normCli = n => String(n||'').trim().replace(/\s+/g,' ').toLowerCase();
+    const _yaListados = new Set(Object.keys(porCliente).map(_normCli));
+    const _pagosPeriodo = getDatosFiltrados().filter(r => !r['PRODUCTO'] && r['CLIENTE'] && parseFloat(r['TOTAL PEDIDO ($)']||0) > 0 && String(r['TOTAL PEDIDO ($)']).indexOf('-') === -1);
+    _pagosPeriodo.forEach(r => {
+      const nombre = r['CLIENTE'];
+      const k = _normCli(nombre);
+      if (!k || _yaListados.has(k)) return;
+      _yaListados.add(k);
+      porCliente[nombre] = { pedidos: 0, total: 0, ultimoFecha: '', asesor: r['ASESOR / RUTA'] || '', telefono: '', direccion: '', items: [] };
+    });
+  } catch (e) { console.error('poblarClienteSelect (clientes solo con cobros):', e); }
+
   // [FIX] LA PANTALLA SE CONGELABA con muchos clientes/pedidos acumulados: antes, por
   // CADA cliente se recorría TODO "todosLosDatos" dos veces completas (una para sumar
   // sus ventas a crédito, otra para sumar sus pagos) — con cientos de clientes y miles
