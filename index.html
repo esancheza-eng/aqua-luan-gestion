@@ -341,7 +341,8 @@
             <div style="background:var(--surface2);border:1.5px dashed var(--border);border-radius:var(--radius);padding:14px 16px;font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.8">
               <b style="color:var(--navy)">Formato esperado del Excel/CSV</b> (una fila por producto; varias filas con el mismo Cliente + Fecha + Asesor se agrupan automáticamente en un solo pedido):<br>
               <code>Fecha | Asesor | Cliente | Telefono | Direccion | Producto | Cantidad | Precio | FormaPago | Notas</code><br>
-              La Fecha debe ir en formato AAAA-MM-DD (ej. 2026-03-15).
+              La Fecha debe ir en formato AAAA-MM-DD (ej. 2026-03-15).<br>
+              <b style="color:var(--navy)">Lista de precios:</b> cada Cliente + Asesor + Producto con Precio mayor a 0 queda guardado como <b>precio oficial</b> del cliente, y la app de pedidos lo sugiere antes que el último precio vendido. Filas con <b>Cantidad 0</b> solo actualizan la lista de precios (no crean pedido ni suman ventas).
             </div>
             <input type="file" id="importarArchivo" accept=".xlsx,.xls,.csv" onchange="actualizarEstadoArchivoImportar()">
             <button type="button" id="btnQuitarArchivoImportar" onclick="limpiarArchivoImportado()" title="Quitar archivo seleccionado" style="display:none;margin-left:8px;padding:7px 10px;border:none;border-radius:8px;background:#fdecea;color:#c0392b;font-weight:800;cursor:pointer">✕</button>
