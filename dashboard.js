@@ -7692,6 +7692,7 @@ function limpiarArchivoImportado(){
   const preview=document.getElementById('importarPreview');
   if(preview) preview.innerHTML='';
   if(typeof _pedidosParaImportar!=='undefined') _pedidosParaImportar=[];
+  if(typeof _preciosParaImportar!=='undefined') _preciosParaImportar=[];
   actualizarEstadoArchivoImportar();
 }
 function procesarArchivoImportado(){
@@ -7741,8 +7742,22 @@ function _normalizarFechaImportada(valor){
   }
   return s;
 }
+/* [NEW] Lista de precios oficial por cliente (colección 'preciosClientes').
+   Un documento por Asesor + Cliente, con un mapa precios{ PRODUCTO: precio }.
+   La app de pedidos sugiere ESTE precio antes que el último precio vendido, así
+   que la lista importada manda aunque existan pedidos más recientes con otro precio.
+   Si el mismo Cliente + Asesor + Producto aparece varias veces en el archivo, gana
+   la fila con la Fecha más reciente (y ante empate, la que está más abajo). */
+let _preciosParaImportar = [];
+function _slugPrecioCliente(t){
+  return String(t||'').toLocaleUpperCase('es-EC').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'SIN';
+}
+function _idPrecioCliente(empleado, cliente){
+  return `${_slugPrecioCliente(empleado)}__${_slugPrecioCliente(cliente)}`.slice(0,700);
+}
 function agruparYPrevisualizarImportacion(filas){
   const grupos = {};
+  const precios = {};
   filas.forEach(f => {
     const filaNorm = {};
     Object.keys(f).forEach(k => { filaNorm[_normEncabezado(k)] = f[k]; });
@@ -7750,46 +7765,85 @@ function agruparYPrevisualizarImportacion(filas){
     const asesor = _matchAsesorCanonico(_valorColumna(filaNorm, ['Asesor']));
     const cliente = _valorColumna(filaNorm, ['Cliente']);
     if (!fecha || !cliente) return;
-    const key = `${cliente}|${fecha}|${asesor}`;
-    if (!grupos[key]) grupos[key] = { fecha, empleado: asesor, cliente, telefono: _valorColumna(filaNorm, ['Telefono']), direccion: _valorColumna(filaNorm, ['Direccion']), formapago: _valorColumna(filaNorm, ['FormaPago','Forma de Pago']) || 'Contado', notas: _valorColumna(filaNorm, ['Notas']), productos: [] };
+    const telefono = _valorColumna(filaNorm, ['Telefono']);
+    const direccion = _valorColumna(filaNorm, ['Direccion']);
+    const producto = _valorColumna(filaNorm, ['Producto']);
     const cantidad = parseFloat(_valorColumna(filaNorm, ['Cantidad'])) || 0;
     const precio = parseFloat(_valorColumna(filaNorm, ['Precio'])) || 0;
-    grupos[key].productos.push({ nombre: _valorColumna(filaNorm, ['Producto']), cantidad, precio, subtotal: +(cantidad*precio).toFixed(2), regalias: [] });
+
+    // Lista de precios (se guarda aunque la Cantidad sea 0)
+    if (producto && precio > 0) {
+      const pk = _idPrecioCliente(asesor, cliente);
+      if (!precios[pk]) precios[pk] = { id: pk, cliente: cliente.toLocaleUpperCase('es-EC'), empleado: asesor, telefono: '', direccion: '', precios: {}, _fechas: {} };
+      const pc = precios[pk];
+      if (telefono) pc.telefono = telefono;
+      if (direccion) pc.direccion = direccion.toLocaleUpperCase('es-EC');
+      if (!pc._fechas[producto] || fecha >= pc._fechas[producto]) { pc.precios[producto] = +precio.toFixed(2); pc._fechas[producto] = fecha; }
+    }
+
+    // Pedido (solo si la fila tiene cantidad; las filas en 0 son únicamente de lista de precios)
+    if (cantidad <= 0) return;
+    const key = `${cliente}|${fecha}|${asesor}`;
+    if (!grupos[key]) grupos[key] = { fecha, empleado: asesor, cliente, telefono, direccion, formapago: _valorColumna(filaNorm, ['FormaPago','Forma de Pago']) || 'Contado', notas: _valorColumna(filaNorm, ['Notas']), productos: [] };
+    grupos[key].productos.push({ nombre: producto, cantidad, precio, subtotal: +(cantidad*precio).toFixed(2), regalias: [] });
   });
   _pedidosParaImportar = Object.values(grupos).map(p => ({ ...p, total: +p.productos.reduce((s,pr) => s+pr.subtotal, 0).toFixed(2) }));
+  _preciosParaImportar = Object.values(precios).map(({ _fechas, ...resto }) => resto);
   renderPreviewImportacion();
 }
 function renderPreviewImportacion(){
   const cont = document.getElementById('importarPreview');
-  if (!_pedidosParaImportar.length) { cont.innerHTML = '<div class="empty-state"><div class="icon">📭</div>No se detectaron pedidos válidos en el archivo. Revisa que las columnas coincidan con el formato indicado arriba.</div>'; return; }
-  const filas = _pedidosParaImportar.map(p => `<tr><td style="font-size:12px">${escHTML(p.fecha)}</td><td style="font-size:12px">${escHTML(p.empleado||'-')}</td><td style="font-weight:600">${escHTML(p.cliente)}</td><td style="text-align:center">${p.productos.length}</td><td style="text-align:right;font-weight:700;color:var(--teal)">$${p.total.toFixed(2)}</td></tr>`).join('');
+  if (!_pedidosParaImportar.length && !_preciosParaImportar.length) { cont.innerHTML = '<div class="empty-state"><div class="icon">📭</div>No se detectaron pedidos ni precios válidos en el archivo. Revisa que las columnas coincidan con el formato indicado arriba.</div>'; return; }
+  const filasPed = _pedidosParaImportar.map(p => `<tr><td style="font-size:12px">${escHTML(p.fecha)}</td><td style="font-size:12px">${escHTML(p.empleado||'-')}</td><td style="font-weight:600">${escHTML(p.cliente)}</td><td style="text-align:center">${p.productos.length}</td><td style="text-align:right;font-weight:700;color:var(--teal)">$${p.total.toFixed(2)}</td></tr>`).join('');
+  const nPrecios = _preciosParaImportar.reduce((s,c) => s + Object.keys(c.precios).length, 0);
+  const filasPre = _preciosParaImportar.map(c => {
+    const lista = Object.entries(c.precios).map(([prod,pr]) => `${escHTML(prod)}: <b>$${pr.toFixed(2)}</b>`).join(' · ');
+    const sinAsesor = !c.empleado || (Array.isArray(_asesoresCache) && _asesoresCache.length && !_asesoresCache.includes(c.empleado));
+    return `<tr><td style="font-size:12px;${sinAsesor?'color:var(--red);font-weight:700':''}">${escHTML(c.empleado||'SIN ASESOR')}</td><td style="font-weight:600">${escHTML(c.cliente)}</td><td style="font-size:12px">${lista}</td></tr>`;
+  }).join('');
+  const tabla = (head, body) => `<div class="table-wrap" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;max-height:280px;overflow-y:auto;margin-bottom:12px"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   cont.innerHTML = `
-    <div style="margin-bottom:10px;font-size:13px;font-weight:700;color:var(--navy)">Se detectaron ${_pedidosParaImportar.length} pedido(s) — revisa antes de confirmar:</div>
-    <div class="table-wrap" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;max-height:320px;overflow-y:auto">
-      <table><thead><tr><th>Fecha</th><th>Asesor</th><th>Cliente</th><th style="text-align:center">Prod.</th><th style="text-align:right">Total</th></tr></thead><tbody>${filas}</tbody></table>
-    </div>
-    <button class="btn-filter" id="btnConfirmarImportacion" style="background:var(--red);margin-top:14px" onclick="confirmarImportacionMasiva()">⬆ Confirmar e importar ${_pedidosParaImportar.length} pedido(s) a Firestore</button>
+    ${_preciosParaImportar.length ? `<div style="margin-bottom:8px;font-size:13px;font-weight:700;color:var(--navy)">💲 Lista de precios: ${_preciosParaImportar.length} cliente(s), ${nPrecios} precio(s). Reemplazan el precio que la app sugiere para ese cliente y producto.</div>
+      ${tabla('<th>Asesor</th><th>Cliente</th><th>Precios</th>', filasPre)}` : ''}
+    ${_pedidosParaImportar.length ? `<div style="margin-bottom:8px;font-size:13px;font-weight:700;color:var(--navy)">🧾 Pedidos: ${_pedidosParaImportar.length} (las filas con Cantidad 0 no crean pedido)</div>
+      ${tabla('<th>Fecha</th><th>Asesor</th><th>Cliente</th><th style="text-align:center">Prod.</th><th style="text-align:right">Total</th>', filasPed)}` : '<div style="margin-bottom:8px;font-size:12px;color:var(--muted)">No se crearán pedidos (todas las filas tienen Cantidad 0): solo se actualizará la lista de precios.</div>'}
+    <button class="btn-filter" id="btnConfirmarImportacion" style="background:var(--red);margin-top:6px" onclick="confirmarImportacionMasiva()">⬆ Confirmar e importar</button>
   `;
 }
 async function confirmarImportacionMasiva(){
-  if (!_pedidosParaImportar.length) return;
-  if (!confirm(`¿Importar ${_pedidosParaImportar.length} pedido(s) a la base de datos activa? Cada pedido importado queda marcado como "importado:true" para poder identificarlo y eliminarlo individualmente después si hace falta.`)) return;
+  if (!_pedidosParaImportar.length && !_preciosParaImportar.length) return;
+  const nPrecios = _preciosParaImportar.reduce((s,c) => s + Object.keys(c.precios).length, 0);
+  if (!confirm(`¿Importar a la base de datos activa?\n\n• ${_pedidosParaImportar.length} pedido(s) (marcados como "importado:true")\n• Lista de precios: ${_preciosParaImportar.length} cliente(s), ${nPrecios} precio(s)\n\nLos precios importados pasan a ser el precio oficial que la app sugiere a cada cliente.`)) return;
   const btn = document.getElementById('btnConfirmarImportacion');
   if (btn) { btn.disabled = true; btn.textContent = 'Importando...'; }
+  const ahora = firebase.firestore.FieldValue.serverTimestamp();
+  let pedidosOk = 0, preciosOk = 0;
   try {
     let lote = db.batch(); let contador = 0;
+    const flush = async () => { if (contador % 400 === 0) { await lote.commit(); lote = db.batch(); } }; // límite de Firestore: 500 operaciones por lote
+    // 1) Lista de precios primero: es lo que la app de pedidos debe respetar
+    for (const c of _preciosParaImportar) {
+      const datos = { cliente: c.cliente, clienteKey: c.cliente, empleado: c.empleado || '', precios: c.precios, fuente: 'importacion', actualizadoPor: ADMIN_ACTUAL.uid || null, actualizadoEn: ahora };
+      if (c.telefono) datos.telefono = c.telefono;
+      if (c.direccion) datos.direccion = c.direccion;
+      lote.set(db.collection('preciosClientes').doc(c.id), datos, { merge: true }); // merge: conserva productos que no vienen en este archivo
+      contador++; preciosOk++; await flush();
+    }
+    // 2) Pedidos
     for (const p of _pedidosParaImportar) {
-      const ref = db.collection('pedidos').doc();
-      lote.set(ref, { ...p, importado: true, creadoPor: ADMIN_ACTUAL.uid || null, creadoEn: firebase.firestore.FieldValue.serverTimestamp() });
-      contador++;
-      if (contador % 400 === 0) { await lote.commit(); lote = db.batch(); } // límite de Firestore: 500 operaciones por lote
+      lote.set(db.collection('pedidos').doc(), { ...p, importado: true, creadoPor: ADMIN_ACTUAL.uid || null, creadoEn: ahora });
+      contador++; pedidosOk++; await flush();
     }
     await lote.commit();
-    mostrarToastEdicion(`✅ ${_pedidosParaImportar.length} pedido(s) importado(s) correctamente.`);
-    _pedidosParaImportar = [];
+    mostrarToastEdicion(`✅ Importado: ${pedidosOk} pedido(s) y precios de ${preciosOk} cliente(s).`);
+    _pedidosParaImportar = []; _preciosParaImportar = [];
     document.getElementById('importarPreview').innerHTML = '';
     document.getElementById('importarArchivo').value = '';
-  } catch(err) { console.error(err); alert('❌ Error al importar: ' + err.message); }
+  } catch(err) {
+    console.error(err);
+    const permiso = /permission|insufficient/i.test(err.message||'');
+    alert('❌ Error al importar: ' + err.message + (permiso ? '\n\nRevisa que las reglas de Firestore permitan escribir en la colección "preciosClientes".' : ''));
+  }
   finally { if (btn) { btn.disabled = false; btn.textContent = '⬆ Confirmar e importar'; } }
 }
 /* [NEW] Notificación flotante simple, reutilizable */
