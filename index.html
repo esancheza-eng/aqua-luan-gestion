@@ -96,6 +96,8 @@
             <button class="dash-nav-item" data-section="cierreDelDia" id="navCierreDelDia" onclick="switchSeccionDash('cierreDelDia')"><svg class="nav-ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Cierre del Día</button>
             <button class="dash-nav-item" data-section="notasAdicionalesDash" id="navNotasAdicionalesDash" onclick="switchSeccionDash('notasAdicionalesDash')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>Notas Adicionales</button>
             <button class="dash-nav-item" data-section="movimientosBancarios" id="navMovimientosBancarios" onclick="switchSeccionDash('movimientosBancarios')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>Movimientos Bancarios</button>
+            <!-- [NEW] Control de Impresión de Tickets -->
+            <button class="dash-nav-item" data-section="controlTickets" id="navControlTickets" onclick="switchSeccionDash('controlTickets')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Control de Tickets</button>
           </nav>
           <div class="dash-content">
         <div class="dash-section active" id="seccion-resumen">
@@ -563,6 +565,39 @@
               </tfoot>
             </table>
           </div>
+        </div>
+        </div>
+        <!-- [NEW] Control de Impresión de Tickets — solo lectura, usa los pedidos ya cargados con el filtro de arriba -->
+        <div class="dash-section" id="seccion-controlTickets">
+        <div class="kpi-grid" id="ctKpis"></div>
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">🖨️ Cumplimiento por Asesor</div>
+          </div>
+          <div id="ctNotaInicio" style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px"></div>
+          <div style="padding:0 1.25rem 1.25rem;overflow-x:auto">
+            <table class="cierre-prod-table">
+              <thead><tr><th style="text-align:left">Asesor</th><th style="text-align:right">Pedidos</th><th style="text-align:right">Con ticket</th><th style="text-align:right">Sin ticket</th><th style="text-align:right">Cumplimiento</th></tr></thead>
+              <tbody id="ctResumenTbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="table-card" style="margin-top:1.25rem">
+          <div class="table-header">
+            <div class="table-title">🧾 Detalle de Pedidos</div>
+            <select id="ctFiltroEstado" onchange="_paginasTablas['controlTickets']=1;renderControlTickets()" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer">
+              <option value="sin">❌ Solo sin ticket</option>
+              <option value="con">✅ Solo con ticket</option>
+              <option value="todos">📋 Todos</option>
+            </select>
+          </div>
+          <div style="padding:0 1.25rem 1.25rem;overflow-x:auto">
+            <table class="cierre-prod-table" id="ctTabla">
+              <thead><tr><th style="text-align:left">Fecha</th><th style="text-align:left">Hora pedido</th><th style="text-align:left">Asesor</th><th style="text-align:left">Cliente</th><th style="text-align:right">Total</th><th style="text-align:left">Ticket</th></tr></thead>
+              <tbody id="ctTbody"></tbody>
+            </table>
+          </div>
+          <div id="ctEmptyMsg" style="display:none;padding:0 1.25rem 1.25rem;color:var(--muted);font-style:italic">No hay pedidos para mostrar con este filtro.</div>
         </div>
         </div>
           </div>
