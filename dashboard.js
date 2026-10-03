@@ -330,6 +330,7 @@ function switchSeccionDash(sec){
   if (sec === 'movimientosBancarios' && typeof renderMovimientosBancarios === 'function') renderMovimientosBancarios();
   if (sec === 'reporteAsesor' && typeof renderReporteAsesores === 'function') renderReporteAsesores();
   if (sec === 'cobranzasClientes' && typeof renderCobranzasClientes === 'function') renderCobranzasClientes();
+  if (sec === 'controlTickets' && typeof renderControlTickets === 'function') renderControlTickets(); // [NEW] Control de Impresión de Tickets
   // [FIX] Los gráficos de "Resumen General" ya no se redibujan en cada cambio de
   // Firestore si esta pestaña no está activa (ver comentario en renderDashboard) —
   // así que al entrar aquí se redibujan al instante con los últimos datos en caché.
@@ -3700,6 +3701,9 @@ function _recalcularTodosLosDatos() {
   if (seccionMovBancVisible && typeof renderMovimientosBancarios === 'function') renderMovimientosBancarios();
   const seccionCobranzasVisible = document.getElementById('seccion-cobranzasClientes')?.classList.contains('active');
   if (seccionCobranzasVisible && typeof renderCobranzasClientes === 'function') renderCobranzasClientes();
+  // [NEW] Control de Impresión de Tickets — misma lógica de refresco perezoso
+  const seccionControlTicketsVisible = document.getElementById('seccion-controlTickets')?.classList.contains('active');
+  if (seccionControlTicketsVisible && typeof renderControlTickets === 'function') renderControlTickets();
   if (typeof renderTablaEliminados === 'function') renderTablaEliminados();
   if (typeof renderTablaAuditoria === 'function') renderTablaAuditoria();
   if (document.getElementById('viewRutas')?.classList.contains('active') && typeof aplicarRutas === 'function') {
@@ -8228,4 +8232,120 @@ async function eliminarSecretariaSeleccionada(){
     poblarSelectEliminarSecretaria();
   }catch(err){ console.error(err); alert('No se pudo eliminar: ' + (err.message || 'error desconocido')); }
   });
+}
+
+/* ════════════════════════════════════════════════════════════
+   [NEW] CONTROL DE IMPRESIÓN DE TICKETS
+   Solo lectura. Usa los pedidos que el Dashboard ya tiene cargados
+   (_pedidosRaw) con el filtro Desde/Hasta y Asesor de arriba.
+   Lee los campos ticketImpreso / ticketImpresoEn que marca la app de
+   asesores al tocar "Imprimir ticket". No modifica ningún pedido ni
+   ningún cálculo existente del Dashboard.
+   Los pedidos con fecha anterior a FECHA_INICIO_CONTROL_TICKET no se
+   evalúan (se crearon antes de que existiera el control).
+════════════════════════════════════════════════════════════ */
+const FECHA_INICIO_CONTROL_TICKET = '2026-10-03';
+function _fechaPedidoControlTicket(p){
+  return (typeof _isoFechaDash==='function' ? _isoFechaDash(p.fecha||'', p.creadoEn) : '') || String(p.fecha||'').slice(0,10);
+}
+function _pedidosControlTicketFiltrados(){
+  const desde = (document.getElementById('filtroFecha')?.value || '').trim();
+  const hasta = (document.getElementById('filtroFechaHasta')?.value || '').trim();
+  const asesorSel = (document.getElementById('filtroAsesor')?.value || '').trim();
+  return (_pedidosRaw || [])
+    .filter(p => {
+      if(!desde && !hasta) return true;
+      const f = _fechaPedidoControlTicket(p);
+      if(!f) return false;
+      if(desde && f < desde) return false;
+      if(hasta && f > hasta) return false;
+      return true;
+    })
+    .filter(p => {
+      if(!asesorSel) return true;
+      const emp = String(p.empleado||'').trim();
+      if(emp === asesorSel) return true;
+      return (typeof _mismoAsesorLiq==='function') ? _mismoAsesorLiq(emp, asesorSel) : false;
+    })
+    .sort((a,b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
+}
+function renderControlTickets(){
+  const tbody = document.getElementById('ctTbody');
+  if(!tbody) return;
+  const todos = _pedidosControlTicketFiltrados();
+  const controlados = todos.filter(p => { const f=_fechaPedidoControlTicket(p); return f && f >= FECHA_INICIO_CONTROL_TICKET; });
+  const anteriores = todos.length - controlados.length;
+  const conTicket = controlados.filter(p => p.ticketImpreso === true);
+  const sinTicket = controlados.filter(p => p.ticketImpreso !== true);
+  const pct = (a,b) => b ? Math.round((a/b)*100) : 0;
+
+  // KPIs
+  const kpis = document.getElementById('ctKpis');
+  if(kpis){
+    const card = (cls, ico, label, val) => `<div class="kpi-card ${cls}"><div class="kpi-icon">${ico}</div><div class="kpi-label">${label}</div><div class="kpi-value">${val}</div></div>`;
+    kpis.innerHTML =
+      card('navy','🧾','Pedidos controlados', controlados.length) +
+      card('teal','✅','Con ticket', conTicket.length) +
+      card('red','❌','Sin ticket', sinTicket.length) +
+      card('blue','📊','Cumplimiento', pct(conTicket.length, controlados.length)+'%');
+  }
+  const nota = document.getElementById('ctNotaInicio');
+  if(nota){
+    nota.textContent = 'El control aplica a pedidos desde el '+FECHA_INICIO_CONTROL_TICKET+'. "Con ticket" significa que el asesor tocó Imprimir ticket después de guardar el pedido.'
+      + (anteriores>0 ? ' Hay '+anteriores+' pedido(s) anteriores a esa fecha en el filtro actual que no se evalúan.' : '');
+  }
+
+  // Resumen por asesor
+  const resTbody = document.getElementById('ctResumenTbody');
+  if(resTbody){
+    const porAsesor = {};
+    controlados.forEach(p => {
+      const a = String(p.empleado||'Sin asignar').trim() || 'Sin asignar';
+      if(!porAsesor[a]) porAsesor[a] = { total:0, con:0 };
+      porAsesor[a].total++;
+      if(p.ticketImpreso === true) porAsesor[a].con++;
+    });
+    const filas = Object.keys(porAsesor).sort((x,y)=>x.localeCompare(y,'es')).map(a => {
+      const d = porAsesor[a], sin = d.total - d.con, c = pct(d.con, d.total);
+      const color = c>=95 ? 'var(--teal)' : (c>=80 ? 'var(--orange)' : 'var(--red)');
+      return `<tr>
+        <td style="text-align:left;font-weight:700;color:var(--navy)">${escHTML(a)}</td>
+        <td style="text-align:right;font-weight:700">${d.total}</td>
+        <td style="text-align:right;font-weight:700;color:var(--teal)">${d.con}</td>
+        <td style="text-align:right;font-weight:700;color:${sin?'var(--red)':'var(--muted)'}">${sin}</td>
+        <td style="text-align:right;font-weight:800;color:${color}">${c}%</td>
+      </tr>`;
+    });
+    resTbody.innerHTML = filas.length ? filas.join('') : `<tr><td colspan="5" style="text-align:left;color:var(--muted);font-style:italic">Sin pedidos controlados en este período.</td></tr>`;
+  }
+
+  // Detalle
+  const estado = document.getElementById('ctFiltroEstado')?.value || 'sin';
+  const lista = estado==='con' ? conTicket : (estado==='todos' ? controlados : sinTicket);
+  const tabla = document.getElementById('ctTabla');
+  const emptyMsg = document.getElementById('ctEmptyMsg');
+  if(!lista.length){
+    tbody.innerHTML = '';
+    if(tabla) tabla.style.display = 'none';
+    if(emptyMsg) emptyMsg.style.display = 'block';
+    return;
+  }
+  if(tabla) tabla.style.display = '';
+  if(emptyMsg) emptyMsg.style.display = 'none';
+  const pg = _paginarTabla('controlTickets', lista);
+  tbody.innerHTML = pg.items.map(p => {
+    const hora = p.hora || (p.creadoEn?.toMillis ? _horaDeTs(p.creadoEn) : '-');
+    const tot = parseFloat(p.total||0);
+    const ticket = p.ticketImpreso === true
+      ? `<span style="color:var(--teal);font-weight:800">✅ Impreso${p.ticketImpresoEn?.toMillis ? ' · '+escHTML(_horaDeTs(p.ticketImpresoEn)) : ''}</span>`
+      : `<span style="color:var(--red);font-weight:800">❌ Sin ticket</span>`;
+    return `<tr>
+      <td style="text-align:left;white-space:nowrap;font-weight:700;color:var(--navy)">${escHTML(p.fecha||'-')}</td>
+      <td style="text-align:left;white-space:nowrap">${escHTML(hora||'-')}</td>
+      <td style="text-align:left;font-weight:700;color:var(--navy)">${escHTML(p.empleado||'-')}</td>
+      <td style="text-align:left;font-weight:700;color:var(--navy)">${escHTML(p.cliente||'-')}</td>
+      <td style="text-align:right;font-weight:700">$${isNaN(tot)?'0.00':tot.toFixed(2)}</td>
+      <td style="text-align:left;white-space:nowrap">${ticket}</td>
+    </tr>`;
+  }).join('') + _htmlPaginadorTabla('controlTickets', pg, 6, 'renderControlTickets');
 }
