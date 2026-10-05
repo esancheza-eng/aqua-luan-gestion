@@ -6466,19 +6466,7 @@ function imprimirCobranzasSeleccionadas(){
   const totDeuda=rows.reduce((s,c)=>s+c.deuda,0);
   const totCobros=rows.reduce((s,c)=>s+c.cobros,0);
   const totSaldo=rows.reduce((s,c)=>s+c.saldo,0);
-  const filas=rows.map(c=>{
-    const saldoTxt=c.saldo>0.004 ? ('$'+c.saldo.toFixed(2)) : (c.saldo<-0.004 ? ('-$'+Math.abs(c.saldo).toFixed(2)) : '$0.00');
-    return `<tr>
-      <td>${escHTML(c.nombre)}</td>
-      <td>${escHTML(c.telefono||'—')}</td>
-      <td>${escHTML(c.asesorCorto||'—')}</td>
-      <td style="text-align:right">$${c.ventas.toFixed(2)}</td>
-      <td style="text-align:right">$${c.pagadoVenta.toFixed(2)}</td>
-      <td style="text-align:right">$${c.deuda.toFixed(2)}</td>
-      <td style="text-align:right">$${c.cobros.toFixed(2)}</td>
-      <td style="text-align:right">${saldoTxt}</td>
-    </tr>`;
-  }).join('');
+  const filas=_filasImpresionCobranzasPorFecha(rows); // [NEW] una fila por venta, ordenada por fecha
   const logoUrl=location.origin+'/logo-luanaqua.png';
   const v=_abrirVentanaImpresion();
   v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Consulta Cobranzas — Aqua Luan</title>
@@ -6503,10 +6491,10 @@ function imprimirCobranzasSeleccionadas(){
     </div>
   </div>
   <table>
-    <thead><tr><th>Cliente</th><th>Teléfono</th><th>Asesor</th><th style="text-align:right">Ventas</th><th style="text-align:right">Pagado en venta</th><th style="text-align:right">Deuda generada</th><th style="text-align:right">Cobros</th><th style="text-align:right">Saldo</th></tr></thead>
+    <thead><tr><th>Fecha de venta</th><th>Cliente</th><th>Teléfono</th><th>Asesor</th><th style="text-align:right">Venta</th><th style="text-align:right">Pagado en venta</th><th style="text-align:right">Deuda generada</th><th style="text-align:right">Cobros</th><th style="text-align:right">Saldo</th></tr></thead>
     <tbody>
       ${filas}
-      <tr class="total-row"><td colspan="5" style="text-align:right">TOTAL</td><td style="text-align:right">$${totDeuda.toFixed(2)}</td><td style="text-align:right">$${totCobros.toFixed(2)}</td><td style="text-align:right">$${totSaldo.toFixed(2)}</td></tr>
+      <tr class="total-row"><td colspan="6" style="text-align:right">TOTAL</td><td style="text-align:right">$${totDeuda.toFixed(2)}</td><td style="text-align:right">$${totCobros.toFixed(2)}</td><td style="text-align:right">$${totSaldo.toFixed(2)}</td></tr>
     </tbody>
   </table>
   <script>window.onload=function(){window.print();};<\/script>
@@ -8557,4 +8545,65 @@ function igAlEntrarInformeGerencial(){
     _igYaInicializado = true;
     generarInformeGerencial();
   }
+}
+
+/* [NEW] Consulta Cobranzas — impresión con una fila por cada venta a crédito.
+   - El nombre del cliente se repite en cada venta (ej. 2 ventas = 2 filas).
+   - Todas las filas se ordenan por fecha de venta (de la más antigua a la más reciente).
+   - Fecha en formato dd/mm/aaaa.
+   - Los cobros del cliente se aplican a sus ventas de la más antigua a la más
+     reciente; si pagó de más, el excedente queda en su venta más reciente
+     (saldo negativo). Así los totales de Deuda, Cobros y Saldo son los mismos
+     de antes.
+   - Un cliente sin venta a crédito en el período sale en una sola fila con "—". */
+function _isoFechaCobranza(valor){
+  return (typeof _isoFechaDash === 'function') ? _isoFechaDash(valor) : String(valor||'').slice(0,10);
+}
+function _fechaDMYCobranza(valor){
+  const m = String(_isoFechaCobranza(valor)||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? (m[3] + '/' + m[2] + '/' + m[1]) : (String(valor||'').trim() || '—');
+}
+function _filasImpresionCobranzasPorFecha(rows){
+  const lineas = [];
+  (rows || []).forEach(c => {
+    const ventas = (Array.isArray(c.deudas) ? c.deudas.slice() : []).sort((a, b) => {
+      const fa = _isoFechaCobranza(a.fecha), fb = _isoFechaCobranza(b.fecha);
+      return fa < fb ? -1 : fa > fb ? 1 : ((a.ms||0) - (b.ms||0));
+    });
+    let porAplicar = Math.round((Number(c.cobros)||0) * 100);
+    if (!ventas.length) {
+      lineas.push({ c, iso:'', ms:0, fecha:'—', venta:null, pagado:null, deuda:Math.round((Number(c.deuda)||0)*100), cobro:porAplicar });
+      return;
+    }
+    ventas.forEach((d, i) => {
+      const deuda = Math.round((Number(d.credito)||0) * 100);
+      const esUltima = i === ventas.length - 1;
+      const cobro = esUltima ? porAplicar : Math.min(deuda, porAplicar);
+      porAplicar -= cobro;
+      const total = Number(d.total)||0;
+      lineas.push({ c, iso:_isoFechaCobranza(d.fecha), ms:d.ms||0, fecha:_fechaDMYCobranza(d.fecha),
+                    venta:total, pagado:Math.max(0, total - (Number(d.credito)||0)), deuda, cobro });
+    });
+  });
+  lineas.sort((a, b) => {
+    if (a.iso !== b.iso) { if (!a.iso) return 1; if (!b.iso) return -1; return a.iso < b.iso ? -1 : 1; }
+    const n = String(a.c.nombre||'').localeCompare(String(b.c.nombre||''), 'es');
+    return n || (a.ms - b.ms);
+  });
+  const dol = cents => '$' + (cents/100).toFixed(2);
+  return lineas.map(l => {
+    const saldo = l.deuda - l.cobro;
+    const saldoTxt = saldo > 0 ? dol(saldo) : (saldo < 0 ? ('-' + dol(-saldo)) : '$0.00');
+    return `<tr>
+      <td style="white-space:nowrap">${escHTML(l.fecha)}</td>
+      <td>${escHTML(l.c.nombre)}</td>
+      <td>${escHTML(l.c.telefono||'—')}</td>
+      <td>${escHTML(l.c.asesorCorto||'—')}</td>
+      <td style="text-align:right">${l.venta === null ? '—' : '$' + l.venta.toFixed(2)}</td>
+      <td style="text-align:right">${l.pagado === null ? '—' : '$' + l.pagado.toFixed(2)}</td>
+      <td style="text-align:right">${dol(l.deuda)}</td>
+      <td style="text-align:right">${dol(l.cobro)}</td>
+      <td style="text-align:right">${saldoTxt}</td>
+    </tr>`;
+  }).join('');
 }
