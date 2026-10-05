@@ -60,7 +60,7 @@
             '<th style="text-align:left">Cliente</th><th style="text-align:left">Teléfono</th><th style="text-align:left">Asesor</th><th style="text-align:left">Envase</th>' +
             '<th style="text-align:right">Prestados</th><th style="text-align:right">Devueltos</th><th style="text-align:right">Pendiente</th><th style="text-align:left">Primer préstamo</th>' +
           '</tr></thead><tbody id="envPendTbody"></tbody></table></div></div>' +
-        '<div class="table-card" style="margin-top:1.25rem"><div class="table-header"><div class="table-title">📋 Registros de préstamos y devoluciones</div>' +
+        '<div class="table-card" style="margin-top:1.25rem"><div class="table-header"><div class="table-title">📋 Registros de préstamos y retiros de envases</div>' +
           '<button class="env-btn" id="envBtnHist">Mostrar</button></div>' +
           '<div id="envHistWrap" style="display:none;padding:0 1.25rem 1.25rem;overflow-x:auto"><table class="cierre-prod-table"><thead><tr>' +
             '<th style="text-align:left">Fecha</th><th style="text-align:left">Asesor</th><th style="text-align:left">Cliente</th><th style="text-align:left">Movimiento</th>' +
@@ -154,14 +154,14 @@
           .sort(function (a, b) { return (b.fecha || '').localeCompare(a.fecha || '') || ms(b) - ms(a); }).slice(0, 200);
         ht.innerHTML = hs.length ? hs.map(function (m) {
           return '<tr style="' + (m.anulado ? 'opacity:.45;text-decoration:line-through' : '') + '"><td>' + fmt(m.fecha) + '</td><td>' + esc(nombreAsesor(m.empleado)) + '</td><td>' + esc(m.cliente) + '</td><td>' +
-            (m.tipo === 'PRESTAMO' ? '↗ Préstamo' : '↙ Devolución') + '</td><td>' + esc(m.envase) + '</td><td style="text-align:right">' + num(m.cantidad) + '</td><td>' +
+            (m.tipo === 'PRESTAMO' ? '↗ Préstamo de Envases' : '↙ Retiro de Envases') + '</td><td>' + esc(m.envase) + '</td><td style="text-align:right">' + num(m.cantidad) + '</td><td>' +
             (m.anulado ? 'Anulado' : '<button class="env-btn" style="padding:3px 9px;font-size:12px" onclick="_envAnularRegistro(\'' + m._id + '\')">Anular</button>') + '</td></tr>';
         }).join('') : '<tr><td colspan="7" style="color:var(--muted);font-style:italic">Sin registros.</td></tr>';
       }
     }
     window._envAnularRegistro = function (id) {
       var m = ENV.movs.find(function (x) { return x._id === id; }); if (!m) return;
-      var motivo = prompt('Anular ' + (m.tipo === 'PRESTAMO' ? 'préstamo' : 'devolución') + ' de ' + m.cantidad + ' ' + m.envase + ' — ' + m.cliente + '.\nEscribe el motivo:');
+      var motivo = prompt('Anular ' + (m.tipo === 'PRESTAMO' ? 'préstamo' : 'retiro') + ' de ' + m.cantidad + ' ' + m.envase + ' — ' + m.cliente + '.\nEscribe el motivo:');
       if (motivo === null) return;
       if (!motivo.trim()) { alert('Escribe el motivo.'); return; }
       var quien = (typeof ADMIN_ACTUAL !== 'undefined' && ADMIN_ACTUAL && (ADMIN_ACTUAL.nombre || ADMIN_ACTUAL.uid)) || ROL_ACTUAL;
