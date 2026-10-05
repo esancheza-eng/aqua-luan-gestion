@@ -572,20 +572,20 @@ function _iniciarListenerAsesoresDash(){
     if (rutas.includes(valorActual)) sel.value = valorActual;
   }, err => console.error('listener asesores dash:', err));
 }
-/* [NEW] El <select id="rutasAsesor"> del mapa "Rutas del Día" tiene las rutas 1–6 fijas en index.html.
-   Esto solo AGREGA al final las rutas registradas en Firebase que aún no están en la lista
-   (ej. "RUTA 7: WASHINGTON"); no quita ni cambia ninguna opción existente. */
+/* [NEW] El <select id="rutasAsesor"> del mapa "Rutas del Día" muestra exactamente los mismos
+   asesores que el filtro principal del Dashboard (los registrados en Firebase, en vivo).
+   Así cualquier asesor nuevo creado en la app de pedidos aparece solo. Las opciones fijas de
+   index.html quedan solo como respaldo hasta que llega la lista. Mantiene la selección actual. */
 function _agregarRutasNuevasMapa(rutas){
   const ra = document.getElementById('rutasAsesor');
-  if (!ra || !Array.isArray(rutas)) return;
-  const existentes = new Set([...ra.options].map(o => (o.value || '').trim().toLowerCase()));
-  rutas.forEach(r => {
-    const k = (r || '').trim().toLowerCase();
-    if (!k || existentes.has(k)) return;
-    const op = document.createElement('option');
-    op.value = r; op.textContent = r;
-    ra.appendChild(op); existentes.add(k);
-  });
+  if (!ra || !Array.isArray(rutas) || !rutas.length) return;
+  const actual = (ra.value || '').trim().toLowerCase();
+  ra.innerHTML = '<option value="">— Todos —</option>' + rutas.map(r => {
+    const nombre = r.split(':')[1]?.trim() || r;
+    return `<option value="${escHTML(r)}">${escHTML(nombre)}</option>`;
+  }).join('');
+  const hit = rutas.find(r => r.trim().toLowerCase() === actual);
+  ra.value = hit || '';
 }
 function detenerListenerAsesoresDash(){ if(_unsubAsesoresDash){_unsubAsesoresDash();_unsubAsesoresDash=null;} }
 
