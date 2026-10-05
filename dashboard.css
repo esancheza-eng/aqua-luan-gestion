@@ -855,3 +855,23 @@ tr.clickable:hover td { background: rgba(10,124,110,0.05); }
 @media (min-width: 901px) {
   #viewDashboard .dash-nav { top: 142px; z-index: 30; }
 }
+
+/* Menú lateral bloqueado: queda fijo a la vista mientras se baja
+   con el mouse por la información de cada sección. Si el menú es más
+   alto que la pantalla, se desplaza por dentro sin mover la página.
+   Solo presentación: no cambia datos, filtros ni funciones. */
+@media (min-width: 901px) {
+  #viewDashboard .dash-nav {
+    position: sticky;
+    top: 142px;
+    max-height: calc(100vh - 142px - 16px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.25) transparent;
+  }
+  #viewDashboard .dash-nav::-webkit-scrollbar { width: 6px; }
+  #viewDashboard .dash-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 6px; }
+  #viewDashboard .dash-nav::-webkit-scrollbar-track { background: transparent; }
+  #viewDashboard .dash-nav-item { flex-shrink: 0; }
+}
