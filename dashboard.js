@@ -561,6 +561,7 @@ function _iniciarListenerAsesoresDash(){
     _asesoresCache = rutas; // [NEW] disponible para el <select> de Asesor dentro del modal Editar Pedido
     if (typeof renderReporteAsesores === 'function') renderReporteAsesores(); /* [FIX] antes solo se refrescaba cuando cambiaban los pedidos, no cuando llegaba la lista de asesores — se quedaba en "No hay asesores registrados" si este listener tardaba más en cargar */
     if (typeof poblarClienteSelect === 'function') poblarClienteSelect(todosLosDatos); // [FIX] mismo problema en "Consultar por Cliente": el filtro de asesores se quedaba vacío (solo "Todos los asesores") si esta lista llegaba después que los pedidos
+    _agregarRutasNuevasMapa(rutas); // [NEW] rutas nuevas (ej. RUTA 7) también en el filtro de "Rutas del Día"
     const sel = document.getElementById('filtroAsesor');
     if (!sel) return;
     const valorActual = sel.value;
@@ -570,6 +571,21 @@ function _iniciarListenerAsesoresDash(){
     }).join('');
     if (rutas.includes(valorActual)) sel.value = valorActual;
   }, err => console.error('listener asesores dash:', err));
+}
+/* [NEW] El <select id="rutasAsesor"> del mapa "Rutas del Día" tiene las rutas 1–6 fijas en index.html.
+   Esto solo AGREGA al final las rutas registradas en Firebase que aún no están en la lista
+   (ej. "RUTA 7: WASHINGTON"); no quita ni cambia ninguna opción existente. */
+function _agregarRutasNuevasMapa(rutas){
+  const ra = document.getElementById('rutasAsesor');
+  if (!ra || !Array.isArray(rutas)) return;
+  const existentes = new Set([...ra.options].map(o => (o.value || '').trim().toLowerCase()));
+  rutas.forEach(r => {
+    const k = (r || '').trim().toLowerCase();
+    if (!k || existentes.has(k)) return;
+    const op = document.createElement('option');
+    op.value = r; op.textContent = r;
+    ra.appendChild(op); existentes.add(k);
+  });
 }
 function detenerListenerAsesoresDash(){ if(_unsubAsesoresDash){_unsubAsesoresDash();_unsubAsesoresDash=null;} }
 
