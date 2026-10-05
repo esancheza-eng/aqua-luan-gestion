@@ -98,6 +98,8 @@
             <button class="dash-nav-item" data-section="movimientosBancarios" id="navMovimientosBancarios" onclick="switchSeccionDash('movimientosBancarios')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>Movimientos Bancarios</button>
             <!-- [NEW] Control de Impresión de Tickets -->
             <button class="dash-nav-item" data-section="controlTickets" id="navControlTickets" onclick="switchSeccionDash('controlTickets')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Control de Tickets</button>
+            <!-- [NEW] Informe Gerencial — solo Administración (no está en SECCIONES_SECRETARIA, así que se oculta para la secretaria) -->
+            <button class="dash-nav-item" data-section="informeGerencial" id="navInformeGerencial" onclick="switchSeccionDash('informeGerencial'); if(typeof igAlEntrarInformeGerencial==='function') igAlEntrarInformeGerencial();"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>Informe Gerencial</button>
           </nav>
           <div class="dash-content">
         <div class="dash-section active" id="seccion-resumen">
@@ -598,6 +600,33 @@
             </table>
           </div>
           <div id="ctEmptyMsg" style="display:none;padding:0 1.25rem 1.25rem;color:var(--muted);font-style:italic">No hay pedidos para mostrar con este filtro.</div>
+        </div>
+        </div>
+        <!-- [NEW] Informe Gerencial — REPORTE QUINCENA VENTAS. Solo Administración.
+             Hace su propia consulta de SOLO LECTURA a 'pedidos' por mes (no depende del
+             filtro de fecha de arriba ni toca los listeners existentes). Rutas 1 a 5;
+             la Ruta 6 y las regalías NO entran en el reporte. -->
+        <div class="dash-section" id="seccion-informeGerencial">
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">📊 Informe Gerencial</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <label style="font-size:12px;font-weight:700;color:var(--muted)">Mes
+                <input type="month" id="igMes" style="margin-left:4px;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:8px 10px;outline:none">
+              </label>
+              <label style="font-size:12px;font-weight:700;color:var(--muted)">Período
+                <select id="igPeriodo" style="margin-left:4px;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer">
+                  <option value="ambos" selected>Quincena + Fin de mes + Total</option>
+                  <option value="q1">Solo Quincena (días 1 al 15)</option>
+                  <option value="q2">Solo Fin de mes (días 16 al 31)</option>
+                </select>
+              </label>
+              <button class="btn-filter" style="background:#12324d" onclick="generarInformeGerencial()">Generar</button>
+              <button class="btn-filter" style="background:#0a7c6e" onclick="imprimirInformeGerencial()">Imprimir PDF</button>
+            </div>
+          </div>
+          <div style="padding:0 1.25rem 8px;font-size:12px;color:var(--muted)">Ventas por ruta (Rutas 1 a 5) y resumen general de productos. Quincena = días 1 al 15; Fin de mes = día 16 al último día del mes. No incluye regalías. No depende del filtro de fecha de arriba.</div>
+          <div id="igContenido" style="padding:0 1.25rem 1.25rem"><div style="color:var(--muted);font-style:italic">Elige el mes y el período y presiona «Generar».</div></div>
         </div>
         </div>
           </div>
