@@ -204,6 +204,25 @@
               <option value="al_dia">Al día (saldo 0)</option>
               <option value="sobrepago">Cobros mayores a la deuda</option>
             </select>
+            <!-- [NEW] Filtro Pago propio de Consulta Cobranzas (solo para la vista por fecha y su impresión). No afecta a Detalle de Pedidos. -->
+            <div class="filtro-pago-wrap" id="cobPagoWrap">
+              <button type="button" class="btn-filter" style="background:var(--navy);display:flex;align-items:center;gap:6px" onclick="toggleDropdownPagoCob(event)">
+                💳 Pago <span id="cobPagoContador" style="display:none"></span> ▾
+              </button>
+              <div class="filtro-pago-dropdown" id="dropdownPagoCob">
+                <div id="cobPagoOpciones"></div>
+                <div class="filtro-pago-actions">
+                  <button type="button" onclick="marcarTodosPagoCob(true)">Marcar todos</button>
+                  <button type="button" onclick="marcarTodosPagoCob(false)">Desmarcar todos</button>
+                </div>
+              </div>
+            </div>
+            <!-- [NEW] Vista de la tabla: por fecha (Fecha · Ruta · Cliente · Teléfono · Subtotal · Total · Pago) o por cliente (tabla original) -->
+            <select id="cobranzasVista" onchange="renderCobranzasPorFecha()" title="Vista de la tabla" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer">
+              <option value="fecha_asc" selected>Por fecha · más antigua primero</option>
+              <option value="fecha_desc">Por fecha · más reciente primero</option>
+              <option value="cliente">Por cliente (vista anterior)</option>
+            </select>
           </div>
           <div style="padding:1rem 1.25rem 0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px" id="cobranzasKpis"></div>
           <div class="table-wrap">
@@ -222,6 +241,24 @@
                 </tr>
               </thead>
               <tbody id="tablaCobranzasClientes"></tbody>
+            </table>
+          </div>
+          <!-- [NEW] Vista por fecha: una fila por cada venta, en el mismo orden de columnas que la impresión -->
+          <div class="table-wrap" id="cobranzasPorFechaWrap" style="display:none">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:36px"><input type="checkbox" id="cobranzasFechaChkTodos" onclick="toggleTodosCobranzasPorFecha(this)" title="Seleccionar todos"></th>
+                  <th>Fecha</th>
+                  <th>Ruta</th>
+                  <th>Cliente</th>
+                  <th>Teléfono</th>
+                  <th style="text-align:right">Subtotal</th>
+                  <th style="text-align:right">Total</th>
+                  <th>Pago</th>
+                </tr>
+              </thead>
+              <tbody id="tablaCobranzasPorFecha"></tbody>
             </table>
           </div>
           <div id="cobranzasDetalle" style="padding:0 1.25rem 1.25rem"></div>
