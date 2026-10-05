@@ -291,7 +291,7 @@ let editandoPedidoActual = null;
    TABS
 ════════════════════════════════════════ */
 /* [NEW] Menú lateral del panel administrativo — cambia entre secciones sin mezclarlas */
-let _yaCargado = { eliminados:false, inventario:false, roles:false, pedidosweb:false, auditoria:false }; // [NEW] carga perezosa
+let _yaCargado = { eliminados:false, inventario:false, roles:false, auditoria:false }; // [NEW] carga perezosa
 const SECCIONES_SECRETARIA = ['pedidos','caja','liquidacionDash','productosVendidosDash','cierreDelDia','notasAdicionalesDash','movimientosBancarios','cobranzasClientes'];
 
 function switchSeccionDash(sec){
@@ -307,7 +307,6 @@ function switchSeccionDash(sec){
   if (ROL_ACTUAL === 'admin' && !_yaCargado[sec]) {
     if (sec === 'eliminados') { _iniciarListenerEliminados(); _yaCargado.eliminados = true; }
     if (sec === 'roles') { _iniciarListenerRolesHistorial(); _yaCargado.roles = true; }
-    if (sec === 'pedidosweb') { _iniciarListenerPedidosWeb(); _yaCargado.pedidosweb = true; }
     if (sec === 'auditoria') { _iniciarListenerAuditoria(); _yaCargado.auditoria = true; }
   }
   // Inventario: el stock se calcula con TODO el historial, así que el listener
@@ -484,7 +483,6 @@ function cerrarSesion() {
   detenerListenerEliminados(); // [NEW]
   detenerListenerInventario(); // [NEW]
   detenerListenerRolesHistorial(); // [NEW]
-  detenerListenerPedidosWeb(); // [NEW]
   detenerListenerAuditoria(); // [NEW]
   auth.signOut(); // la limpieza del overlay ocurre en onAuthStateChanged, más abajo
 }
@@ -514,9 +512,8 @@ auth.onAuthStateChanged(async (user)=>{
     detenerListenerEliminados(); // [NEW]
     detenerListenerInventario(); // [NEW]
     detenerListenerRolesHistorial(); // [NEW]
-    detenerListenerPedidosWeb(); // [NEW]
     detenerListenerAuditoria(); // [NEW]
-    _yaCargado = { eliminados:false, inventario:false, roles:false, pedidosweb:false, auditoria:false }; // [NEW] resetea la carga perezosa al salir
+    _yaCargado = { eliminados:false, inventario:false, roles:false, auditoria:false }; // [NEW] resetea la carga perezosa al salir
     ROL_ACTUAL = null;
     ADMIN_ACTUAL = { uid: null, nombre: '', usuario: '' };
     const badge = document.getElementById('usuarioSesionBadge');
@@ -3476,7 +3473,7 @@ function iniciar() {
   _iniciarListenerProductosDash(); // [NEW] catálogo de productos para el modal Editar Pedido
   if (ROL_ACTUAL === 'admin') { // [NEW] Secretaria no tiene permiso de lectura en estas colecciones — ni falta que le hace, sus pestañas están ocultas
     poblarSelectEliminarSecretaria(); // [NEW]
-    // [NEW] _iniciarListenerEliminados/Inventario/RolesHistorial/PedidosWeb ya
+    // [NEW] _iniciarListenerEliminados/Inventario/RolesHistorial ya
     // NO se llaman aquí — ahora cargan solo la primera vez que el admin entra
     // a esa pestaña (ver switchSeccionDash), para que el login sea más rápido.
   }
@@ -5354,7 +5351,7 @@ function cerrarDetalleClienteModal() {
    sistema completo (Resumen, Detalle, Cobranzas, Deuda, Liquidación, app de asesores)
    lo vea como un solo cliente. Solo cambia el campo "cliente"; nada más del registro.
 ════════════════════════════════════════ */
-const _COLECCIONES_CON_CLIENTE = ['pedidos', 'pagos', 'pedidosWeb', 'pedidosEliminados'];
+const _COLECCIONES_CON_CLIENTE = ['pedidos', 'pagos', 'pedidosEliminados'];
 let _editNomClienteOriginal = '';
 
 function _normalizarNombreCliente(s) {
@@ -5449,7 +5446,7 @@ async function guardarNombreCliente() {
         }
       }
     }
-    const resumen = `pedidos ${conteo.pedidos||0}, pagos ${conteo.pagos||0}, pedidos web ${conteo.pedidosWeb||0}, eliminados ${conteo.pedidosEliminados||0}`;
+    const resumen = `pedidos ${conteo.pedidos||0}, pagos ${conteo.pagos||0}, eliminados ${conteo.pedidosEliminados||0}`;
     await _registrarAuditoria('cliente', 'edición', null, `Nombre de cliente ${viejos.map(v => `"${v}"`).join(', ')} → "${nuevo}" (${resumen}) por ${actorAuditoria()}`);
     viejos.forEach(v => _clientesSeleccionadosPdf.delete(v));
     cerrarEditarNombreCliente();
@@ -8071,89 +8068,6 @@ async function eliminarGastoDash(id){
     if(typeof _refrescarDashboardTrasMB==='function') _refrescarDashboardTrasMB();
   }catch(err){ console.error(err); alert('❌ No se pudo eliminar el gasto: ' + err.message); }
   });
-}
-
-/* ════════════════════════════════════════════════════════════
-   [NEW] PEDIDOS WEB — cola de pedidos de la página pública (colección
-   aislada `pedidosWeb`, con create público abierto). El admin revisa
-   cada uno y lo Aprueba (creando el pedido real, con asesor y forma de
-   pago asignados) o lo Rechaza — nunca entran solos al sistema real.
-════════════════════════════════════════════════════════════ */
-let _unsubPedidosWeb = null, _pedidosWebRaw = [];
-function _iniciarListenerPedidosWeb(){
-  if(_unsubPedidosWeb){_unsubPedidosWeb();_unsubPedidosWeb=null;}
-  _unsubPedidosWeb = db.collection('pedidosWeb').onSnapshot(snap => {
-    _pedidosWebRaw = snap.docs.map(d => ({ _id: d.id, ...d.data() }))
-      .filter(p => !p.estado || p.estado === 'pendiente') // [NEW] trata como pendiente cualquier doc sin campo 'estado' — la web pública podría no enviarlo
-      .sort((a,b) => (a.creadoEn?.toMillis?.()||0) - (b.creadoEn?.toMillis?.()||0)); // más antiguo primero, como cola de trabajo
-    renderPedidosWeb();
-  }, err => console.error('listener pedidosWeb:', err));
-}
-function detenerListenerPedidosWeb(){ if(_unsubPedidosWeb){_unsubPedidosWeb();_unsubPedidosWeb=null;} }
-
-function renderPedidosWeb(){
-  const cont = document.getElementById('listaPedidosWeb');
-  const count = document.getElementById('pedidosWebCount');
-  if(!cont) return;
-  if(count) count.textContent = _pedidosWebRaw.length + ' pendiente' + (_pedidosWebRaw.length!==1?'s':'');
-  if(!_pedidosWebRaw.length){
-    cont.innerHTML = '<div class="empty-state"><div class="icon">🌐</div>No hay pedidos web pendientes de aprobación</div>';
-    return;
-  }
-  const optionsAsesor = _asesoresCache.map(r => `<option value="${escapeAttr(r)}">${r.split(':')[1]?.trim()||r}</option>`).join('');
-  cont.innerHTML = _pedidosWebRaw.map((p, idx) => {
-    const productos = (p.productos||[]).map(pr => `<tr><td>${escHTML(pr.nombre||'-')}</td><td style="text-align:center">${pr.cantidad||'-'}</td><td style="text-align:right">$${parseFloat(pr.precio||0).toFixed(2)}</td><td style="text-align:right">$${(parseFloat(pr.cantidad||0)*parseFloat(pr.precio||0)).toFixed(2)}</td></tr>`).join('');
-    const totalWeb = (p.productos||[]).reduce((s,pr)=> s + (parseFloat(pr.cantidad||0)*parseFloat(pr.precio||0)), 0);
-    return `
-    <div class="cierre-cliente-block" style="margin:0 0 14px">
-      <div class="cierre-cliente-header">
-        <span class="cierre-cliente-nombre">🌐 ${escHTML(p.cliente||'Sin nombre')}</span>
-        <span class="cierre-cliente-meta">📞 ${escHTML(p.telefono||'-')} · 📍 ${escHTML(p.direccion||'-')}</span>
-        <span class="cierre-cliente-total">$${totalWeb.toFixed(2)}</span>
-      </div>
-      <table class="cierre-cliente-table">
-        <thead><tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr></thead>
-        <tbody>${productos || '<tr><td colspan="4" style="text-align:center;color:var(--muted)">Sin productos</td></tr>'}</tbody>
-      </table>
-      ${p.notas ? `<div style="padding:8px 14px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)">📝 ${escHTML(p.notas)}</div>` : ''}
-      <div style="padding:12px 14px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <div class="editar-field" style="margin-bottom:0;min-width:180px"><label>Asesor / Ruta</label><select id="pwAsesor-${idx}"><option value="">-- Selecciona --</option>${optionsAsesor}</select></div>
-        <div class="editar-field" style="margin-bottom:0;min-width:150px"><label>Forma de Pago</label><select id="pwForma-${idx}"><option value="">-- Selecciona --</option><option value="Contado">Contado</option><option value="Crédito">Crédito</option><option value="Transferencia">Transferencia</option><option value="Cheque">Cheque</option></select></div>
-        <button class="btn-guardar-edicion" style="padding:9px 16px" onclick="aprobarPedidoWeb('${p._id}', ${idx})">✅ Aprobar</button>
-        <button class="btn-eliminar-fila" style="padding:9px 16px" onclick="rechazarPedidoWeb('${p._id}')">❌ Rechazar</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-async function aprobarPedidoWeb(id, idx){
-  const p = _pedidosWebRaw.find(x => x._id === id);
-  if(!p){ alert('Este pedido web ya no existe.'); return; }
-  const asesor = document.getElementById(`pwAsesor-${idx}`).value;
-  const formapago = document.getElementById(`pwForma-${idx}`).value;
-  if(!asesor){ alert('Selecciona a qué asesor/ruta se le asigna este pedido.'); return; }
-  if(!formapago){ alert('Selecciona la forma de pago.'); return; }
-  const productos = (p.productos||[]).map(pr => ({ nombre: pr.nombre||'', cantidad: parseFloat(pr.cantidad)||0, precio: parseFloat(pr.precio)||0, subtotal: +((parseFloat(pr.cantidad)||0)*(parseFloat(pr.precio)||0)).toFixed(2), regalias: [] }));
-  if(!productos.length){ alert('Este pedido no tiene productos válidos.'); return; }
-  const total = +productos.reduce((s,pr)=>s+pr.subtotal,0).toFixed(2);
-  try{
-    await db.collection('pedidos').add({
-      empleado: asesor, cliente: p.cliente||'Sin nombre', telefono: p.telefono||'', direccion: p.direccion||'',
-      fecha: fechaHoy(), notas: (p.notas||'') + ' [Pedido recibido desde la página web]',
-      formapago, total, productos, gps: null, origenWeb: true,
-      creadoPor: ADMIN_ACTUAL.uid || null, creadoEn: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    await db.collection('pedidosWeb').doc(id).update({ estado: 'aprobado', aprobadoPor: ADMIN_ACTUAL.nombre||'admin', aprobadoEn: firebase.firestore.FieldValue.serverTimestamp() });
-    mostrarToastEdicion('✅ Pedido web aprobado — ya forma parte de las ventas reales.');
-  }catch(err){ console.error(err); alert('❌ No se pudo aprobar el pedido: ' + err.message); }
-}
-
-async function rechazarPedidoWeb(id){
-  if(!confirm('¿Rechazar este pedido web? No se creará ninguna venta real a partir de él.')) return;
-  try{
-    await db.collection('pedidosWeb').doc(id).update({ estado: 'rechazado', rechazadoPor: ADMIN_ACTUAL.nombre||'admin', rechazadoEn: firebase.firestore.FieldValue.serverTimestamp() });
-    mostrarToastEdicion('❌ Pedido web rechazado.');
-  }catch(err){ console.error(err); alert('❌ No se pudo rechazar el pedido: ' + err.message); }
 }
 
 /* ════════════════════════════════════════════════════════════
