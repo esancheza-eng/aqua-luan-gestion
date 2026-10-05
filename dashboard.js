@@ -8279,3 +8279,282 @@ function renderControlTickets(){
     </tr>`;
   }).join('') + _htmlPaginadorTabla('controlTickets', pg, 6, 'renderControlTickets');
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   [NEW] INFORME GERENCIAL — REPORTE QUINCENA VENTAS (solo Administración)
+   Bloque independiente: no modifica ninguna función existente.
+   - Consulta propia de SOLO LECTURA a 'pedidos' (where fecha >= desde y <= hasta).
+   - No depende del filtro de fecha de arriba ni toca los listeners existentes.
+   - Solo Rutas 1 a 5. La Ruta 6 y cualquier otra quedan fuera.
+   - Las regalías (prod.regalias) NO se incluyen ni se suman en ninguna parte.
+   - Quincena = días 1 al 15; Fin de mes = día 16 al último día del mes.
+════════════════════════════════════════════════════════════════════════ */
+const IG_RUTAS_REPORTE = [1, 2, 3, 4, 5];
+const IG_NOMBRES_RUTA_DEFECTO = { 1:'JEFFERSON', 2:'LUIS', 3:'VICENTE', 4:'WILSON', 5:'LISTER' };
+const IG_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+let _igUltimoHtml = '';
+let _igUltimaClave = '';
+let _igRenderToken = 0;
+let _igYaInicializado = false;
+
+function _igEsAdmin(){
+  return typeof ROL_ACTUAL !== 'undefined' && ROL_ACTUAL === 'admin';
+}
+function _igEsc(s){
+  if (typeof escHTML === 'function') return escHTML(s);
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
+}
+function _igMesActual(){
+  if (!_igEsAdmin()) return '';
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+/* Último día real del mes (28/29/30/31). mes = 1..12 */
+function _igUltimoDiaMes(anio, mes){
+  if (!_igEsAdmin()) return 0;
+  return new Date(anio, mes, 0).getDate();
+}
+/* Devuelve { anio, mes, ultimo, desde, hasta, modo } según los controles */
+function _igRangoSeleccionado(valorMes, modo){
+  if (!_igEsAdmin()) return null;
+  const m = String(valorMes || '').match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  const anio = parseInt(m[1], 10), mes = parseInt(m[2], 10);
+  if (mes < 1 || mes > 12) return null;
+  const ultimo = _igUltimoDiaMes(anio, mes);
+  const pref = m[1] + '-' + m[2] + '-';
+  const md = (modo === 'q1' || modo === 'q2') ? modo : 'ambos';
+  const dIni = md === 'q2' ? 16 : 1;
+  const dFin = md === 'q1' ? 15 : ultimo;
+  return { anio, mes, ultimo, modo: md,
+           desde: pref + String(dIni).padStart(2, '0'),
+           hasta: pref + String(dFin).padStart(2, '0') };
+}
+/* "RUTA 1: Jefferson" → { num:1, nombre:'JEFFERSON' } ; otra cosa → null */
+function _igParseRuta(empleado){
+  if (!_igEsAdmin()) return null;
+  const m = String(empleado || '').match(/^\s*RUTA\s*0*(\d+)\s*[:\-–·]?\s*(.*)$/i);
+  if (!m) return null;
+  return { num: parseInt(m[1], 10), nombre: String(m[2] || '').trim().toUpperCase() };
+}
+function _igCentavos(v){
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : Math.round(n * 100);
+}
+/* Agrupa los pedidos. Solo lee prod.nombre, prod.cantidad y prod.subtotal
+   (prod.regalias se ignora por completo). Los dólares se suman en centavos
+   para que Quincena + Fin de mes = Total exacto. */
+function _igAgruparPedidos(pedidos, rango){
+  if (!_igEsAdmin() || !rango) return null;
+  const nuevaRuta = n => ({ num: n, nombre: '', prods: {} });
+  const rutas = {};
+  IG_RUTAS_REPORTE.forEach(n => { rutas[n] = nuevaRuta(n); });
+  const general = { prods: {} };
+  const pref = rango.desde.slice(0, 8); // 'YYYY-MM-'
+  const sumar = (mapa, clave, nombre, tramo, cant, cents) => {
+    if (!mapa[clave]) mapa[clave] = { nombre, c1:0, d1:0, c2:0, d2:0 };
+    const r = mapa[clave];
+    if (tramo === 1) { r.c1 += cant; r.d1 += cents; } else { r.c2 += cant; r.d2 += cents; }
+  };
+  (pedidos || []).forEach(p => {
+    if (!p) return;
+    const ruta = _igParseRuta(p.empleado);
+    if (!ruta || IG_RUTAS_REPORTE.indexOf(ruta.num) < 0) return; // Ruta 6 y otras: fuera
+    const iso = (typeof _isoFechaDash === 'function') ? _isoFechaDash(p.fecha, p.creadoEn) : String(p.fecha || '').slice(0, 10);
+    if (!iso || iso < rango.desde || iso > rango.hasta || iso.slice(0, 8) !== pref) return;
+    const dia = parseInt(iso.slice(8, 10), 10);
+    if (!(dia >= 1 && dia <= rango.ultimo)) return;
+    const tramo = dia <= 15 ? 1 : 2;
+    const R = rutas[ruta.num];
+    if (!R.nombre && ruta.nombre) R.nombre = ruta.nombre;
+    (Array.isArray(p.productos) ? p.productos : []).forEach(prod => {
+      if (!prod) return;
+      const nombre = String(prod.nombre || 'Sin nombre').trim() || 'Sin nombre';
+      const clave = nombre.toUpperCase();
+      const cant = parseFloat(prod.cantidad) || 0;
+      let cents;
+      if (prod.subtotal !== undefined && prod.subtotal !== null && prod.subtotal !== '' && !isNaN(parseFloat(prod.subtotal))) {
+        cents = _igCentavos(prod.subtotal);
+      } else {
+        cents = Math.round(cant * (parseFloat(prod.precio) || 0) * 100);
+      }
+      if (!cant && !cents) return;
+      sumar(R.prods, clave, nombre, tramo, cant, cents);
+      sumar(general.prods, clave, nombre, tramo, cant, cents);
+      // prod.regalias: intencionalmente NO se lee ni se suma.
+    });
+  });
+  // Nombres de ruta sin ventas: lista de asesores en caché o nombre por defecto
+  IG_RUTAS_REPORTE.forEach(n => {
+    if (rutas[n].nombre) return;
+    let nom = '';
+    try {
+      (typeof _asesoresCache !== 'undefined' && Array.isArray(_asesoresCache) ? _asesoresCache : []).forEach(a => {
+        const r = _igParseRuta(a);
+        if (!nom && r && r.num === n && r.nombre) nom = r.nombre;
+      });
+    } catch(e) {}
+    rutas[n].nombre = nom || IG_NOMBRES_RUTA_DEFECTO[n] || '';
+  });
+  return { rutas, general };
+}
+function _igFmtCant(n){
+  const v = Math.round((Number(n) || 0) * 100) / 100;
+  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+}
+function _igFmtDol(cents){
+  const v = (Number(cents) || 0) / 100;
+  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+/* Tabla de productos (una ruta o el total general) */
+function _igTablaProductos(prods, modo, etiquetaTotal){
+  if (!_igEsAdmin()) return '';
+  const lista = Object.keys(prods || {}).map(k => prods[k])
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  const th = 'style="text-align:center;border-left:1px solid var(--border)"';
+  const thr = 'style="text-align:right"';
+  const tdr = 'style="text-align:right;white-space:nowrap"';
+  const tdrb = 'style="text-align:right;white-space:nowrap;border-left:1px solid var(--border)"';
+  const grupos = modo === 'q1' ? [['Quincena (1 al 15)', 'q1']]
+               : modo === 'q2' ? [['Fin de mes (16 al último día)', 'q2']]
+               : [['Quincena (1 al 15)', 'q1'], ['Fin de mes (16 al último día)', 'q2'], ['TOTAL', 't']];
+  const val = (r, g) => g === 'q1' ? [r.c1, r.d1] : g === 'q2' ? [r.c2, r.d2] : [r.c1 + r.c2, r.d1 + r.d2];
+  const tot = { c1:0, d1:0, c2:0, d2:0 };
+  lista.forEach(r => { tot.c1 += r.c1; tot.d1 += r.d1; tot.c2 += r.c2; tot.d2 += r.d2; });
+  let h = '<div style="overflow-x:auto"><table class="cierre-prod-table ig-tabla">';
+  h += '<thead><tr><th rowspan="2" style="text-align:left;vertical-align:bottom">Producto</th>';
+  grupos.forEach(g => { h += `<th colspan="2" ${th}>${_igEsc(g[0])}</th>`; });
+  h += '</tr><tr>';
+  grupos.forEach(() => { h += `<th style="text-align:right;border-left:1px solid var(--border)">Cantidad</th><th ${thr}>Dólares</th>`; });
+  h += '</tr></thead><tbody>';
+  lista.forEach(r => {
+    h += `<tr><td style="text-align:left;font-weight:700;color:var(--navy)">${_igEsc(r.nombre)}</td>`;
+    grupos.forEach(g => {
+      const v = val(r, g[1]);
+      const fuerte = g[1] === 't' ? 'font-weight:800;' : '';
+      h += `<td style="text-align:right;white-space:nowrap;border-left:1px solid var(--border);${fuerte}">${_igFmtCant(v[0])}</td><td style="text-align:right;white-space:nowrap;${fuerte}">${_igFmtDol(v[1])}</td>`;
+    });
+    h += '</tr>';
+  });
+  h += `<tr class="cierre-prod-subtotal"><td style="text-align:left">${_igEsc(etiquetaTotal)}</td>`;
+  grupos.forEach(g => {
+    const v = val(tot, g[1]);
+    h += `<td ${tdrb}>${_igFmtCant(v[0])}</td><td ${tdr}>${_igFmtDol(v[1])}</td>`;
+  });
+  h += '</tr></tbody></table></div>';
+  return h;
+}
+function _igTextoPeriodo(rango){
+  if (!_igEsAdmin() || !rango) return '';
+  const mesTxt = IG_MESES[rango.mes - 1] + ' ' + rango.anio;
+  const ult = String(rango.ultimo);
+  let per;
+  if (rango.modo === 'q1') per = 'Solo Quincena (días 1 al 15)';
+  else if (rango.modo === 'q2') per = 'Solo Fin de mes (días 16 al ' + ult + ')';
+  else per = 'Quincena (1 al 15) + Fin de mes (16 al ' + ult + ') + Total';
+  return { mesTxt, per };
+}
+/* Construye el HTML completo del reporte (pantalla e impresión) */
+function _igConstruirHtml(datos, rango){
+  if (!_igEsAdmin() || !datos || !rango) return '';
+  const t = _igTextoPeriodo(rango);
+  let h = '<div class="ig-reporte">';
+  h += '<div style="text-align:center;margin:6px 0 18px">'
+     + '<div class="ig-titulo" style="font-size:20px;font-weight:800;color:var(--navy);letter-spacing:.04em">REPORTE QUINCENA VENTAS</div>'
+     + `<div class="ig-sub" style="font-size:13px;font-weight:700;color:var(--teal-dark);margin-top:4px">${_igEsc(t.per)}</div>`
+     + `<div class="ig-sub" style="font-size:13px;color:var(--muted);margin-top:2px">Mes: ${_igEsc(t.mesTxt)}</div>`
+     + '</div>';
+  h += '<div class="ig-subtitulo" style="font-size:15px;font-weight:800;color:var(--navy);border-bottom:3px solid var(--teal);padding-bottom:4px;margin:8px 0 12px">RUTAS</div>';
+  IG_RUTAS_REPORTE.forEach(n => {
+    const R = datos.rutas[n];
+    const titulo = 'RUTA ' + n + (R.nombre ? ' · ' + R.nombre : '');
+    h += '<div class="ig-ruta" style="margin-bottom:18px">';
+    h += `<div class="ig-ruta-titulo" style="font-size:14px;font-weight:800;color:var(--navy);margin:0 0 6px">${_igEsc(titulo)}</div>`;
+    if (!Object.keys(R.prods).length) {
+      h += '<div style="color:var(--muted);font-style:italic;padding:6px 0 4px">Sin ventas en este período</div>';
+    } else {
+      h += _igTablaProductos(R.prods, rango.modo, 'TOTAL RUTA ' + n);
+    }
+    h += '</div>';
+  });
+  h += '<div class="ig-subtitulo" style="font-size:15px;font-weight:800;color:var(--navy);border-bottom:3px solid var(--teal);padding-bottom:4px;margin:22px 0 12px">RESUMEN DE PRODUCTOS (TOTAL GENERAL)</div>';
+  if (!Object.keys(datos.general.prods).length) {
+    h += '<div style="color:var(--muted);font-style:italic;padding:6px 0 4px">Sin ventas en este período</div>';
+  } else {
+    h += _igTablaProductos(datos.general.prods, rango.modo, 'TOTAL GENERAL');
+  }
+  h += '</div>';
+  return h;
+}
+/* Consulta propia de solo lectura (no es listener, no se queda abierta) */
+async function _igLeerPedidos(desde, hasta){
+  if (!_igEsAdmin()) return [];
+  const snap = await db.collection('pedidos').where('fecha', '>=', desde).where('fecha', '<=', hasta).get();
+  const out = [];
+  snap.forEach(d => { out.push(Object.assign({ _id: d.id }, d.data() || {})); });
+  return out;
+}
+async function generarInformeGerencial(){
+  if (!_igEsAdmin()) return;
+  const cont = document.getElementById('igContenido');
+  const inMes = document.getElementById('igMes');
+  const selPer = document.getElementById('igPeriodo');
+  if (!cont || !inMes || !selPer) return;
+  if (!inMes.value) inMes.value = _igMesActual();
+  const rango = _igRangoSeleccionado(inMes.value, selPer.value);
+  if (!rango) { alert('Selecciona un mes válido.'); return; }
+  const token = ++_igRenderToken;
+  cont.innerHTML = '<div class="loading" style="padding:18px 8px"><div class="spinner"></div><span>Generando informe…</span></div>';
+  try {
+    const pedidos = await _igLeerPedidos(rango.desde, rango.hasta);
+    if (token !== _igRenderToken) return;
+    const datos = _igAgruparPedidos(pedidos, rango);
+    const html = _igConstruirHtml(datos, rango);
+    cont.innerHTML = html;
+    _igUltimoHtml = html;
+    _igUltimaClave = inMes.value + '|' + rango.modo;
+  } catch (err) {
+    if (token !== _igRenderToken) return;
+    console.warn('Informe Gerencial:', err);
+    _igUltimoHtml = '';
+    _igUltimaClave = '';
+    const msg = (err && err.code === 'permission-denied') ? 'Sin permiso para leer pedidos en Firestore.' : 'No se pudo generar el informe. Intenta de nuevo.';
+    cont.innerHTML = `<div style="color:var(--red);font-weight:700;padding:10px 0">${_igEsc(msg)}</div>`;
+  }
+}
+async function imprimirInformeGerencial(){
+  if (!_igEsAdmin()) return;
+  const inMes = document.getElementById('igMes');
+  const selPer = document.getElementById('igPeriodo');
+  const clave = (inMes ? inMes.value : '') + '|' + (selPer ? selPer.value : '');
+  if (!_igUltimoHtml || clave !== _igUltimaClave) await generarInformeGerencial();
+  if (!_igUltimoHtml) { alert('No hay datos para imprimir.'); return; }
+  const v = _abrirVentanaImpresion();
+  v.document.open();
+  v.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Reporte Quincena Ventas</title>
+  <style>
+    :root{--navy:#12324d;--teal:#0a7c6e;--teal-dark:#075e54;--teal-light:#e6f4f2;--muted:#666;--border:#ccc;--surface2:#f3f7f6;--red:#c0392b}
+    body{font-family:system-ui,sans-serif;color:#1a3a5c;padding:20px}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px}
+    th{font-size:9.5px;text-transform:uppercase;border-bottom:1px solid #999;padding:5px 6px;background:#f3f7f6}
+    td{padding:5px 6px;border-bottom:1px solid #e3e3e3}
+    .cierre-prod-subtotal td{font-weight:800;background:#e6f4f2;border-top:2px solid #0a7c6e}
+    .ig-ruta{page-break-inside:avoid}
+    @page{size:A4 landscape;margin:12mm}
+  </style></head><body>
+  ${_igUltimoHtml}
+  <p style="color:#888;font-size:11px;margin-top:14px">${_igEsc(lineaImpresoPor())}</p>
+  </body></html>`);
+  v.document.close();
+  _dispararImpresion(v);
+}
+/* Al entrar a la pestaña: pone el mes actual por defecto y genera la primera vez */
+function igAlEntrarInformeGerencial(){
+  if (!_igEsAdmin()) return;
+  const inMes = document.getElementById('igMes');
+  if (inMes && !inMes.value) inMes.value = _igMesActual();
+  if (!_igYaInicializado) {
+    _igYaInicializado = true;
+    generarInformeGerencial();
+  }
+}
