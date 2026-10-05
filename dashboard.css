@@ -842,3 +842,16 @@ tr.clickable:hover td { background: rgba(10,124,110,0.05); }
   #tableCard .acciones-fila-pedido { flex-direction: column; align-items: stretch; gap: 4px; }
   #tableCard .acciones-fila-pedido button { justify-content: center; padding: 4px 8px; font-size: 10.5px; }
 }
+
+/* Barra "Filtrar por fecha" fija al hacer scroll.
+   Solo presentación: no cambia datos, filtros ni fórmulas. */
+#viewDashboard .content { overflow: visible; }
+#viewDashboard .filter-bar {
+  position: sticky;
+  top: 64px;
+  z-index: 45;
+  background: var(--surface);
+}
+@media (min-width: 901px) {
+  #viewDashboard .dash-nav { top: 142px; z-index: 30; }
+}
