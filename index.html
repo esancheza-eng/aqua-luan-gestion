@@ -100,6 +100,8 @@
             <button class="dash-nav-item" data-section="controlTickets" id="navControlTickets" onclick="switchSeccionDash('controlTickets')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Control de Tickets</button>
             <!-- [NEW] Informe Gerencial — solo Administración (no está en SECCIONES_SECRETARIA, así que se oculta para la secretaria) -->
             <button class="dash-nav-item" data-section="informeGerencial" id="navInformeGerencial" onclick="switchSeccionDash('informeGerencial'); if(typeof igAlEntrarInformeGerencial==='function') igAlEntrarInformeGerencial();"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>Informe Gerencial</button>
+            <!-- [NEW] Clientes y Precios — lista de precios por cliente, pendientes de aprobación (solo Administración) -->
+            <button class="dash-nav-item" data-section="clientesPrecios" id="navClientesPrecios" onclick="switchSeccionDash('clientesPrecios'); if(typeof cpdAlEntrar==='function') cpdAlEntrar();"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>Clientes y Precios</button>
             <!-- [NEW][TEMPORAL] Exportar Base — solo lectura, solo Administración (ver dashboard-exportar-base.js) -->
             <button class="dash-nav-item" data-section="exportarBase" id="navExportarBase" onclick="switchSeccionDash('exportarBase')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>Exportar Base</button>
           </nav>
@@ -668,6 +670,21 @@
           <div id="igContenido" style="padding:0 1.25rem 1.25rem"><div style="color:var(--muted);font-style:italic">Elige el mes y el período y presiona «Generar».</div></div>
         </div>
         </div>
+        <!-- [NEW] Clientes y Precios — gestiona 'preciosClientes' (la lista que bloquea el precio en la app de pedidos). Solo Administración. -->
+        <div class="dash-section" id="seccion-clientesPrecios">
+        <div class="table-card">
+          <div class="table-header"><div class="table-title">🏷 Clientes y Precios</div></div>
+          <div style="padding:1.25rem">
+            <div style="background:var(--surface2);border:1.5px dashed var(--border);border-radius:var(--radius);padding:12px 16px;font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.7">
+              En las rutas con lista de precios, el asesor solo elige clientes de su base y el precio le sale <b style="color:var(--navy)">bloqueado</b>. Solo puede poner un precio libre con un <b style="color:var(--navy)">cliente nuevo</b> o con un producto que el cliente no tiene en su lista: esos casos aparecen aquí en <b style="color:var(--navy)">Pendientes</b> para aprobarlos.
+            </div>
+            <label style="font-size:12px;font-weight:700;color:var(--navy);margin-right:6px">Ruta</label>
+            <select id="cpdRuta" onchange="cpdCargar()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px"></select>
+            <button class="btn-filter" style="background:var(--navy);margin-left:8px" onclick="cpdCargar()">↻ Recargar</button>
+            <div id="cpdContenido" style="margin-top:16px"></div>
+          </div>
+        </div>
+        </div>
         <!-- [NEW][TEMPORAL] Exportar Base — clientes, productos, precios, direcciones y teléfonos por ruta. SOLO LECTURA. -->
         <div class="dash-section" id="seccion-exportarBase">
         <div class="table-card">
@@ -772,6 +789,7 @@
      con Leaflet para el mapa de rutas. -->
 <script src="dashboard.js"></script>
 <script src="dashboard-envases.js"></script> <!-- [NEW] Envases prestados + Cuadre del camión -->
+<script src="dashboard-clientes-precios.js"></script> <!-- [NEW] Clientes y Precios (lista de precios por cliente + pendientes) -->
 <script src="dashboard-exportar-base.js"></script> <!-- [NEW][TEMPORAL] Exportar Base (solo lectura) + carga de SheetJS para Importar Datos -->
 
 <!-- ═══════════════════ [NEW] MODAL EDITAR PEDIDO ═══════════════════ -->
