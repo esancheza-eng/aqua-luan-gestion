@@ -100,6 +100,8 @@
             <button class="dash-nav-item" data-section="controlTickets" id="navControlTickets" onclick="switchSeccionDash('controlTickets')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Control de Tickets</button>
             <!-- [NEW] Informe Gerencial — solo Administración (no está en SECCIONES_SECRETARIA, así que se oculta para la secretaria) -->
             <button class="dash-nav-item" data-section="informeGerencial" id="navInformeGerencial" onclick="switchSeccionDash('informeGerencial'); if(typeof igAlEntrarInformeGerencial==='function') igAlEntrarInformeGerencial();"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>Informe Gerencial</button>
+            <!-- [NEW][TEMPORAL] Exportar Base — solo lectura, solo Administración (ver dashboard-exportar-base.js) -->
+            <button class="dash-nav-item" data-section="exportarBase" id="navExportarBase" onclick="switchSeccionDash('exportarBase')"><svg class="nav-ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>Exportar Base</button>
           </nav>
           <div class="dash-content">
         <div class="dash-section active" id="seccion-resumen">
@@ -666,6 +668,25 @@
           <div id="igContenido" style="padding:0 1.25rem 1.25rem"><div style="color:var(--muted);font-style:italic">Elige el mes y el período y presiona «Generar».</div></div>
         </div>
         </div>
+        <!-- [NEW][TEMPORAL] Exportar Base — clientes, productos, precios, direcciones y teléfonos por ruta. SOLO LECTURA. -->
+        <div class="dash-section" id="seccion-exportarBase">
+        <div class="table-card">
+          <div class="table-header"><div class="table-title">⬇ Exportar Base de Clientes (temporal)</div></div>
+          <div style="padding:1.25rem">
+            <div style="background:var(--surface2);border:1.5px dashed var(--border);border-radius:var(--radius);padding:14px 16px;font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.8">
+              Descarga un Excel con toda la base de la ruta elegida. <b style="color:var(--navy)">Solo lectura: no modifica nada.</b><br>
+              <b style="color:var(--navy)">CLIENTES</b>: teléfono, dirección, pedidos, último pedido y si está en la lista de precios ·
+              <b style="color:var(--navy)">PRODUCTOS_PRECIOS</b>: por cliente y producto, precio de lista oficial, último precio vendido y el precio que sugiere la app ·
+              <b style="color:var(--navy)">POSIBLES_DUPLICADOS</b>: clientes escritos distinto o con el mismo teléfono ·
+              <b style="color:var(--navy)">CATALOGO_PRODUCTOS</b>: nombres exactos de los productos de la app.
+            </div>
+            <label style="font-size:12px;font-weight:700;color:var(--navy);margin-right:6px">Ruta</label>
+            <select id="ebRuta" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px"><option value="">— Todas las rutas —</option></select>
+            <button class="btn-filter" id="btnEbExportar" style="background:var(--teal);margin-left:10px" onclick="ebGenerarExportacion()">⬇ Generar y descargar Excel</button>
+            <div id="ebResultado" style="margin-top:16px"></div>
+          </div>
+        </div>
+        </div>
           </div>
         </div>
         <div class="notas-table-card" id="notasCard" style="display:none">
@@ -751,6 +772,7 @@
      con Leaflet para el mapa de rutas. -->
 <script src="dashboard.js"></script>
 <script src="dashboard-envases.js"></script> <!-- [NEW] Envases prestados + Cuadre del camión -->
+<script src="dashboard-exportar-base.js"></script> <!-- [NEW][TEMPORAL] Exportar Base (solo lectura) + carga de SheetJS para Importar Datos -->
 
 <!-- ═══════════════════ [NEW] MODAL EDITAR PEDIDO ═══════════════════ -->
 <div class="editar-overlay" id="editarOverlay" onclick="if(event.target===this)cerrarEditarPedido()">
