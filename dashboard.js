@@ -6428,13 +6428,15 @@ function renderCobranzasClientes(){
   const totCobros=rows.reduce((s,c)=>s+c.cobros,0);
   const totSaldo=rows.reduce((s,c)=>s+Math.max(0,c.saldo),0);
   const nPend=rows.filter(c=>c.saldo>0.004).length;
+  const difSaldos=totDeuda-totCobros; // [NEW] tarjeta "Diferencia de saldos": resta directa del total (puede ser negativa)
   if(cont) cont.textContent=rows.length+' cliente(s)';
   if(kpis){
     kpis.innerHTML=`
       <div class="kpi-card navy"><div class="kpi-label">Clientes</div><div class="kpi-value">${rows.length}</div><div class="kpi-sub">${nPend} con saldo</div></div>
       <div class="kpi-card orange"><div class="kpi-label">Deuda generada</div><div class="kpi-value">$${totDeuda.toFixed(2)}</div><div class="kpi-sub">crédito al vender</div></div>
       <div class="kpi-card teal"><div class="kpi-label">Cobros / ingresos</div><div class="kpi-value">$${totCobros.toFixed(2)}</div><div class="kpi-sub">pagos del cliente</div></div>
-      <div class="kpi-card red"><div class="kpi-label">Saldo pendiente</div><div class="kpi-value">$${totSaldo.toFixed(2)}</div><div class="kpi-sub">deuda − cobros (>0)</div></div>`;
+      <div class="kpi-card red"><div class="kpi-label">Saldo pendiente</div><div class="kpi-value">$${totSaldo.toFixed(2)}</div><div class="kpi-sub">deuda − cobros (>0)</div></div>
+      <div class="kpi-card navy"><div class="kpi-label">Diferencia de saldos</div><div class="kpi-value" style="color:${difSaldos>0.004?'var(--red)':(difSaldos<-0.004?'#0a7c6e':'var(--muted)')}">${_fmtSaldoCob(difSaldos)}</div><div class="kpi-sub">deuda generada − cobros</div></div>`;
   }
   if(!rows.length){
     tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="icon">💰</div>No hay cobranzas registradas</div></td></tr>';
