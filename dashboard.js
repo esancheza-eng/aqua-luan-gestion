@@ -6464,9 +6464,35 @@ function renderCobranzasClientes(){
       <td style="text-align:right;color:var(--teal);font-weight:700">$${c.cobros.toFixed(2)}</td>
       <td style="text-align:right;font-weight:800;color:${color}">${saldoTxt}</td>
     </tr>`;
-  }).join('') + _htmlPaginadorTabla('cobranzas', pgCob, 9, 'renderCobranzasClientes');
+  }).join('') + _htmlTotalCobranzas(rows) + _htmlPaginadorTabla('cobranzas', pgCob, 9, 'renderCobranzasClientes');
 }
 
+/* [NEW] Totales de Consulta Cobranzas: suma TODOS los clientes que pasan los filtros
+   (asesor de arriba, buscador y selector de saldo), de todas las páginas — no solo
+   los 100 de la página visible. Se usa en la tabla y en el PDF. */
+function _totalesCobranzas(rows){
+  return (rows||[]).reduce((t,c)=>{
+    t.ventas+=c.ventas; t.pagadoVenta+=c.pagadoVenta; t.deuda+=c.deuda; t.cobros+=c.cobros; t.saldo+=c.saldo;
+    return t;
+  },{ventas:0,pagadoVenta:0,deuda:0,cobros:0,saldo:0});
+}
+function _fmtSaldoCob(v){
+  return v>0.004 ? ('$'+v.toFixed(2)) : (v<-0.004 ? ('-$'+Math.abs(v).toFixed(2)) : '$0.00');
+}
+function _htmlTotalCobranzas(rows){
+  const t=_totalesCobranzas(rows);
+  const color=t.saldo>0.004 ? 'var(--red)' : (t.saldo<-0.004 ? '#0a7c6e' : 'var(--muted)');
+  const td='padding:12px 10px;border-top:2px solid var(--navy,#1a3a5c);background:var(--surface2);font-weight:800';
+  return `<tr class="cob-total-row">
+      <td style="${td}"></td>
+      <td style="${td}" colspan="3">TOTAL (${rows.length} cliente${rows.length===1?'':'s'})</td>
+      <td style="${td};text-align:right">$${t.ventas.toFixed(2)}</td>
+      <td style="${td};text-align:right">$${t.pagadoVenta.toFixed(2)}</td>
+      <td style="${td};text-align:right">$${t.deuda.toFixed(2)}</td>
+      <td style="${td};text-align:right;color:var(--teal)">$${t.cobros.toFixed(2)}</td>
+      <td style="${td};text-align:right;color:${color}">${_fmtSaldoCob(t.saldo)}</td>
+    </tr>`;
+}
 let _cobranzasSeleccion=new Set();
 function toggleCobranzaSeleccion(el){
   if(!_cobranzasSeleccion) _cobranzasSeleccion=new Set();
@@ -6508,9 +6534,7 @@ function imprimirCobranzasSeleccionadas(){
   rows=rows.filter(c=>keys.has(_normNombreCliente(c.nombre)));
   if(!rows.length){ alert('No hay filas seleccionadas visibles para imprimir.'); return; }
   const fecha='Todo el historial';
-  const totDeuda=rows.reduce((s,c)=>s+c.deuda,0);
-  const totCobros=rows.reduce((s,c)=>s+c.cobros,0);
-  const totSaldo=rows.reduce((s,c)=>s+c.saldo,0);
+  const totCob=_totalesCobranzas(rows);
   const filas=rows.map(c=>{
     const saldoTxt=c.saldo>0.004 ? ('$'+c.saldo.toFixed(2)) : (c.saldo<-0.004 ? ('-$'+Math.abs(c.saldo).toFixed(2)) : '$0.00');
     return `<tr>
@@ -6551,7 +6575,7 @@ function imprimirCobranzasSeleccionadas(){
     <thead><tr><th>Cliente</th><th>Teléfono</th><th>Asesor</th><th style="text-align:right">Ventas</th><th style="text-align:right">Pagado en venta</th><th style="text-align:right">Deuda generada</th><th style="text-align:right">Cobros</th><th style="text-align:right">Saldo</th></tr></thead>
     <tbody>
       ${filas}
-      <tr class="total-row"><td colspan="5" style="text-align:right">TOTAL</td><td style="text-align:right">$${totDeuda.toFixed(2)}</td><td style="text-align:right">$${totCobros.toFixed(2)}</td><td style="text-align:right">$${totSaldo.toFixed(2)}</td></tr>
+      <tr class="total-row"><td colspan="3" style="text-align:right">TOTAL (${rows.length} cliente${rows.length===1?'':'s'})</td><td style="text-align:right">$${totCob.ventas.toFixed(2)}</td><td style="text-align:right">$${totCob.pagadoVenta.toFixed(2)}</td><td style="text-align:right">$${totCob.deuda.toFixed(2)}</td><td style="text-align:right">$${totCob.cobros.toFixed(2)}</td><td style="text-align:right">${_fmtSaldoCob(totCob.saldo)}</td></tr>
     </tbody>
   </table>
   <script>window.onload=function(){window.print();};<\/script>
