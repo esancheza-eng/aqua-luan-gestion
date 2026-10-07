@@ -328,6 +328,9 @@ function switchSeccionDash(sec){
   if (sec === 'notasAdicionalesDash' && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash(); // [NEW] sección independiente de Notas Adicionales
   if (sec === 'movimientosBancarios' && typeof renderMovimientosBancarios === 'function') renderMovimientosBancarios();
   if (sec === 'reporteAsesor' && typeof renderReporteAsesores === 'function') renderReporteAsesores();
+  // [NEW] Consulta Cobranzas lee el histórico completo (sin filtro de fechas); el listener solo vive dentro de la pestaña
+  if (sec === 'cobranzasClientes') { if (typeof _iniciarListenerCobranzasHist === 'function') _iniciarListenerCobranzasHist(); }
+  else if (typeof detenerListenerCobranzasHist === 'function') detenerListenerCobranzasHist();
   if (sec === 'cobranzasClientes' && typeof renderCobranzasClientes === 'function') renderCobranzasClientes();
   if (sec === 'controlTickets' && typeof renderControlTickets === 'function') renderControlTickets(); // [NEW] Control de Impresión de Tickets
   // [FIX] Los gráficos de "Resumen General" ya no se redibujan en cada cambio de
@@ -6326,17 +6329,53 @@ function _enRangoFechaFiltroDash(fecha){
   if(hasta && f>hasta) return false;
   return true;
 }
-function _datosCobranzasClientes(){
+/* [NEW] CONSULTA COBRANZAS SIN FILTRO DE FECHAS — esta sección muestra TODAS las
+   deudas y cobros de todo el historial, sin importar el rango Desde/Hasta de arriba.
+   Como _pedidosRaw/_pagosRaw solo traen el rango filtrado, aquí se abren listeners
+   propios sobre las colecciones completas de pedidos y pagos. Solo viven mientras
+   la pestaña Consulta Cobranzas está abierta (igual que Inventario), para no dejar
+   descargando todo el historial el resto del día. */
+let _cobPedidosHist = null, _cobPagosHist = null;
+let _unsubCobPedidosHist = null, _unsubCobPagosHist = null;
+function _refrescarCobranzasSiVisible(){
+  const vis=document.getElementById('seccion-cobranzasClientes')?.classList.contains('active');
+  if (vis && typeof renderCobranzasClientes==='function') renderCobranzasClientes();
+}
+function _iniciarListenerCobranzasHist(){
+  if (_unsubCobPedidosHist || _unsubCobPagosHist) return;
+  _unsubCobPedidosHist = db.collection('pedidos').onSnapshot(snap=>{
+    _cobPedidosHist = snap.docs.map(d=>({ _id:d.id, ...d.data() }));
+    _refrescarCobranzasSiVisible();
+  }, err=>console.error('listener cobranzas pedidos:', err));
+  _unsubCobPagosHist = db.collection('pagos').onSnapshot(snap=>{
+    _cobPagosHist = snap.docs.map(d=>({ _id:d.id, ...d.data() }));
+    _refrescarCobranzasSiVisible();
+  }, err=>console.error('listener cobranzas pagos:', err));
+}
+function detenerListenerCobranzasHist(){
+  if (_unsubCobPedidosHist) { _unsubCobPedidosHist(); _unsubCobPedidosHist=null; }
+  if (_unsubCobPagosHist) { _unsubCobPagosHist(); _unsubCobPagosHist=null; }
+  _cobPedidosHist = null; _cobPagosHist = null;
+}
+function _cobranzasHistCargando(){
+  return !!(_unsubCobPedidosHist || _unsubCobPagosHist) && (_cobPedidosHist===null || _cobPagosHist===null);
+}
+/* sinFecha=true → usa el histórico completo y no aplica Desde/Hasta (Consulta Cobranzas).
+   Sin parámetro se comporta exactamente como antes (lo usa "Consultar por Cliente"). */
+function _datosCobranzasClientes(sinFecha){
   const asesorSel=document.getElementById('filtroAsesor')?.value||'';
   const map={};
+  const fuentePedidos = (sinFecha && _cobPedidosHist) ? _cobPedidosHist : (_pedidosRaw||[]);
+  const fuentePagos   = (sinFecha && _cobPagosHist)   ? _cobPagosHist   : (_pagosRaw||[]);
+  const enRango = (f)=> sinFecha ? true : _enRangoFechaFiltroDash(f);
   const asegurar=(nombre)=>{
     const key=_normNombreCliente(nombre)||'sin-nombre';
     if(!map[key]) map[key]={nombre:nombre||'Sin nombre', telefono:'', asesor:'', ventas:0, pagadoVenta:0, deuda:0, cobros:0, pedidos:0, ingresos:[], deudas:[]};
     return map[key];
   };
-  (_pedidosRaw||[]).forEach(p=>{
+  fuentePedidos.forEach(p=>{
     if (asesorSel && (p.empleado||'')!==asesorSel) return;
-    if (!_enRangoFechaFiltroDash(p.fecha)) return;
+    if (!enRango(p.fecha)) return;
     const c=asegurar(p.cliente);
     const tot=parseFloat(p.total)||0;
     c.ventas+=tot;
@@ -6349,9 +6388,9 @@ function _datosCobranzasClientes(){
     if (p.telefono) c.telefono=p.telefono;
     if (p.empleado) c.asesor=p.empleado;
   });
-  (_pagosRaw||[]).forEach(pg=>{
+  fuentePagos.forEach(pg=>{
     if (asesorSel && (pg.empleado||'')!==asesorSel) return;
-    if (!_enRangoFechaFiltroDash(pg.fecha)) return;
+    if (!enRango(pg.fecha)) return;
     const cliente=pg.cliente||'Sin nombre';
     const c=asegurar(cliente);
     const monto=parseFloat(pg.monto)||0;
@@ -6372,7 +6411,13 @@ function renderCobranzasClientes(){
   if(!tbody) return;
   const q=_normNombreCliente(document.getElementById('cobranzasBusqueda')?.value||'');
   const filtro=document.getElementById('cobranzasFiltroSaldo')?.value||'';
-  let rows=_datosCobranzasClientes();
+  if(_cobranzasHistCargando()){
+    if(cont) cont.textContent='Cargando…';
+    if(kpis) kpis.innerHTML='';
+    tbody.innerHTML='<tr><td colspan="9"><div class="loading" style="padding:18px 8px"><div class="spinner"></div><span>Cargando todas las deudas del historial…</span></div></td></tr>';
+    return;
+  }
+  let rows=_datosCobranzasClientes(true);
   if(q){
     rows=rows.filter(c=>_normNombreCliente(c.nombre).includes(q) || _normNombreCliente(c.telefono).includes(q) || _normNombreCliente(c.asesorCorto).includes(q));
   }
@@ -6392,7 +6437,7 @@ function renderCobranzasClientes(){
       <div class="kpi-card red"><div class="kpi-label">Saldo pendiente</div><div class="kpi-value">$${totSaldo.toFixed(2)}</div><div class="kpi-sub">deuda − cobros (>0)</div></div>`;
   }
   if(!rows.length){
-    tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="icon">💰</div>No hay cobranzas en este período</div></td></tr>';
+    tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="icon">💰</div>No hay cobranzas registradas</div></td></tr>';
     return;
   }
   if(typeof _cobranzasSeleccion==='undefined') window._cobranzasSeleccion=new Set();
@@ -6451,7 +6496,7 @@ function imprimirCobranzasSeleccionadas(){
     alert('Selecciona uno o más clientes para imprimir.');
     return;
   }
-  let rows=_datosCobranzasClientes();
+  let rows=_datosCobranzasClientes(true);
   const q=_normNombreCliente(document.getElementById('cobranzasBusqueda')?.value||'');
   const filtro=document.getElementById('cobranzasFiltroSaldo')?.value||'';
   if(q){
@@ -6462,7 +6507,7 @@ function imprimirCobranzasSeleccionadas(){
   if(filtro==='sobrepago') rows=rows.filter(c=>c.saldo<-0.004);
   rows=rows.filter(c=>keys.has(_normNombreCliente(c.nombre)));
   if(!rows.length){ alert('No hay filas seleccionadas visibles para imprimir.'); return; }
-  const fecha=(typeof _textoRangoFecha==='function')?_textoRangoFecha():'';
+  const fecha='Todo el historial';
   const totDeuda=rows.reduce((s,c)=>s+c.deuda,0);
   const totCobros=rows.reduce((s,c)=>s+c.cobros,0);
   const totSaldo=rows.reduce((s,c)=>s+c.saldo,0);
@@ -6515,13 +6560,13 @@ function imprimirCobranzasSeleccionadas(){
   if(typeof _dispararImpresion==='function') _dispararImpresion(v);
 }
 function verDetalleCobranzaCliente(key){
-  const rows=_datosCobranzasClientes();
+  const rows=_datosCobranzasClientes(true);
   const c=rows.find(x=>_normNombreCliente(x.nombre)===key);
   const box=document.getElementById('cobranzasDetalle');
   if(!box || !c) return;
   const ingresos=c.ingresos.length
     ? c.ingresos.map(i=>`<tr><td>${escHTML(i.fecha||'—')}</td><td>${escHTML(i.forma||'—')}</td><td>${escHTML((i.asesor||'').split(':')[1]?.trim()||i.asesor||'—')}</td><td style="text-align:right">$${(Number(i.monto)||0).toFixed(2)}</td><td>${escHTML(i.notas||'')}</td></tr>`).join('')
-    : '<tr><td colspan="5" style="color:#888;font-style:italic">Sin cobros registrados en Pagos para este cliente en el período.</td></tr>';
+    : '<tr><td colspan="5" style="color:#888;font-style:italic">Sin cobros registrados en Pagos para este cliente.</td></tr>';
   box.innerHTML=`<div style="margin-top:16px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
     <div style="padding:10px 14px;background:var(--surface2);font-weight:800;color:var(--navy)">Cruce de ${escHTML(c.nombre)} — deuda $${c.deuda.toFixed(2)} vs cobros $${c.cobros.toFixed(2)}</div>
     <div class="table-wrap"><table>
