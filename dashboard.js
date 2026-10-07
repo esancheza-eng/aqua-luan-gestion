@@ -6387,6 +6387,8 @@ function _datosCobranzasClientes(sinFecha){
     c.pedidos+=1;
     if (p.telefono) c.telefono=p.telefono;
     if (p.empleado) c.asesor=p.empleado;
+    // [NEW] todos los asesores del cliente (un cliente puede estar en varias rutas)
+    if (p.empleado){ if(!c.asesoresSet) c.asesoresSet=[]; if(!c.asesoresSet.includes(p.empleado)) c.asesoresSet.push(p.empleado); }
   });
   fuentePagos.forEach(pg=>{
     if (asesorSel && (pg.empleado||'')!==asesorSel) return;
@@ -6397,10 +6399,14 @@ function _datosCobranzasClientes(sinFecha){
     c.cobros+=monto;
     c.ingresos.push({fecha:pg.fecha||'', monto, forma:pg.forma||'', asesor:pg.empleado||'', notas:pg.notas||'', ms:(pg.creadoEn?.toMillis?.()||0)});
     if (pg.empleado && !c.asesor) c.asesor=pg.empleado;
+    // [NEW] todos los asesores del cliente
+    if (pg.empleado){ if(!c.asesoresSet) c.asesoresSet=[]; if(!c.asesoresSet.includes(pg.empleado)) c.asesoresSet.push(pg.empleado); }
   });
   return Object.values(map).map(c=>{
     c.saldo=c.deuda-c.cobros;
     c.asesorCorto=String(c.asesor||'').split(':')[1]?.trim()||c.asesor||'—';
+    // [NEW] si el cliente tiene más de un asesor, mostrarlos todos (ej. WILSON / LISTER)
+    if (c.asesoresSet && c.asesoresSet.length>1) c.asesorCorto=c.asesoresSet.map(x=>String(x).split(':')[1]?.trim()||x).join(' / ');
     return c;
   }).sort((a,b)=>b.saldo-a.saldo || a.nombre.localeCompare(b.nombre,'es'));
 }
