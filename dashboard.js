@@ -1348,6 +1348,7 @@ function _agruparProductosVendidos(aplicarFiltrosPv){
   const por={};
   const add=(asesor,nom,precio,cant,dol,id)=>{
     if(asesorSel && asesor!==asesorSel) return;
+    if(_esSaldoAntNombre(nom)) return; // [NEW] la deuda anterior importada no es producto vendido
     if(aplicarFiltrosPv){
       if(_pvProdExcluidos.size && _pvProdExcluidos.has(nom)) return;
       if(_pvPrecioExcluidos.size && _pvPrecioExcluidos.has(_precioPvKey(precio))) return;
@@ -3852,6 +3853,11 @@ function _textoRangoFecha() {
   if (desde && hasta && desde !== hasta) return `${desde} a ${hasta}`;
   return desde || hasta;
 }
+/* [NEW] Deuda anterior importada ("SALDO ANT - ..."): son pedidos a crédito que solo deben
+   contar en Consulta Cobranzas. No son ventas reales, así que no se suman en ventas,
+   productos vendidos, reporte por asesor, roles de pago ni informe gerencial. */
+function _esSaldoAntNombre(n){ return /^SALDO ANT - /i.test(String(n||'').trim()); }
+function _esPedidoSaldoAnt(p){ const pr = (p && p.productos) || []; return pr.length > 0 && pr.every(x => _esSaldoAntNombre(x && x.nombre)); }
 function getDatosFiltrados() {
   const desde = document.getElementById('filtroFecha').value;
   const hasta = document.getElementById('filtroFechaHasta').value;
@@ -3874,7 +3880,7 @@ function getDatosFiltrados() {
 function getDatosSoloFecha() {
   const desde = document.getElementById('filtroFecha').value;
   const hasta = document.getElementById('filtroFechaHasta').value;
-  let datos = todosLosDatos;
+  let datos = todosLosDatos.filter(r => !_esSaldoAntNombre(r['PRODUCTO'])); // [NEW] sin deuda anterior importada
   if (desde) datos = datos.filter(r => String(r['FECHA'] || r['fecha'] || '') >= desde);
   if (hasta) datos = datos.filter(r => String(r['FECHA'] || r['fecha'] || '') <= hasta);
   return datos;
@@ -3886,14 +3892,15 @@ function getDatosSoloFecha() {
 function renderDashboard() {
   const datos = getDatosFiltrados();
   const pedidos = datos.filter(r => r['PRODUCTO'] && r['PRODUCTO'] !== '');
+  const pedidosVenta = pedidos.filter(r => !_esSaldoAntNombre(r['PRODUCTO'])); // [NEW] KPIs y gráficos sin deuda anterior importada; la tabla de Detalle sigue mostrando todo
   const pagos   = datos.filter(r => !r['PRODUCTO'] && r['TOTAL PEDIDO ($)'] > 0 && String(r['TOTAL PEDIDO ($)']).indexOf('-') === -1);
   const gastos  = datos.filter(r => String(r['TOTAL PEDIDO ($)']).indexOf('-') !== -1);
-  const pedidosConTotal = pedidos.filter(r => r['TOTAL PEDIDO ($)'] && parseFloat(r['TOTAL PEDIDO ($)']) > 0);
+  const pedidosConTotal = pedidosVenta.filter(r => r['TOTAL PEDIDO ($)'] && parseFloat(r['TOTAL PEDIDO ($)']) > 0);
   const totalReal   = pedidosConTotal.reduce((s,r) => s + (parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
   const totalPagos  = pagos.reduce((s,r) => s + (parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
   const totalGastos = gastos.reduce((s,r) => s + Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
-  const clientesUnicos = new Set(pedidos.map(r => r['CLIENTE'])).size;
-  const pedidosUnicos  = new Set(pedidos.map(r => r['_pedidoId'] || `${r['CLIENTE']}-${r['FECHA']}-${r['ASESOR / RUTA']}`)).size; // [FIX] usa el ID real del pedido cuando existe, para no fusionar 2 pedidos distintos del mismo cliente el mismo día
+  const clientesUnicos = new Set(pedidosVenta.map(r => r['CLIENTE'])).size;
+  const pedidosUnicos  = new Set(pedidosVenta.map(r => r['_pedidoId'] || `${r['CLIENTE']}-${r['FECHA']}-${r['ASESOR / RUTA']}`)).size; // [FIX] usa el ID real del pedido cuando existe, para no fusionar 2 pedidos distintos del mismo cliente el mismo día
   const ventasPorAsesor = {};
   pedidosConTotal.forEach(r => { const a = r['ASESOR / RUTA'] || 'Sin asignar'; ventasPorAsesor[a] = (ventasPorAsesor[a]||0) + (parseFloat(r['TOTAL PEDIDO ($)'])||0); });
   const asesorTop = Object.entries(ventasPorAsesor).sort((a,b) => b[1]-a[1])[0];
@@ -3913,7 +3920,7 @@ function renderDashboard() {
     <div class="kpi-card red"><div class="kpi-icon">📉</div><div class="kpi-label">Total gastos</div><div class="kpi-value">$${totalGastos.toFixed(2)}</div><div class="kpi-sub">${gastos.length} gasto(s)</div></div>
     <div class="kpi-card orange"><div class="kpi-icon">👥</div><div class="kpi-label">Clientes atendidos</div><div class="kpi-value">${clientesUnicos}</div><div class="kpi-sub">${pedidosUnicos} pedido(s)</div></div>
     <div class="kpi-card navy"><div class="kpi-icon">🏆</div><div class="kpi-label">Asesor top</div><div class="kpi-value" style="font-size:1rem">${asesorTop ? asesorTop[0].split(':')[1]?.trim()||asesorTop[0] : '—'}</div><div class="kpi-sub">${asesorTop ? '$'+asesorTop[1].toFixed(2) : 'Sin datos'}</div></div>
-    <div class="kpi-card accent"><div class="kpi-icon">📦</div><div class="kpi-label">Líneas de producto</div><div class="kpi-value">${pedidos.length}</div><div class="kpi-sub">unidades registradas</div></div>
+    <div class="kpi-card accent"><div class="kpi-icon">📦</div><div class="kpi-label">Líneas de producto</div><div class="kpi-value">${pedidosVenta.length}</div><div class="kpi-sub">unidades registradas</div></div>
     <div class="kpi-card navy"><div class="kpi-icon">🧮</div><div class="kpi-label">Total en caja</div><div class="kpi-value" style="color:${totalCajaReal>=0?'#0a7c6e':'#c0392b'}">$${totalCajaReal.toFixed(2)}</div><div class="kpi-sub">Contado + Cobrado efectivo − Gastos</div></div>
   `;
   // [FIX] Los 3 gráficos (Chart.js) son la parte más pesada de esta función —
@@ -3924,9 +3931,9 @@ function renderDashboard() {
   // recálculo. Ahora solo se redibujan si "Resumen General" está realmente
   // activa; se guardan los datos en caché para poder redibujarlos al instante
   // (sin volver a filtrar/agrupar nada) apenas el admin entra a esa pestaña.
-  _kpiPedidosCache = pedidos; _kpiPedidosConTotalCache = pedidosConTotal;
+  _kpiPedidosCache = pedidosVenta; _kpiPedidosConTotalCache = pedidosConTotal;
   const seccionResumenVisible = document.getElementById('seccion-resumen')?.classList.contains('active');
-  if (seccionResumenVisible) renderCharts(pedidos, pedidosConTotal);
+  if (seccionResumenVisible) renderCharts(pedidosVenta, pedidosConTotal);
   pedidosDetalleActuales = pedidos;
   renderFiltroProductoSelect(pedidos); // [NEW] filtro por producto en Detalle de Pedidos
   _pedidosTablaFiltrados = _filtrarPorPagoChecklist(_filtrarPorProducto(pedidos));
@@ -7430,6 +7437,7 @@ function _normRol(t){ return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'
 
 /* Tipo de producto a partir del nombre guardado en el pedido */
 function _tipoProductoRol(nombre){
+  if (_esSaldoAntNombre(nombre)) return null; // [NEW] deuda anterior importada: no cuenta para comisión
   const n = _normRol(nombre);
   if (n.includes('BOTELL')) {
     if (n.includes('LLAVE')) return 'BOT_LLAVE';
@@ -7537,7 +7545,7 @@ async function _leerConfigRoles(){
 async function _pedidosPorAsesorPeriodo(desde, hasta){
   const snap = await db.collection('pedidos').where('fecha','>=',desde).where('fecha','<=',hasta).get();
   const out = {};
-  snap.forEach(d => { const p = d.data() || {}; const a = p.empleado || 'Sin asignar'; (out[a] = out[a] || []).push(p); });
+  snap.forEach(d => { const p = d.data() || {}; if (_esPedidoSaldoAnt(p)) return; /* [NEW] sin deuda anterior importada */ const a = p.empleado || 'Sin asignar'; (out[a] = out[a] || []).push(p); });
   return out;
 }
 async function _faltantesAsesorPeriodo(ruta, dias){
@@ -8585,7 +8593,7 @@ async function _igLeerPedidos(desde, hasta){
   if (!_igEsAdmin()) return [];
   const snap = await db.collection('pedidos').where('fecha', '>=', desde).where('fecha', '<=', hasta).get();
   const out = [];
-  snap.forEach(d => { out.push(Object.assign({ _id: d.id }, d.data() || {})); });
+  snap.forEach(d => { const _p = d.data() || {}; if (_esPedidoSaldoAnt(_p)) return; /* [NEW] sin deuda anterior importada */ out.push(Object.assign({ _id: d.id }, _p)); });
   return out;
 }
 async function generarInformeGerencial(){
