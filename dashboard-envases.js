@@ -17,6 +17,8 @@
   'use strict';
   try {
     var ENV = { movs: [], unsub: null, cargado: false, filtroAsesor: '', q: '', verHist: false };
+    /* [NEW] Buscador sin importar tildes ("jose" = "JOSÉ"); solo afecta la búsqueda. */
+    function _envSinTildes(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
     var CUA = { fecha: '', cache: {}, cargando: false, error: '' };
 
     function esc(s) { return (typeof escHTML === 'function') ? escHTML(String(s == null ? '' : s)) : String(s == null ? '' : s); }
@@ -78,7 +80,7 @@
       contenido.appendChild(s1); contenido.appendChild(s2);
 
       document.getElementById('envFiltroAsesor').addEventListener('change', function () { ENV.filtroAsesor = this.value; renderEnvases(); });
-      document.getElementById('envBuscar').addEventListener('input', function () { ENV.q = this.value.trim().toUpperCase(); renderEnvases(); });
+      document.getElementById('envBuscar').addEventListener('input', function () { ENV.q = _envSinTildes(this.value.trim().toUpperCase()); renderEnvases(); });
       document.getElementById('envBtnHist').addEventListener('click', function () {
         ENV.verHist = !ENV.verHist; this.textContent = ENV.verHist ? 'Ocultar' : 'Mostrar';
         document.getElementById('envHistWrap').style.display = ENV.verHist ? 'block' : 'none'; renderEnvases();
@@ -142,7 +144,7 @@
         sel.innerHTML = '<option value="">Todos los asesores</option>' + Object.keys(rutas).sort().map(function (r) { return '<option value="' + esc(r) + '"' + (r === v ? ' selected' : '') + '>' + esc(nombreAsesor(r)) + '</option>'; }).join('');
       }
       var vis = pend.filter(function (r) {
-        return (!ENV.filtroAsesor || r.asesores[ENV.filtroAsesor]) && (!ENV.q || r.cliente.toUpperCase().indexOf(ENV.q) >= 0);
+        return (!ENV.filtroAsesor || r.asesores[ENV.filtroAsesor]) && (!ENV.q || _envSinTildes(r.cliente.toUpperCase()).indexOf(ENV.q) >= 0);
       }).sort(function (a, b) { return (a.primer || '').localeCompare(b.primer || '') || a.cliente.localeCompare(b.cliente); });
       tb.innerHTML = vis.length ? vis.map(function (r) {
         return '<tr><td style="font-weight:700">' + esc(r.cliente) + '</td><td>' + esc(r.telefono || '-') + '</td><td>' + esc(r.asesor.split(', ').map(nombreAsesor).join(', ')) + '</td><td>' + esc(r.envase) +
@@ -150,7 +152,7 @@
       }).join('') : '<tr><td colspan="8" style="color:var(--muted);font-style:italic">No hay clientes con envases pendientes.</td></tr>';
       if (ENV.verHist) {
         var ht = document.getElementById('envHistTbody');
-        var hs = ENV.movs.filter(function (m) { return (!ENV.filtroAsesor || m.empleado === ENV.filtroAsesor) && (!ENV.q || String(m.cliente || '').toUpperCase().indexOf(ENV.q) >= 0); })
+        var hs = ENV.movs.filter(function (m) { return (!ENV.filtroAsesor || m.empleado === ENV.filtroAsesor) && (!ENV.q || _envSinTildes(String(m.cliente || '').toUpperCase()).indexOf(ENV.q) >= 0); })
           .sort(function (a, b) { return (b.fecha || '').localeCompare(a.fecha || '') || ms(b) - ms(a); }).slice(0, 200);
         ht.innerHTML = hs.length ? hs.map(function (m) {
           return '<tr style="' + (m.anulado ? 'opacity:.45;text-decoration:line-through' : '') + '"><td>' + fmt(m.fecha) + '</td><td>' + esc(nombreAsesor(m.empleado)) + '</td><td>' + esc(m.cliente) + '</td><td>' +

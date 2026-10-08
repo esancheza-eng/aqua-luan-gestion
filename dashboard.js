@@ -5179,12 +5179,12 @@ function mostrarDetalleCliente() {
   const contador = document.getElementById('clienteContadorTabla');
   if (!cont) return;
 
-  const q = (document.getElementById('clienteBusquedaTabla')?.value || '').toLowerCase().trim();
+  const q = _sinTildesBusq((document.getElementById('clienteBusquedaTabla')?.value || '').toLowerCase().trim()); // [NEW] busca igual con o sin tilde
   const estadoFiltro = document.getElementById('clienteFiltroEstado')?.value || '';
   const asesorFiltro = document.getElementById('clienteFiltroAsesorTabla')?.value || '';
 
   let filtrados = _clientesTablaDatos.filter(c => {
-    const matchQ = !q || c.nombre.toLowerCase().includes(q) || (c.telefono||'').includes(q) || (c.direccion||'').toLowerCase().includes(q);
+    const matchQ = !q || _sinTildesBusq(c.nombre.toLowerCase()).includes(q) || (c.telefono||'').includes(q) || _sinTildesBusq((c.direccion||'').toLowerCase()).includes(q);
     const matchEstado = !estadoFiltro || c.estado === estadoFiltro;
     const matchAsesor = !asesorFiltro || c.asesor === asesorFiltro;
     return matchQ && matchEstado && matchAsesor;
@@ -6303,6 +6303,11 @@ function exportarPagosGastosPDF() {
 }
 
 
+/* [NEW] Solo para los buscadores: quita las tildes para que "jose" encuentre "JOSÉ" y viceversa.
+   No se usa para guardar ni para agrupar clientes; las fórmulas no cambian. */
+function _sinTildesBusq(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
 function _normNombreCliente(n){
   return String(n||'').trim().replace(/\s+/g,' ').toLowerCase();
 }
@@ -6429,7 +6434,8 @@ function renderCobranzasClientes(){
   }
   let rows=_datosCobranzasClientes(true);
   if(q){
-    rows=rows.filter(c=>_normNombreCliente(c.nombre).includes(q) || _normNombreCliente(c.telefono).includes(q) || _normNombreCliente(c.asesorCorto).includes(q));
+    const qB=_sinTildesBusq(q); // [NEW] busca igual con o sin tilde
+    rows=rows.filter(c=>_sinTildesBusq(_normNombreCliente(c.nombre)).includes(qB) || _normNombreCliente(c.telefono).includes(q) || _sinTildesBusq(_normNombreCliente(c.asesorCorto)).includes(qB));
   }
   if(filtro==='con_deuda') rows=rows.filter(c=>c.saldo>0.004);
   if(filtro==='al_dia') rows=rows.filter(c=>Math.abs(c.saldo)<=0.004);
@@ -6538,7 +6544,8 @@ function imprimirCobranzasSeleccionadas(){
   const q=_normNombreCliente(document.getElementById('cobranzasBusqueda')?.value||'');
   const filtro=document.getElementById('cobranzasFiltroSaldo')?.value||'';
   if(q){
-    rows=rows.filter(c=>_normNombreCliente(c.nombre).includes(q) || _normNombreCliente(c.telefono).includes(q) || _normNombreCliente(c.asesorCorto).includes(q));
+    const qB=_sinTildesBusq(q); // [NEW] busca igual con o sin tilde
+    rows=rows.filter(c=>_sinTildesBusq(_normNombreCliente(c.nombre)).includes(qB) || _normNombreCliente(c.telefono).includes(q) || _sinTildesBusq(_normNombreCliente(c.asesorCorto)).includes(qB));
   }
   if(filtro==='con_deuda') rows=rows.filter(c=>c.saldo>0.004);
   if(filtro==='al_dia') rows=rows.filter(c=>Math.abs(c.saldo)<=0.004);
