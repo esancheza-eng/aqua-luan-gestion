@@ -70,10 +70,14 @@ async function cpdCargar(){
   } finally { _cpdCargando = false; }
 }
 
+/* [NEW] Productos de deuda anterior importada ("SALDO ANT - ...") no son precios reales:
+   no se muestran en Pendientes ni se pueden aprobar a la lista de precios. */
+function _cpdEsSaldoAnt(n){ return /^SALDO ANT - /i.test(String(n || '').trim()); }
 function _cpdCalcularPendientes(){
   const sinLista = {}, faltan = {};
   _cpdPedidos.forEach(p => {
     const key = _cpdNorm(p.cliente); if (!key) return;
+    if ((p.productos || []).length && p.productos.every(pr => _cpdEsSaldoAnt(pr.nombre))) return; // [NEW] pedido solo de deuda anterior: se ignora aquí
     const f = String(p.fecha || '');
     const enLista = _cpdLista[key];
     if (!enLista) {
@@ -84,13 +88,13 @@ function _cpdCalcularPendientes(){
       if (f >= c.ultimo) c.ultimo = f;
       if (f >= c._f) { c._f = f; if (p.telefono) c.tel = p.telefono; if (p.direccion) c.dir = _cpdNorm(p.direccion); }
       (p.productos || []).forEach(pr => {
-        const precio = parseFloat(pr.precio); if (!pr.nombre || !(precio > 0)) return;
+        const precio = parseFloat(pr.precio); if (!pr.nombre || !(precio > 0) || _cpdEsSaldoAnt(pr.nombre)) return;
         const L = c.prods[pr.nombre] || (c.prods[pr.nombre] = { precio, fecha: f, veces: 0 });
         L.veces++; if (f >= L.fecha) { L.precio = precio; L.fecha = f; }
       });
     } else {
       (p.productos || []).forEach(pr => {
-        const precio = parseFloat(pr.precio); if (!pr.nombre || !(precio > 0)) return;
+        const precio = parseFloat(pr.precio); if (!pr.nombre || !(precio > 0) || _cpdEsSaldoAnt(pr.nombre)) return;
         if (parseFloat(enLista.precios[pr.nombre]) > 0) return;
         const k = key + '||' + pr.nombre;
         const L = faltan[k] || (faltan[k] = { key, cliente: enLista.cliente, producto: pr.nombre, precio, fecha: f, veces: 0 });

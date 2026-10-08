@@ -7880,7 +7880,10 @@ function agruparYPrevisualizarImportacion(filas){
     const precio = parseFloat(_valorColumna(filaNorm, ['Precio'])) || 0;
 
     // Lista de precios (se guarda aunque la Cantidad sea 0)
-    if (producto && precio > 0) {
+    /* [NEW] Las filas de deuda anterior ("SALDO ANT - ...") NO se guardan en la lista de precios:
+       solo crean el pedido a crédito. Así no se activa el bloqueo de precios en rutas sin lista
+       ni se agregan productos falsos a la lista oficial del cliente. */
+    if (producto && precio > 0 && !/^SALDO ANT - /i.test(String(producto).trim())) {
       const pk = _idPrecioCliente(asesor, cliente);
       if (!precios[pk]) precios[pk] = { id: pk, cliente: cliente.toLocaleUpperCase('es-EC'), empleado: asesor, telefono: '', direccion: '', precios: {}, _fechas: {} };
       const pc = precios[pk];
