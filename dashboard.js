@@ -4206,7 +4206,10 @@ function renderTabla(pedidos) {
   const _idsConBotonImprimir = new Set(); // [NEW] un solo botón Imprimir por venta (en su primera fila visible)
   tbody.innerHTML = lista.map((r, idx) => {
     const gps   = r['LINK GPS'] ? `<a href="${r['LINK GPS']}" target="_blank" style="color:var(--teal);font-weight:700;font-size:11px">📍 Ver</a>` : '<span style="color:var(--muted);font-size:11px">—</span>';
-    const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${parseFloat(r['TOTAL PEDIDO ($)']).toFixed(2)}</strong>` : '';
+    // [FIX] La columna TOTAL usa el mismo monto que el PDF (_montoPedidoSegunFiltroPago):
+    // con filtro de Pago (ej. solo Crédito) muestra solo la parte de esa forma de pago,
+    // no el total completo del pedido. Sin filtro (las 4 formas) sigue mostrando el total.
+    const total = r['TOTAL PEDIDO ($)'] ? `<strong style="color:var(--teal)">$${_montoPedidoSegunFiltroPago(r).toFixed(2)}</strong>` : '';
     // [FIX] NUEVO FORMATO DE PAGO MÚLTIPLE — antes esto solo miraba el campo viejo
     // 'ABONO', así que un pedido 'Mixto' (varias formas + saldo a crédito) nunca
     // mostraba el aviso de saldo pendiente aunque sí tuviera uno. Ahora usa
