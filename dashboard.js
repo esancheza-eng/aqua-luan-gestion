@@ -328,9 +328,13 @@ function switchSeccionDash(sec){
   if (sec === 'notasAdicionalesDash' && typeof renderNotasAdicionalesDash === 'function') renderNotasAdicionalesDash(); // [NEW] sección independiente de Notas Adicionales
   if (sec === 'movimientosBancarios' && typeof renderMovimientosBancarios === 'function') renderMovimientosBancarios();
   if (sec === 'reporteAsesor' && typeof renderReporteAsesores === 'function') renderReporteAsesores();
-  // [NEW] Consulta Cobranzas lee el histórico completo (sin filtro de fechas); el listener solo vive dentro de la pestaña
+  // [NEW] Consulta Cobranzas lee el histórico completo (sin filtro de fechas).
+  // [FIX] Ahorro de lecturas: el histórico se descarga UNA sola vez por sesión, la
+  // primera vez que se entra a la pestaña. Antes, al salir se cerraba el listener y
+  // se borraban los datos, y cada vez que se volvía a entrar se releían TODOS los
+  // pedidos y pagos. Ahora el listener queda abierto (solo cobra 1 lectura por cada
+  // pedido/pago nuevo o editado) y al volver a la pestaña se muestra al instante.
   if (sec === 'cobranzasClientes') { if (typeof _iniciarListenerCobranzasHist === 'function') _iniciarListenerCobranzasHist(); }
-  else if (typeof detenerListenerCobranzasHist === 'function') detenerListenerCobranzasHist();
   if (sec === 'cobranzasClientes' && typeof renderCobranzasClientes === 'function') renderCobranzasClientes();
   if (sec === 'controlTickets' && typeof renderControlTickets === 'function') renderControlTickets(); // [NEW] Control de Impresión de Tickets
   // [FIX] Los gráficos de "Resumen General" ya no se redibujan en cada cambio de
