@@ -6387,13 +6387,29 @@ function _datosCobranzasClientes(sinFecha){
   const fuentePedidos = (sinFecha && _cobPedidosHist) ? _cobPedidosHist : (_pedidosRaw||[]);
   const fuentePagos   = (sinFecha && _cobPagosHist)   ? _cobPagosHist   : (_pagosRaw||[]);
   const enRango = (f)=> sinFecha ? true : _enRangoFechaFiltroDash(f);
+  /* [NEW] Consulta Cobranzas con filtro de asesor: el asesor elige QUÉ clientes se ven,
+     pero cada cliente muestra su deuda y cobros COMPLETOS (de todos los asesores).
+     Antes se filtraba cada venta/pago por asesor, y si un asesor vendió a crédito y otro
+     cobró, la deuda salía distinta según el asesor elegido y no cuadraba con "Todos".
+     Solo aplica a Consulta Cobranzas (sinFecha=true); "Consultar por Cliente" sigue igual. */
+  let clientesDelAsesor=null;
+  if (sinFecha && asesorSel){
+    clientesDelAsesor=new Set();
+    fuentePedidos.forEach(p=>{ if((p.empleado||'')===asesorSel) clientesDelAsesor.add(_normNombreCliente(p.cliente)||'sin-nombre'); });
+    fuentePagos.forEach(pg=>{ if((pg.empleado||'')===asesorSel) clientesDelAsesor.add(_normNombreCliente(pg.cliente||'Sin nombre')||'sin-nombre'); });
+  }
+  const pasaAsesor=(empleado, cliente)=>{
+    if (!asesorSel) return true;
+    if (clientesDelAsesor) return clientesDelAsesor.has(_normNombreCliente(cliente)||'sin-nombre');
+    return (empleado||'')===asesorSel;
+  };
   const asegurar=(nombre)=>{
     const key=_normNombreCliente(nombre)||'sin-nombre';
     if(!map[key]) map[key]={nombre:nombre||'Sin nombre', telefono:'', asesor:'', ventas:0, pagadoVenta:0, deuda:0, cobros:0, pedidos:0, ingresos:[], deudas:[]};
     return map[key];
   };
   fuentePedidos.forEach(p=>{
-    if (asesorSel && (p.empleado||'')!==asesorSel) return;
+    if (!pasaAsesor(p.empleado, p.cliente)) return;
     if (!enRango(p.fecha)) return;
     const c=asegurar(p.cliente);
     const tot=parseFloat(p.total)||0;
@@ -6410,7 +6426,7 @@ function _datosCobranzasClientes(sinFecha){
     if (p.empleado){ if(!c.asesoresSet) c.asesoresSet=[]; if(!c.asesoresSet.includes(p.empleado)) c.asesoresSet.push(p.empleado); }
   });
   fuentePagos.forEach(pg=>{
-    if (asesorSel && (pg.empleado||'')!==asesorSel) return;
+    if (!pasaAsesor(pg.empleado, pg.cliente||'Sin nombre')) return;
     if (!enRango(pg.fecha)) return;
     const cliente=pg.cliente||'Sin nombre';
     const c=asegurar(cliente);
