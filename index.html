@@ -202,12 +202,16 @@
           </div>
           <div style="padding:14px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
             <input type="text" id="cobranzasBusqueda" placeholder="Buscar cliente, teléfono o asesor..." oninput="renderCobranzasClientes()" style="flex:1;min-width:240px;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none">
-            <select id="cobranzasFiltroSaldo" onchange="renderCobranzasClientes()" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer">
-              <option value="">Todos</option>
-              <option value="con_deuda">Con saldo pendiente</option>
-              <option value="al_dia">Al día (saldo 0)</option>
-              <option value="sobrepago">Cobros mayores a la deuda</option>
-            </select>
+            <!-- [NEW] Filtro de saldo con selección múltiple: se pueden marcar 2 o más opciones (sin marcar = Todos) -->
+            <div id="cobranzasFiltroSaldoWrap" style="position:relative">
+              <button type="button" id="cobranzasFiltroSaldoBtn" onclick="toggleFiltroSaldoCob(event)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer;min-width:230px;display:flex;align-items:center;justify-content:space-between;gap:10px"><span id="cobranzasFiltroSaldoTxt">Todos</span><span style="font-size:10px">▼</span></button>
+              <div id="cobranzasFiltroSaldo" onclick="event.stopPropagation()" style="display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:50;background:var(--surface,#fff);border:1.5px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:6px 0;min-width:260px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:var(--text)">
+                <label style="display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer"><input type="checkbox" id="cobranzasFiltroSaldoTodos" checked onchange="cambiarFiltroSaldoCob(this)"> Todos</label>
+                <label style="display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer"><input type="checkbox" class="cob-filtro-saldo" value="con_deuda" onchange="cambiarFiltroSaldoCob(this)"> Con saldo pendiente</label>
+                <label style="display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer"><input type="checkbox" class="cob-filtro-saldo" value="al_dia" onchange="cambiarFiltroSaldoCob(this)"> Al día (saldo 0)</label>
+                <label style="display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer"><input type="checkbox" class="cob-filtro-saldo" value="sobrepago" onchange="cambiarFiltroSaldoCob(this)"> Cobros mayores a la deuda</label>
+              </div>
+            </div>
           </div>
           <div style="padding:1rem 1.25rem 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px" id="cobranzasKpis"></div>
           <div class="table-wrap">

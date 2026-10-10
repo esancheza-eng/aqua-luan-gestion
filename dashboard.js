@@ -6445,13 +6445,55 @@ function _datosCobranzasClientes(sinFecha){
     return c;
   }).sort((a,b)=>b.saldo-a.saldo || a.nombre.localeCompare(b.nombre,'es'));
 }
+/* [NEW] Filtro de saldo con SELECCIÓN MÚLTIPLE en Consulta Cobranzas.
+   Sin opciones marcadas = Todos. Con 2 o más marcadas se muestran los clientes que
+   cumplan CUALQUIERA de ellas. La tabla, los KPIs, los totales y la impresión usan
+   exactamente este mismo filtro. */
+function _filtrosSaldoCob(){
+  return Array.from(document.querySelectorAll('#cobranzasFiltroSaldo .cob-filtro-saldo:checked')).map(x=>x.value);
+}
+function _aplicarFiltroSaldoCob(rows, filtro){
+  const sel=String(filtro||'').split(',').filter(Boolean);
+  if(!sel.length) return rows;
+  return rows.filter(c=>
+    (sel.includes('con_deuda') && c.saldo>0.004) ||
+    (sel.includes('al_dia') && Math.abs(c.saldo)<=0.004) ||
+    (sel.includes('sobrepago') && c.saldo<-0.004));
+}
+function _etiquetaFiltroSaldoCob(){
+  const nombres={con_deuda:'Con saldo pendiente',al_dia:'Al día (saldo 0)',sobrepago:'Cobros mayores a la deuda'};
+  const sel=_filtrosSaldoCob();
+  return sel.length ? sel.map(v=>nombres[v]||v).join(' + ') : 'Todos';
+}
+function toggleFiltroSaldoCob(ev){
+  if(ev) ev.stopPropagation();
+  const p=document.getElementById('cobranzasFiltroSaldo');
+  if(p) p.style.display = p.style.display==='none' ? 'block' : 'none';
+}
+function cambiarFiltroSaldoCob(el){
+  const todos=document.getElementById('cobranzasFiltroSaldoTodos');
+  const opts=document.querySelectorAll('#cobranzasFiltroSaldo .cob-filtro-saldo');
+  if(el===todos){
+    if(todos.checked) opts.forEach(o=>o.checked=false);
+    else if(!_filtrosSaldoCob().length) todos.checked=true;
+  }else{
+    if(todos) todos.checked=!_filtrosSaldoCob().length;
+  }
+  const txt=document.getElementById('cobranzasFiltroSaldoTxt');
+  if(txt) txt.textContent=_etiquetaFiltroSaldoCob();
+  renderCobranzasClientes();
+}
+document.addEventListener('click',function(){
+  const p=document.getElementById('cobranzasFiltroSaldo');
+  if(p && p.style.display!=='none') p.style.display='none';
+});
 function renderCobranzasClientes(){
   const tbody=document.getElementById('tablaCobranzasClientes');
   const kpis=document.getElementById('cobranzasKpis');
   const cont=document.getElementById('cobranzasContador');
   if(!tbody) return;
   const q=_normNombreCliente(document.getElementById('cobranzasBusqueda')?.value||'');
-  const filtro=document.getElementById('cobranzasFiltroSaldo')?.value||'';
+  const filtro=_filtrosSaldoCob().join(',');
   if(_cobranzasHistCargando()){
     if(cont) cont.textContent='Cargando…';
     if(kpis) kpis.innerHTML='';
@@ -6463,9 +6505,7 @@ function renderCobranzasClientes(){
     const qB=_sinTildesBusq(q); // [NEW] busca igual con o sin tilde
     rows=rows.filter(c=>_sinTildesBusq(_normNombreCliente(c.nombre)).includes(qB) || _normNombreCliente(c.telefono).includes(q) || _sinTildesBusq(_normNombreCliente(c.asesorCorto)).includes(qB));
   }
-  if(filtro==='con_deuda') rows=rows.filter(c=>c.saldo>0.004);
-  if(filtro==='al_dia') rows=rows.filter(c=>Math.abs(c.saldo)<=0.004);
-  if(filtro==='sobrepago') rows=rows.filter(c=>c.saldo<-0.004);
+  rows=_aplicarFiltroSaldoCob(rows, filtro);
   const totDeuda=rows.reduce((s,c)=>s+c.deuda,0);
   const totCobros=rows.reduce((s,c)=>s+c.cobros,0);
   const totSaldo=rows.reduce((s,c)=>s+Math.max(0,c.saldo),0);
@@ -6568,14 +6608,12 @@ function imprimirCobranzasSeleccionadas(){
   }
   let rows=_datosCobranzasClientes(true);
   const q=_normNombreCliente(document.getElementById('cobranzasBusqueda')?.value||'');
-  const filtro=document.getElementById('cobranzasFiltroSaldo')?.value||'';
+  const filtro=_filtrosSaldoCob().join(',');
   if(q){
     const qB=_sinTildesBusq(q); // [NEW] busca igual con o sin tilde
     rows=rows.filter(c=>_sinTildesBusq(_normNombreCliente(c.nombre)).includes(qB) || _normNombreCliente(c.telefono).includes(q) || _sinTildesBusq(_normNombreCliente(c.asesorCorto)).includes(qB));
   }
-  if(filtro==='con_deuda') rows=rows.filter(c=>c.saldo>0.004);
-  if(filtro==='al_dia') rows=rows.filter(c=>Math.abs(c.saldo)<=0.004);
-  if(filtro==='sobrepago') rows=rows.filter(c=>c.saldo<-0.004);
+  rows=_aplicarFiltroSaldoCob(rows, filtro);
   rows=rows.filter(c=>keys.has(_normNombreCliente(c.nombre)));
   if(!rows.length){ alert('No hay filas seleccionadas visibles para imprimir.'); return; }
   const fecha='Todo el historial';
@@ -6613,7 +6651,7 @@ function imprimirCobranzasSeleccionadas(){
     <img src="${logoUrl}" alt="Aqua Luan" onerror="this.style.display='none'">
     <div>
       <h1>Consulta Cobranzas — Clientes</h1>
-      <p>Período: ${escHTML(fecha)} · ${rows.length} cliente(s) · ${escHTML((typeof lineaImpresoPor==='function')?lineaImpresoPor():'')}</p>
+      <p>Período: ${escHTML(fecha)} · Filtro: ${escHTML(_etiquetaFiltroSaldoCob())} · ${rows.length} cliente(s) · ${escHTML((typeof lineaImpresoPor==='function')?lineaImpresoPor():'')}</p>
     </div>
   </div>
   <table>
