@@ -5541,7 +5541,9 @@ async function guardarNombreCliente() {
   const viejos = [...new Set([_editNomClienteOriginal, ...marcados])].filter(n => n && n !== nuevo);
   const cambiaTel = telefono !== _editCliTelInicial;
   const cambiaDir = direccion !== _editCliDirInicial;
-  const cambiaAsesor = !!asesor && asesor !== _editCliAsesorInicial;
+  // [FIX] También se guarda cuando el asesor elegido es el mismo que se muestra pero aún NO está
+  // fijado a mano (era solo el automático): así queda asignado y manda en las 3 pantallas.
+  const cambiaAsesor = !!asesor && (asesor !== _editCliAsesorInicial || !_asesorPrincipalFijoDe(_editNomClienteOriginal));
   if (!viejos.length && !cambiaTel && !cambiaDir && !cambiaAsesor) { alert('No hay cambios para guardar.'); return; }
 
   // [NEW] Aviso si el asesor elegido es distinto al que tiene el cliente en la base de datos subida
@@ -5554,7 +5556,9 @@ async function guardarNombreCliente() {
   if (viejos.length) lineas.push(`• Nombre: ${viejos.map(v => `"${v}"`).join(', ')} → "${nuevo}" (quedan unificados)`);
   if (cambiaTel) lineas.push(`• Teléfono: ${_editCliTelInicial || '(vacío)'} → ${telefono || '(vacío)'}`);
   if (cambiaDir) lineas.push(`• Dirección: ${_editCliDirInicial || '(vacía)'} → ${direccion || '(vacía)'}`);
-  if (cambiaAsesor) lineas.push(`• Asesor principal: ${_corto(_editCliAsesorInicial) || '(ninguno)'} → ${_corto(asesor)}`);
+  if (cambiaAsesor) lineas.push(asesor === _editCliAsesorInicial
+    ? `• Asesor principal: queda asignado a ${_corto(asesor)} (fijo, para todos sus créditos y cobranzas)`
+    : `• Asesor principal: ${_corto(_editCliAsesorInicial) || '(ninguno)'} → ${_corto(asesor)}`);
   if (!confirm(`Se actualizará el cliente en TODO el historial (pedidos, pagos y base de datos de clientes):\n\n${lineas.join('\n')}\n\n¿Continuar?`)) return;
 
   const btn = document.getElementById('btnGuardarNombreCliente');
