@@ -7,13 +7,17 @@
    - Usa el MISMO histórico completo que Consulta Cobranzas (_cobPedidosHist /
      _cobPagosHist, mismo listener _iniciarListenerCobranzasHist) y las MISMAS
      fórmulas: _creditoDePedido, _pagadoEnVentaPedido y _normNombreCliente.
-   - Cada venta (deuda generada) se asigna al asesor que la registró y cada
-     cobro al asesor que lo cobró. Así cada pedido y cada pago se cuentan una
-     sola vez y la suma de todos los asesores CUADRA con el total de
-     Consulta Cobranzas (Todos).
-   - Columna "Saldo total cliente": el saldo del cliente con TODOS los asesores
-     (el mismo que muestra Consulta Cobranzas), para ver el match por cliente
-     cuando un asesor vendió a crédito y otro cobró.
+   - [CAMBIO 2026-10-20] ASESOR PRINCIPAL POR CLIENTE (deuda por ruta):
+     cada cliente pertenece a UN solo asesor (su ruta) y TODA su deuda y TODOS
+     sus cobros se suman a ese asesor, aunque lo haya atendido o cobrado otro.
+     Ej.: Washington es de Wilson; si Jefferson le vendió o le cobró, la deuda
+     sigue con Wilson. El principal se calcula solo, en cada actualización:
+       1) el asesor con MÁS pedidos a ese cliente;
+       2) si empatan, el que lo atendió MÁS recientemente;
+       3) si el cliente no tiene pedidos (solo pagos), el que más le cobró.
+     Cada pedido y cada pago se cuentan una sola vez, así que la suma de todos
+     los asesores CUADRA con el total de Consulta Cobranzas (Todos).
+   - En el detalle se ve qué asesor atendió/cobró cada movimiento.
    Visible para Administrador y Secretaria (igual que Consulta Cobranzas).
    ══════════════════════════════════════════════════════════════════════ */
 (function () {
@@ -61,8 +65,8 @@
             '</div>' +
           '</div>' +
           '<div style="padding:12px 20px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">' +
-            'Las mismas deudas y cobros de <b>Consulta Cobranzas</b>, separados por asesor: la <b>deuda generada</b> va al asesor que hizo la venta a crédito y cada <b>cobro</b> al asesor que lo cobró. ' +
-            'La suma de todos los asesores cuadra con el total de Consulta Cobranzas. El <b>saldo total cliente</b> es el saldo con todos los asesores. Todo el historial (no depende del filtro de fechas).' +
+            'Las mismas deudas y cobros de <b>Consulta Cobranzas</b>, agrupados por el <b>asesor principal</b> de cada cliente (su ruta): toda la deuda y todos los cobros del cliente quedan con ese asesor, aunque lo haya atendido otro. ' +
+            'El principal es el asesor con más pedidos al cliente (si empatan, el más reciente). La suma de todos los asesores cuadra con el total de Consulta Cobranzas. Todo el historial (no depende del filtro de fechas).' +
           '</div>' +
           '<div style="padding:14px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border)">' +
             '<input type="text" id="cobAsBusqueda" placeholder="Buscar cliente, teléfono o asesor..." oninput="renderCobranzasAsesores()" style="flex:1;min-width:240px;' + CTRL + '">' +
@@ -79,14 +83,14 @@
           '</div>' +
           '<div style="padding:1rem 1.25rem 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px" id="cobAsKpis"></div>' +
           '<div style="padding:1rem 1.25rem 0"><div style="font-weight:800;color:var(--navy);margin-bottom:6px">Resumen por asesor</div>' +
-            '<div class="table-wrap"><table><thead><tr><th>Asesor</th><th style="text-align:right">Clientes</th><th style="text-align:right">Con saldo</th><th style="text-align:right">Ventas</th><th style="text-align:right">Deuda generada</th><th style="text-align:right">Cobros / ingresos</th><th style="text-align:right">Saldo</th></tr></thead>' +
+            '<div class="table-wrap"><table><thead><tr><th>Asesor principal</th><th style="text-align:right">Clientes</th><th style="text-align:right">Con saldo</th><th style="text-align:right">Ventas</th><th style="text-align:right">Deuda generada</th><th style="text-align:right">Cobros / ingresos</th><th style="text-align:right">Saldo pendiente</th></tr></thead>' +
             '<tbody id="tablaCobAsResumen"></tbody></table></div></div>' +
           '<div class="table-wrap" style="margin-top:1rem">' +
             '<table><thead><tr>' +
               '<th style="width:36px"><input type="checkbox" id="cobAsChkTodos" onclick="toggleTodosCobranzasAsesores(this)" title="Seleccionar todos"></th>' +
-              '<th>Cliente</th><th>Teléfono</th><th>Asesor</th>' +
+              '<th>Cliente</th><th>Teléfono</th><th>Asesor principal</th>' +
               '<th style="text-align:right">Ventas</th><th style="text-align:right">Pagado en venta</th><th style="text-align:right">Deuda generada</th>' +
-              '<th style="text-align:right">Cobros / ingresos</th><th style="text-align:right">Saldo del asesor</th><th style="text-align:right">Saldo total cliente</th>' +
+              '<th style="text-align:right">Cobros / ingresos</th><th style="text-align:right">Saldo pendiente</th><th>Atendido también por</th>' +
             '</tr></thead><tbody id="tablaCobranzasAsesores"></tbody></table>' +
           '</div>' +
           '<div id="cobAsDetalle" style="padding:0 1.25rem 1.25rem"></div>' +
@@ -100,45 +104,75 @@
       var pag = (typeof _cobPagosHist !== 'undefined' && _cobPagosHist) ? _cobPagosHist : ((typeof _pagosRaw !== 'undefined' && _pagosRaw) || []);
       return { ped: ped, pag: pag };
     }
+    function msDe(x) { return (x && x.creadoEn && x.creadoEn.toMillis) ? x.creadoEn.toMillis() : 0; }
+    /* Fecha en formato AAAA-MM-DD solo para comparar cuál es más reciente (acepta dd/mm/aaaa de datos importados) */
+    function isoCmp(x) { return (typeof _isoFechaDash === 'function') ? _isoFechaDash(x && x.fecha, x && x.creadoEn) : String((x && x.fecha) || ''); }
+    /* Elige el asesor principal del cliente: más pedidos → más reciente → más cobros */
+    function elegirPrincipal(porAsesor) {
+      var lista = Object.keys(porAsesor).map(function (a) { return porAsesor[a]; });
+      var conPedidos = lista.filter(function (x) { return x.pedidos > 0; });
+      if (conPedidos.length) {
+        conPedidos.sort(function (a, b) {
+          return (b.pedidos - a.pedidos) ||
+            String(b.ultFechaPed).localeCompare(String(a.ultFechaPed)) ||
+            (b.ultMsPed - a.ultMsPed) ||
+            (a.asesor ? 0 : 1) - (b.asesor ? 0 : 1);
+        });
+        return conPedidos[0].asesor;
+      }
+      lista.sort(function (a, b) {
+        return (b.cobros - a.cobros) ||
+          String(b.ultFechaPag).localeCompare(String(a.ultFechaPag)) ||
+          (b.ultMsPag - a.ultMsPag);
+      });
+      return lista.length ? lista[0].asesor : '';
+    }
     function datos() {
       var f = fuentes();
-      var map = {}, cli = {};
-      function asegurar(asesor, nombre) {
+      var cli = {};
+      function asegurar(nombre) {
         var ck = norm(nombre) || 'sin-nombre';
-        var k = (asesor || '') + '||' + ck;
-        if (!map[k]) map[k] = { key: k, ck: ck, asesor: asesor || '', asesorCorto: corto(asesor), nombre: nombre || 'Sin nombre', telefono: '', ventas: 0, pagadoVenta: 0, deuda: 0, cobros: 0, pedidos: 0, ingresos: [], deudas: [] };
-        if (!cli[ck]) cli[ck] = { deuda: 0, cobros: 0, telefono: '', asesores: {} };
-        return map[k];
+        if (!cli[ck]) cli[ck] = { ck: ck, nombre: nombre || 'Sin nombre', telefono: '', ventas: 0, pagadoVenta: 0, deuda: 0, cobros: 0, pedidos: 0, ingresos: [], deudas: [], porAsesor: {} };
+        return cli[ck];
+      }
+      function stat(c, asesor) {
+        var a = asesor || '';
+        if (!c.porAsesor[a]) c.porAsesor[a] = { asesor: a, pedidos: 0, deuda: 0, cobros: 0, ultFechaPed: '', ultMsPed: 0, ultFechaPag: '', ultMsPag: 0 };
+        return c.porAsesor[a];
       }
       f.ped.forEach(function (p) {
-        var c = asegurar(p.empleado, p.cliente);
+        var c = asegurar(p.cliente);
+        var st = stat(c, p.empleado);
         var tot = parseFloat(p.total) || 0;
         var cred = _creditoDePedido(p);
+        var ms = msDe(p), fe = p.fecha || '', fc = isoCmp(p);
         c.ventas += tot;
         c.pagadoVenta += _pagadoEnVentaPedido(p);
         c.deuda += cred;
-        if (cred > 0.004) c.deudas.push({ fecha: p.fecha || '', total: tot, credito: cred, ms: (p.creadoEn && p.creadoEn.toMillis ? p.creadoEn.toMillis() : 0) });
         c.pedidos += 1;
-        if (p.telefono) { c.telefono = p.telefono; cli[c.ck].telefono = p.telefono; }
-        cli[c.ck].deuda += cred;
-        cli[c.ck].asesores[c.asesor] = 1;
+        if (cred > 0.004) c.deudas.push({ fecha: fe, total: tot, credito: cred, ms: ms, asesor: p.empleado || '' });
+        if (p.telefono) c.telefono = p.telefono;
+        st.pedidos += 1; st.deuda += cred;
+        if (fc > st.ultFechaPed || (fc === st.ultFechaPed && ms > st.ultMsPed)) { st.ultFechaPed = fc; st.ultMsPed = ms; }
       });
       f.pag.forEach(function (pg) {
-        var cliente = pg.cliente || 'Sin nombre';
-        var c = asegurar(pg.empleado, cliente);
+        var c = asegurar(pg.cliente || 'Sin nombre');
+        var st = stat(c, pg.empleado);
         var monto = parseFloat(pg.monto) || 0;
+        var ms = msDe(pg), fe = pg.fecha || '', fc = isoCmp(pg);
         c.cobros += monto;
-        c.ingresos.push({ fecha: pg.fecha || '', monto: monto, forma: pg.forma || '', notas: pg.notas || '', ms: (pg.creadoEn && pg.creadoEn.toMillis ? pg.creadoEn.toMillis() : 0) });
-        cli[c.ck].cobros += monto;
-        cli[c.ck].asesores[c.asesor] = 1;
+        c.ingresos.push({ fecha: fe, monto: monto, forma: pg.forma || '', notas: pg.notas || '', ms: ms, asesor: pg.empleado || '' });
+        st.cobros += monto;
+        if (fc > st.ultFechaPag || (fc === st.ultFechaPag && ms > st.ultMsPag)) { st.ultFechaPag = fc; st.ultMsPag = ms; }
       });
-      var filas = Object.keys(map).map(function (k) {
-        var c = map[k];
+      var filas = Object.keys(cli).map(function (ck) {
+        var c = cli[ck];
+        c.asesor = elegirPrincipal(c.porAsesor);
+        c.asesorCorto = corto(c.asesor);
+        c.key = c.asesor + '||' + ck;
         c.saldo = c.deuda - c.cobros;
-        var t = cli[c.ck];
-        c.saldoCliente = t.deuda - t.cobros;
-        if (!c.telefono) c.telefono = t.telefono;
-        c.otrosAsesores = Object.keys(t.asesores).filter(function (a) { return a !== c.asesor; });
+        c.saldoCliente = c.saldo;
+        c.otrosAsesores = Object.keys(c.porAsesor).filter(function (a) { return a !== c.asesor; });
         return c;
       });
       return { filas: filas, clientes: cli };
@@ -204,7 +238,8 @@
       if (q) {
         var qB = sinTildes(q);
         rows = rows.filter(function (c) {
-          return sinTildes(norm(c.nombre)).indexOf(qB) >= 0 || norm(c.telefono).indexOf(q) >= 0 || sinTildes(norm(c.asesorCorto)).indexOf(qB) >= 0;
+          return sinTildes(norm(c.nombre)).indexOf(qB) >= 0 || norm(c.telefono).indexOf(q) >= 0 || sinTildes(norm(c.asesorCorto)).indexOf(qB) >= 0 ||
+            c.otrosAsesores.some(function (o) { return sinTildes(norm(corto(o))).indexOf(qB) >= 0; });
         });
       }
       return { rows: aplicarFiltroSaldo(rows, filtrosSaldo()), q: q, a: a };
@@ -298,7 +333,8 @@
         }
         var kEsc = esc(c.key);
         var chk = EST.seleccion.has(c.key) ? 'checked' : '';
-        var otros = c.otrosAsesores.length ? ' <span title="También tiene movimientos con: ' + esc(c.otrosAsesores.map(corto).join(', ')) + '" style="font-size:11px;color:#b45309">⇄</span>' : '';
+        var otros = c.otrosAsesores.length ? ' <span title="También lo atendieron: ' + esc(c.otrosAsesores.map(corto).join(', ')) + '" style="font-size:11px;color:#b45309">⇄</span>' : '';
+        var otrosTxt = c.otrosAsesores.length ? c.otrosAsesores.map(corto).join(', ') : '—';
         html += '<tr style="cursor:pointer" data-k="' + kEsc + '" onclick="verDetalleCobranzaAsesor(this.getAttribute(\'data-k\'))">' +
           '<td onclick="event.stopPropagation()"><input type="checkbox" class="cobas-chk" data-k="' + kEsc + '" ' + chk + ' onchange="toggleCobranzaAsesorSeleccion(this)"></td>' +
           '<td style="font-weight:700">' + esc(c.nombre) + otros + '</td>' +
@@ -309,7 +345,7 @@
           '<td style="text-align:right;font-weight:700">$' + c.deuda.toFixed(2) + '</td>' +
           '<td style="text-align:right;color:var(--teal);font-weight:700">$' + c.cobros.toFixed(2) + '</td>' +
           '<td style="text-align:right;font-weight:800;color:' + colorSaldo(c.saldo) + '">' + fmtSaldo(c.saldo) + '</td>' +
-          '<td style="text-align:right;font-weight:700;color:' + colorSaldo(c.saldoCliente) + '">' + fmtSaldo(c.saldoCliente) + '</td>' +
+          '<td style="font-size:12px;color:' + (c.otrosAsesores.length ? '#b45309' : 'var(--muted)') + '">' + esc(otrosTxt) + '</td>' +
         '</tr>';
         var sig = pg.items[i + 1];
         var finGrupo = !sig || sig.asesor !== c.asesor;
@@ -324,7 +360,7 @@
         '<td style="' + tdT + ';text-align:right">$' + t.deuda.toFixed(2) + '</td>' +
         '<td style="' + tdT + ';text-align:right;color:var(--teal)">$' + t.cobros.toFixed(2) + '</td>' +
         '<td style="' + tdT + ';text-align:right;color:' + colorSaldo(t.saldo) + '">' + fmtSaldo(t.saldo) + '</td>' +
-        '<td style="' + tdT + ';text-align:right;color:' + colorSaldo(uni.saldo) + '">' + fmtSaldo(uni.saldo) + '</td>' +
+        '<td style="' + tdT + '"></td>' +
       '</tr>';
       tbody.innerHTML = html + _htmlPaginadorTabla(SEC, pg, 10, 'renderCobranzasAsesores');
     }
@@ -344,29 +380,35 @@
       var c = EST.porKey[key];
       var box = document.getElementById('cobAsDetalle');
       if (!box || !c) return;
+      function quien(a) {
+        return a === c.asesor ? esc(corto(a)) : '<span style="color:#b45309;font-weight:700">' + esc(corto(a)) + '</span>';
+      }
       var deudas = c.deudas.length
         ? c.deudas.slice().sort(function (a, b) { return String(a.fecha).localeCompare(String(b.fecha)) || a.ms - b.ms; }).map(function (x) {
-            return '<tr><td>' + esc(x.fecha || '—') + '</td><td style="text-align:right">$' + x.total.toFixed(2) + '</td><td style="text-align:right;font-weight:700">$' + x.credito.toFixed(2) + '</td></tr>';
+            return '<tr><td>' + esc(x.fecha || '—') + '</td><td>' + quien(x.asesor) + '</td><td style="text-align:right">$' + x.total.toFixed(2) + '</td><td style="text-align:right;font-weight:700">$' + x.credito.toFixed(2) + '</td></tr>';
           }).join('')
-        : '<tr><td colspan="3" style="color:#888;font-style:italic">Este asesor no tiene ventas a crédito con este cliente.</td></tr>';
+        : '<tr><td colspan="4" style="color:#888;font-style:italic">Este cliente no tiene ventas a crédito.</td></tr>';
       var ingresos = c.ingresos.length
         ? c.ingresos.slice().sort(function (a, b) { return String(a.fecha).localeCompare(String(b.fecha)) || a.ms - b.ms; }).map(function (i) {
-            return '<tr><td>' + esc(i.fecha || '—') + '</td><td>' + esc(i.forma || '—') + '</td><td style="text-align:right">$' + (Number(i.monto) || 0).toFixed(2) + '</td><td>' + esc(i.notas || '') + '</td></tr>';
+            return '<tr><td>' + esc(i.fecha || '—') + '</td><td>' + quien(i.asesor) + '</td><td>' + esc(i.forma || '—') + '</td><td style="text-align:right">$' + (Number(i.monto) || 0).toFixed(2) + '</td><td>' + esc(i.notas || '') + '</td></tr>';
           }).join('')
-        : '<tr><td colspan="4" style="color:#888;font-style:italic">Sin cobros de este asesor en Pagos para este cliente.</td></tr>';
-      var otros = '';
-      if (c.otrosAsesores.length) {
-        otros = '<div style="padding:10px 14px;font-size:12px;color:#b45309;border-top:1px solid var(--border)">⇄ Este cliente también tiene movimientos con: <b>' +
-          c.otrosAsesores.map(function (a) {
-            var o = EST.porKey[a + '||' + c.ck];
-            return esc(corto(a)) + (o ? ' (saldo ' + fmtSaldo(o.saldo) + ')' : '');
-          }).join(', ') + '</b>. Saldo total del cliente con todos los asesores: <b>' + fmtSaldo(c.saldoCliente) + '</b>.</div>';
-      }
+        : '<tr><td colspan="5" style="color:#888;font-style:italic">Sin cobros registrados en Pagos para este cliente.</td></tr>';
+      var resumenAs = Object.keys(c.porAsesor).map(function (a) { return c.porAsesor[a]; })
+        .sort(function (a, b) { return (a.asesor === c.asesor ? -1 : 0) - (b.asesor === c.asesor ? -1 : 0) || b.pedidos - a.pedidos; })
+        .map(function (x) {
+          return '<tr><td>' + quien(x.asesor) + (x.asesor === c.asesor ? ' <b style="color:var(--teal)">(principal)</b>' : '') + '</td>' +
+            '<td style="text-align:right">' + x.pedidos + '</td><td style="text-align:right">$' + x.deuda.toFixed(2) + '</td><td style="text-align:right">$' + x.cobros.toFixed(2) + '</td></tr>';
+        }).join('');
+      var nota = c.otrosAsesores.length
+        ? '<div style="padding:10px 14px;font-size:12px;color:#b45309;border-top:1px solid var(--border)">⇄ También lo atendieron: <b>' + esc(c.otrosAsesores.map(corto).join(', ')) +
+          '</b>. Todo lo que vendieron o cobraron se suma a <b>' + esc(c.asesorCorto) + '</b>, que es el asesor principal de este cliente.</div>'
+        : '';
       box.innerHTML = '<div style="margin-top:16px;border:1px solid var(--border);border-radius:10px;overflow:hidden">' +
-        '<div style="padding:10px 14px;background:var(--surface2);font-weight:800;color:var(--navy)">Cruce de ' + esc(c.nombre) + ' con ' + esc(c.asesorCorto) + ' — deuda $' + c.deuda.toFixed(2) + ' vs cobros $' + c.cobros.toFixed(2) + ' · saldo ' + fmtSaldo(c.saldo) + '</div>' +
-        '<div class="table-wrap"><table><thead><tr><th>Fecha venta a crédito</th><th style="text-align:right">Total venta</th><th style="text-align:right">Crédito</th></tr></thead><tbody>' + deudas + '</tbody></table></div>' +
-        '<div class="table-wrap"><table><thead><tr><th>Fecha cobro</th><th>Forma</th><th style="text-align:right">Monto</th><th>Notas</th></tr></thead><tbody>' + ingresos + '</tbody></table></div>' +
-        otros + '</div>';
+        '<div style="padding:10px 14px;background:var(--surface2);font-weight:800;color:var(--navy)">' + esc(c.nombre) + ' — asesor principal ' + esc(c.asesorCorto) + ' · deuda $' + c.deuda.toFixed(2) + ' vs cobros $' + c.cobros.toFixed(2) + ' · saldo ' + fmtSaldo(c.saldo) + '</div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Asesor que lo atendió</th><th style="text-align:right">Pedidos</th><th style="text-align:right">Crédito que generó</th><th style="text-align:right">Cobró</th></tr></thead><tbody>' + resumenAs + '</tbody></table></div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Fecha venta a crédito</th><th>Vendió</th><th style="text-align:right">Total venta</th><th style="text-align:right">Crédito</th></tr></thead><tbody>' + deudas + '</tbody></table></div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Fecha cobro</th><th>Cobró</th><th>Forma</th><th style="text-align:right">Monto</th><th>Notas</th></tr></thead><tbody>' + ingresos + '</tbody></table></div>' +
+        nota + '</div>';
       if (box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
@@ -386,7 +428,7 @@
             return '<tr><td>' + esc(c.nombre) + '</td><td>' + esc(c.telefono || '—') + '</td>' +
               '<td style="text-align:right">$' + c.ventas.toFixed(2) + '</td><td style="text-align:right">$' + c.pagadoVenta.toFixed(2) + '</td>' +
               '<td style="text-align:right">$' + c.deuda.toFixed(2) + '</td><td style="text-align:right">$' + c.cobros.toFixed(2) + '</td>' +
-              '<td style="text-align:right">' + fmtSaldo(c.saldo) + '</td><td style="text-align:right">' + fmtSaldo(c.saldoCliente) + '</td><td></td></tr>';
+              '<td style="text-align:right">' + fmtSaldo(c.saldo) + '</td><td>' + esc(c.otrosAsesores.length ? c.otrosAsesores.map(corto).join(', ') : '—') + '</td><td></td></tr>';
           }).join('') +
           '<tr class="sub"><td colspan="2" style="text-align:right">Subtotal ' + esc(g.asesorCorto) + ' (' + g.filas.length + ')</td>' +
           '<td style="text-align:right">$' + g.ventas.toFixed(2) + '</td><td style="text-align:right">$' + g.pagadoVenta.toFixed(2) + '</td>' +
@@ -404,15 +446,15 @@
         'td{padding:6px 8px;border-bottom:1px solid #eee;}.grupo td{background:#eef2f6;font-weight:800;padding-top:10px;}.sub td{font-weight:800;border-bottom:1px solid #d2dae2;}.total-row{font-weight:800;background:#e6f4f2;}' +
         '@media print{body{padding:12px;} thead{display:table-header-group;}}</style></head><body>' +
         '<div class="print-header"><img src="' + logoUrl + '" alt="Aqua Luan" onerror="this.style.display=\'none\'"><div>' +
-        '<h1>Consulta Cobranzas — por Asesor</h1>' +
+        '<h1>Consulta Cobranzas — por Asesor principal</h1>' +
         '<p>Período: Todo el historial · Asesor: ' + esc(aTxt) + ' · Filtro: ' + esc(etiquetaFiltroSaldo()) + ' · ' + uni.n + ' cliente(s) · ' + esc((typeof lineaImpresoPor === 'function') ? lineaImpresoPor() : '') + '</p>' +
         '</div></div>' +
-        '<table><thead><tr><th>Cliente</th><th>Teléfono</th><th style="text-align:right">Ventas</th><th style="text-align:right">Pagado en venta</th><th style="text-align:right">Deuda generada</th><th style="text-align:right">Cobros</th><th style="text-align:right">Saldo del asesor</th><th style="text-align:right">Saldo total cliente</th><th></th></tr></thead><tbody>' +
+        '<table><thead><tr><th>Cliente</th><th>Teléfono</th><th style="text-align:right">Ventas</th><th style="text-align:right">Pagado en venta</th><th style="text-align:right">Deuda generada</th><th style="text-align:right">Cobros</th><th style="text-align:right">Saldo pendiente</th><th>Atendido también por</th><th></th></tr></thead><tbody>' +
         cuerpo +
         '<tr class="total-row"><td colspan="2" style="text-align:right">TOTAL (' + uni.n + ' cliente' + (uni.n === 1 ? '' : 's') + ')</td>' +
         '<td style="text-align:right">$' + t.ventas.toFixed(2) + '</td><td style="text-align:right">$' + t.pagadoVenta.toFixed(2) + '</td>' +
         '<td style="text-align:right">$' + t.deuda.toFixed(2) + '</td><td style="text-align:right">$' + t.cobros.toFixed(2) + '</td>' +
-        '<td style="text-align:right">' + fmtSaldo(t.saldo) + '</td><td style="text-align:right">' + fmtSaldo(uni.saldo) + '</td><td></td></tr>' +
+        '<td style="text-align:right">' + fmtSaldo(t.saldo) + '</td><td></td><td></td></tr>' +
         '</tbody></table><script>window.onload=function(){window.print();};<\/script></body></html>');
       v.document.close();
       if (typeof _dispararImpresion === 'function') _dispararImpresion(v);
