@@ -90,7 +90,7 @@
               '<th style="width:36px"><input type="checkbox" id="cobAsChkTodos" onclick="toggleTodosCobranzasAsesores(this)" title="Seleccionar todos"></th>' +
               '<th>Cliente</th><th>Teléfono</th><th>Asesor principal</th>' +
               '<th style="text-align:right">Ventas</th><th style="text-align:right">Pagado en venta</th><th style="text-align:right">Deuda generada</th>' +
-              '<th style="text-align:right">Cobros / ingresos</th><th style="text-align:right">Saldo pendiente</th><th>Atendido también por</th>' +
+              '<th style="text-align:right">Cobros / ingresos</th><th style="text-align:right">Saldo pendiente</th>' +
             '</tr></thead><tbody id="tablaCobranzasAsesores"></tbody></table>' +
           '</div>' +
           '<div id="cobAsDetalle" style="padding:0 1.25rem 1.25rem"></div>' +
@@ -247,8 +247,7 @@
       if (q) {
         var qB = sinTildes(q);
         rows = rows.filter(function (c) {
-          return sinTildes(norm(c.nombre)).indexOf(qB) >= 0 || norm(c.telefono).indexOf(q) >= 0 || sinTildes(norm(c.asesorCorto)).indexOf(qB) >= 0 ||
-            c.otrosAsesores.some(function (o) { return sinTildes(norm(corto(o))).indexOf(qB) >= 0; });
+          return sinTildes(norm(c.nombre)).indexOf(qB) >= 0 || norm(c.telefono).indexOf(q) >= 0 || sinTildes(norm(c.asesorCorto)).indexOf(qB) >= 0;
         });
       }
       return { rows: aplicarFiltroSaldo(rows, filtrosSaldo()), q: q, a: a };
@@ -275,7 +274,7 @@
         if (cont) cont.textContent = 'Cargando…';
         if (kpis) kpis.innerHTML = '';
         if (resumen) resumen.innerHTML = '';
-        tbody.innerHTML = '<tr><td colspan="10"><div class="loading" style="padding:18px 8px"><div class="spinner"></div><span>Cargando todas las deudas del historial…</span></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9"><div class="loading" style="padding:18px 8px"><div class="spinner"></div><span>Cargando todas las deudas del historial…</span></div></td></tr>';
         return;
       }
       var d = datos();
@@ -321,7 +320,7 @@
           : '<tr><td colspan="7" style="color:var(--muted);font-style:italic">Sin datos</td></tr>';
       }
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="icon">💰</div>No hay cobranzas registradas</div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">💰</div>No hay cobranzas registradas</div></td></tr>';
         return;
       }
       /* Paginación de 100 (la común del Dashboard): al cambiar filtros vuelve a la página 1 */
@@ -335,18 +334,16 @@
       pg.items.forEach(function (c, i) {
         if (c.asesor !== ultimo) {
           var g = subt[c.asesor];
-          html += '<tr class="cobas-grupo"><td colspan="10" style="background:var(--surface2);font-weight:800;color:var(--navy);padding:10px">' +
+          html += '<tr class="cobas-grupo"><td colspan="9" style="background:var(--surface2);font-weight:800;color:var(--navy);padding:10px">' +
             '👤 ' + esc(g.asesorCorto) + ' · ' + g.filas.length + ' cliente(s) · deuda $' + g.deuda.toFixed(2) + ' · cobros $' + g.cobros.toFixed(2) +
             ' · saldo <span style="color:' + colorSaldo(g.saldo) + '">' + fmtSaldo(g.saldo) + '</span></td></tr>';
           ultimo = c.asesor;
         }
         var kEsc = esc(c.key);
         var chk = EST.seleccion.has(c.key) ? 'checked' : '';
-        var otros = c.otrosAsesores.length ? ' <span title="También lo atendieron: ' + esc(c.otrosAsesores.map(corto).join(', ')) + '" style="font-size:11px;color:#b45309">⇄</span>' : '';
-        var otrosTxt = c.otrosAsesores.length ? c.otrosAsesores.map(corto).join(', ') : '—';
         html += '<tr style="cursor:pointer" data-k="' + kEsc + '" onclick="verDetalleCobranzaAsesor(this.getAttribute(\'data-k\'))">' +
           '<td onclick="event.stopPropagation()"><input type="checkbox" class="cobas-chk" data-k="' + kEsc + '" ' + chk + ' onchange="toggleCobranzaAsesorSeleccion(this)"></td>' +
-          '<td style="font-weight:700">' + esc(c.nombre) + otros + '</td>' +
+          '<td style="font-weight:700">' + esc(c.nombre) + '</td>' +
           '<td style="color:var(--muted)">' + esc(c.telefono || '—') + '</td>' +
           '<td>' + esc(c.asesorCorto) + '</td>' +
           '<td style="text-align:right">$' + c.ventas.toFixed(2) + '</td>' +
@@ -354,7 +351,6 @@
           '<td style="text-align:right;font-weight:700">$' + c.deuda.toFixed(2) + '</td>' +
           '<td style="text-align:right;color:var(--teal);font-weight:700">$' + c.cobros.toFixed(2) + '</td>' +
           '<td style="text-align:right;font-weight:800;color:' + colorSaldo(c.saldo) + '">' + fmtSaldo(c.saldo) + '</td>' +
-          '<td style="font-size:12px;color:' + (c.otrosAsesores.length ? '#b45309' : 'var(--muted)') + '">' + esc(otrosTxt) + '</td>' +
         '</tr>';
         var sig = pg.items[i + 1];
         var finGrupo = !sig || sig.asesor !== c.asesor;
@@ -369,9 +365,8 @@
         '<td style="' + tdT + ';text-align:right">$' + t.deuda.toFixed(2) + '</td>' +
         '<td style="' + tdT + ';text-align:right;color:var(--teal)">$' + t.cobros.toFixed(2) + '</td>' +
         '<td style="' + tdT + ';text-align:right;color:' + colorSaldo(t.saldo) + '">' + fmtSaldo(t.saldo) + '</td>' +
-        '<td style="' + tdT + '"></td>' +
       '</tr>';
-      tbody.innerHTML = html + _htmlPaginadorTabla(SEC, pg, 10, 'renderCobranzasAsesores');
+      tbody.innerHTML = html + _htmlPaginadorTabla(SEC, pg, 9, 'renderCobranzasAsesores');
     }
     function filaSubtotal(g) {
       var td = 'padding:9px 10px;border-top:1px solid var(--border);font-weight:800;color:var(--navy)';
@@ -380,8 +375,7 @@
         '<td style="' + td + ';text-align:right">$' + g.pagadoVenta.toFixed(2) + '</td>' +
         '<td style="' + td + ';text-align:right">$' + g.deuda.toFixed(2) + '</td>' +
         '<td style="' + td + ';text-align:right;color:var(--teal)">$' + g.cobros.toFixed(2) + '</td>' +
-        '<td style="' + td + ';text-align:right;color:' + colorSaldo(g.saldo) + '">' + fmtSaldo(g.saldo) + '</td>' +
-        '<td style="' + td + '"></td></tr>';
+        '<td style="' + td + ';text-align:right;color:' + colorSaldo(g.saldo) + '">' + fmtSaldo(g.saldo) + '</td></tr>';
     }
 
     /* ── 5. Detalle del cruce cliente ↔ asesor ── */
@@ -408,10 +402,7 @@
           return '<tr><td>' + quien(x.asesor) + (x.asesor === c.asesor ? ' <b style="color:var(--teal)">(principal)</b>' : '') + '</td>' +
             '<td style="text-align:right">' + x.pedidos + '</td><td style="text-align:right">$' + x.deuda.toFixed(2) + '</td><td style="text-align:right">$' + x.cobros.toFixed(2) + '</td></tr>';
         }).join('');
-      var nota = c.otrosAsesores.length
-        ? '<div style="padding:10px 14px;font-size:12px;color:#b45309;border-top:1px solid var(--border)">⇄ También lo atendieron: <b>' + esc(c.otrosAsesores.map(corto).join(', ')) +
-          '</b>. Todo lo que vendieron o cobraron se suma a <b>' + esc(c.asesorCorto) + '</b>, que es el asesor principal de este cliente.</div>'
-        : '';
+      var nota = ''; // [CAMBIO] ya no se muestran los otros asesores: el cliente queda solo con su asesor principal
       box.innerHTML = '<div style="margin-top:16px;border:1px solid var(--border);border-radius:10px;overflow:hidden">' +
         '<div style="padding:10px 14px;background:var(--surface2);font-weight:800;color:var(--navy)">' + esc(c.nombre) + ' — asesor principal ' + esc(c.asesorCorto) + ' · deuda $' + c.deuda.toFixed(2) + ' vs cobros $' + c.cobros.toFixed(2) + ' · saldo ' + fmtSaldo(c.saldo) + '</div>' +
         '<div class="table-wrap"><table><thead><tr><th>Asesor que lo atendió</th><th style="text-align:right">Pedidos</th><th style="text-align:right">Crédito que generó</th><th style="text-align:right">Cobró</th></tr></thead><tbody>' + resumenAs + '</tbody></table></div>' +
@@ -432,17 +423,17 @@
       var t = totales(rows);
       var uni = saldoClientesUnicos(rows, d.clientes);
       var cuerpo = grupos.map(function (g) {
-        return '<tr class="grupo"><td colspan="9">' + esc(g.asesorCorto) + '</td></tr>' +
+        return '<tr class="grupo"><td colspan="8">' + esc(g.asesorCorto) + '</td></tr>' +
           g.filas.map(function (c) {
             return '<tr><td>' + esc(c.nombre) + '</td><td>' + esc(c.telefono || '—') + '</td>' +
               '<td style="text-align:right">$' + c.ventas.toFixed(2) + '</td><td style="text-align:right">$' + c.pagadoVenta.toFixed(2) + '</td>' +
               '<td style="text-align:right">$' + c.deuda.toFixed(2) + '</td><td style="text-align:right">$' + c.cobros.toFixed(2) + '</td>' +
-              '<td style="text-align:right">' + fmtSaldo(c.saldo) + '</td><td>' + esc(c.otrosAsesores.length ? c.otrosAsesores.map(corto).join(', ') : '—') + '</td><td></td></tr>';
+              '<td style="text-align:right">' + fmtSaldo(c.saldo) + '</td><td></td></tr>';
           }).join('') +
           '<tr class="sub"><td colspan="2" style="text-align:right">Subtotal ' + esc(g.asesorCorto) + ' (' + g.filas.length + ')</td>' +
           '<td style="text-align:right">$' + g.ventas.toFixed(2) + '</td><td style="text-align:right">$' + g.pagadoVenta.toFixed(2) + '</td>' +
           '<td style="text-align:right">$' + g.deuda.toFixed(2) + '</td><td style="text-align:right">$' + g.cobros.toFixed(2) + '</td>' +
-          '<td style="text-align:right">' + fmtSaldo(g.saldo) + '</td><td></td><td></td></tr>';
+          '<td style="text-align:right">' + fmtSaldo(g.saldo) + '</td><td></td></tr>';
       }).join('');
       var logoUrl = location.origin + '/logo-luanaqua.png';
       var aTxt = ff.a === '__todos__' ? 'Todos los asesores' : corto(ff.a);
@@ -458,12 +449,12 @@
         '<h1>Consulta Cobranzas — por Asesor principal</h1>' +
         '<p>Período: Todo el historial · Asesor: ' + esc(aTxt) + ' · Filtro: ' + esc(etiquetaFiltroSaldo()) + ' · ' + uni.n + ' cliente(s) · ' + esc((typeof lineaImpresoPor === 'function') ? lineaImpresoPor() : '') + '</p>' +
         '</div></div>' +
-        '<table><thead><tr><th>Cliente</th><th>Teléfono</th><th style="text-align:right">Ventas</th><th style="text-align:right">Pagado en venta</th><th style="text-align:right">Deuda generada</th><th style="text-align:right">Cobros</th><th style="text-align:right">Saldo pendiente</th><th>Atendido también por</th><th></th></tr></thead><tbody>' +
+        '<table><thead><tr><th>Cliente</th><th>Teléfono</th><th style="text-align:right">Ventas</th><th style="text-align:right">Pagado en venta</th><th style="text-align:right">Deuda generada</th><th style="text-align:right">Cobros</th><th style="text-align:right">Saldo pendiente</th><th></th></tr></thead><tbody>' +
         cuerpo +
         '<tr class="total-row"><td colspan="2" style="text-align:right">TOTAL (' + uni.n + ' cliente' + (uni.n === 1 ? '' : 's') + ')</td>' +
         '<td style="text-align:right">$' + t.ventas.toFixed(2) + '</td><td style="text-align:right">$' + t.pagadoVenta.toFixed(2) + '</td>' +
         '<td style="text-align:right">$' + t.deuda.toFixed(2) + '</td><td style="text-align:right">$' + t.cobros.toFixed(2) + '</td>' +
-        '<td style="text-align:right">' + fmtSaldo(t.saldo) + '</td><td></td><td></td></tr>' +
+        '<td style="text-align:right">' + fmtSaldo(t.saldo) + '</td><td></td></tr>' +
         '</tbody></table><script>window.onload=function(){window.print();};<\/script></body></html>');
       v.document.close();
       if (typeof _dispararImpresion === 'function') _dispararImpresion(v);
