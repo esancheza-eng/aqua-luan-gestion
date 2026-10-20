@@ -5178,8 +5178,54 @@ function poblarClienteSelect(datos) {
     if (_asesoresCache.includes(valorActual)) selAsesor.value = valorActual;
   }
 
+  // [NEW] Asesor principal fijado a mano en "Editar cliente": manda sobre el asesor del último pedido.
+  if (_asesorPrincipalFijoMap) _clientesTablaDatos.forEach(c => { const f = _asesorPrincipalFijoDe(c.nombre); if (f) c.asesor = f; });
+  else _cargarAsesoresPrincipalesFijos();
+
   _clientesSeleccionadosPdf.clear(); // el filtro cambió, se limpia la selección de PDF para evitar exportar algo que ya no se ve
   mostrarDetalleCliente();
+}
+
+/* ════════════════════════════════════════
+   [NEW] ASESOR PRINCIPAL FIJADO A MANO
+   Al cambiar el asesor principal en "Editar cliente" se guarda el campo
+   asesorPrincipal (+ asesorPrincipalEn) en TODOS los pedidos y pagos del
+   cliente. NO cambia el campo "empleado" (quién vendió / cobró), así que la
+   liquidación, cuadre de caja y comisiones de cada asesor no se alteran.
+   Aquí se lee una sola vez (solo los documentos que tienen el campo) para
+   que "Consultar por Cliente" muestre el asesor principal aunque el pedido
+   esté fuera del rango de fechas cargado.
+════════════════════════════════════════ */
+let _asesorPrincipalFijoMap = null;
+let _asesorPrincipalFijoPromesa = null;
+function _asesorPrincipalFijoDe(nombre) {
+  if (!_asesorPrincipalFijoMap) return '';
+  const x = _asesorPrincipalFijoMap[_normNombreCliente(nombre)];
+  return x ? x.asesor : '';
+}
+function _cargarAsesoresPrincipalesFijos(forzar) {
+  if (_asesorPrincipalFijoPromesa && !forzar) return _asesorPrincipalFijoPromesa;
+  _asesorPrincipalFijoPromesa = (async () => {
+    const mapa = {};
+    for (const col of ['pedidos', 'pagos']) {
+      try {
+        const snap = await db.collection(col).where('asesorPrincipal', '>', '').get();
+        snap.forEach(d => {
+          const x = d.data() || {};
+          const k = _normNombreCliente(x.cliente);
+          if (!k || !x.asesorPrincipal) return;
+          const en = Number(x.asesorPrincipalEn) || 0;
+          if (!mapa[k] || en > mapa[k].en) mapa[k] = { asesor: x.asesorPrincipal, en };
+        });
+      } catch (e) { console.warn('Asesor principal fijo — no se pudo leer ' + col + ':', e); }
+    }
+    _asesorPrincipalFijoMap = mapa;
+    let cambio = false;
+    (_clientesTablaDatos || []).forEach(c => { const f = _asesorPrincipalFijoDe(c.nombre); if (f && c.asesor !== f) { c.asesor = f; cambio = true; } });
+    if (cambio) mostrarDetalleCliente();
+    return mapa;
+  })();
+  return _asesorPrincipalFijoPromesa;
 }
 
 /* [NEW] Pinta la tabla de "Consultar por Cliente" respetando los filtros de búsqueda,
@@ -5225,7 +5271,7 @@ function mostrarDetalleCliente() {
       : (c.abonado > 0.005 ? `<div style="font-size:11px;font-weight:700;color:var(--teal)">✅ Cancelado</div>${abonoTxt}` : '<span style="color:var(--muted);font-size:11px">—</span>');
     return `<tr class="clickable" style="cursor:pointer" onclick="if(event.target.type!=='checkbox')abrirDetalleClienteModal('${encodeURIComponent(c.nombre)}')">
       <td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleClienteSeleccionadoPdf('${encodeURIComponent(c.nombre)}',this.checked)" style="width:16px;height:16px;accent-color:var(--teal);cursor:pointer"></td>
-      <td style="font-weight:700;color:var(--navy)">${escHTML(c.nombre)}${ROL_ACTUAL !== 'secretaria' ? ` <button type="button" title="Editar nombre" onclick="event.stopPropagation();abrirEditarNombreCliente('${encodeURIComponent(c.nombre).replace(/'/g,'%27')}')" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;opacity:.7">✏️</button>` : ''}</td>
+      <td style="font-weight:700;color:var(--navy)">${escHTML(c.nombre)}${ROL_ACTUAL !== 'secretaria' ? ` <button type="button" title="Editar cliente" onclick="event.stopPropagation();abrirEditarNombreCliente('${encodeURIComponent(c.nombre).replace(/'/g,'%27')}')" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;opacity:.7">✏️</button>` : ''}</td>
       <td style="font-size:12px;color:var(--muted)">${escHTML(c.telefono||'-')}</td>
       <td style="font-size:12px;color:var(--muted);max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeAttr(c.direccion||'')}">${escHTML(c.direccion||'-')}</td>
       <td style="text-align:center">${c.pedidos}</td>
@@ -5402,13 +5448,33 @@ function _nombresClienteSimilares(nombre) {
   }).sort((a,b) => a.localeCompare(b));
 }
 
+/* [NEW] Datos del cliente en la base subida (colección 'preciosClientes', la misma que llena
+   Importar Datos y "Clientes y Precios"). Busca por el nombre tal cual y en MAYÚSCULAS. */
+let _editCliBase = [];          // documentos de la base del cliente original [{id, ref, data}]
+let _editCliAsesorInicial = ''; // asesor que se mostró al abrir (para saber si cambió)
+let _editCliTelInicial = '', _editCliDirInicial = '';
+const _corto = a => (String(a||'').split(':')[1] || '').trim() || String(a||'');
+
+async function _buscarClienteEnBase(nombres) {
+  const variantes = [...new Set(nombres.flatMap(n => { const t = String(n||'').trim(); return t ? [t, t.toLocaleUpperCase('es-EC')] : []; }))];
+  const vistos = {};
+  for (const v of variantes) {
+    try {
+      const snap = await db.collection('preciosClientes').where('cliente', '==', v).get();
+      snap.forEach(d => { vistos[d.id] = { id: d.id, ref: d.ref, data: d.data() || {} }; });
+    } catch (e) { console.warn('Base de clientes — no se pudo leer:', e); }
+  }
+  return Object.values(vistos);
+}
+
 function abrirEditarNombreCliente(nombreCodificado) {
-  if (ROL_ACTUAL === 'secretaria') { alert('Solo el administrador puede editar nombres de clientes.'); return; }
+  if (ROL_ACTUAL === 'secretaria') { alert('Solo el administrador puede editar clientes.'); return; }
   const nombre = nombreCodificado ? decodeURIComponent(nombreCodificado) : (window._clienteModalActual && window._clienteModalActual.nombre);
   if (!nombre) return;
   if (nombre === 'Sin nombre') { alert('Estos pedidos no tienen nombre de cliente registrado. Edítalos uno por uno desde "Detalle de Pedidos".'); return; }
+  const c = (_clientesTablaDatos || []).find(x => x.nombre === nombre) || {};
   _editNomClienteOriginal = nombre;
-  document.getElementById('editNomClienteActual').textContent = 'Nombre actual: ' + nombre;
+  document.getElementById('editNomClienteActual').textContent = 'Cliente: ' + nombre;
   const input = document.getElementById('editNomClienteNuevo');
   input.value = nombre;
   const todos = [...new Set((todosLosDatos||[]).map(r => r['CLIENTE']).filter(Boolean))].sort((a,b) => a.localeCompare(b));
@@ -5417,12 +5483,47 @@ function abrirEditarNombreCliente(nombreCodificado) {
   document.getElementById('editNomClienteSimilares').innerHTML = similares.length
     ? similares.map(n => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer"><input type="checkbox" class="chkNomClienteSimilar" value="${escapeAttr(n)}" style="width:16px;height:16px;accent-color:var(--teal)"> ${escHTML(n)}</label>`).join('')
     : '<div style="font-size:12px;color:var(--muted)">No se encontraron nombres parecidos en el período cargado.</div>';
+
+  // [NEW] Teléfono, dirección y asesor principal
+  _editCliTelInicial = c.telefono || '';
+  _editCliDirInicial = c.direccion || '';
+  document.getElementById('editCliTelefono').value = _editCliTelInicial;
+  document.getElementById('editCliDireccion').value = _editCliDirInicial;
+  _editCliBase = [];
+  _editCliAsesorInicial = _asesorPrincipalFijoDe(nombre) || c.asesor || '';
+  _llenarSelectAsesorCliente(_editCliAsesorInicial);
+  const info = document.getElementById('editCliBaseInfo');
+  info.innerHTML = '⏳ Buscando al cliente en la base de datos subida...';
+  _buscarClienteEnBase([nombre]).then(base => {
+    if (_editNomClienteOriginal !== nombre) return; // se abrió otro cliente mientras tanto
+    _editCliBase = base;
+    if (!base.length) { info.innerHTML = 'Este cliente <b>no está</b> en la base de datos subida (lista de precios).'; return; }
+    const rutas = [...new Set(base.map(b => b.data.empleado || ''))];
+    info.innerHTML = `En la base de datos subida está con: <b>${rutas.map(r => escHTML(_corto(r) || 'SIN ASESOR')).join(', ')}</b>`;
+    // Si no hay asesor fijado a mano, se muestra el de la base como asesor principal
+    if (!_asesorPrincipalFijoDe(nombre) && rutas.length === 1 && rutas[0]) {
+      _editCliAsesorInicial = rutas[0];
+      _llenarSelectAsesorCliente(rutas[0]);
+    }
+    const b0 = base[0].data;
+    const tel = document.getElementById('editCliTelefono'), dir = document.getElementById('editCliDireccion');
+    if (!tel.value && b0.telefono) { tel.value = b0.telefono; _editCliTelInicial = b0.telefono; }
+    if (!dir.value && b0.direccion) { dir.value = b0.direccion; _editCliDirInicial = b0.direccion; }
+  });
+
   document.getElementById('editNomClienteEstado').textContent = '';
   const btn = document.getElementById('btnGuardarNombreCliente');
-  btn.disabled = false; btn.textContent = '💾 Guardar y unificar';
+  btn.disabled = false; btn.textContent = '💾 Guardar';
   document.getElementById('modalEditarNombreClienteOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
   setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+function _llenarSelectAsesorCliente(actual) {
+  const sel = document.getElementById('editCliAsesor');
+  const rutas = (_asesoresCache || []).slice();
+  if (actual && !rutas.includes(actual)) rutas.unshift(actual);
+  sel.innerHTML = (actual ? '' : '<option value="">— Sin asesor —</option>') + rutas.map(r => `<option value="${escapeAttr(r)}">${escHTML(_corto(r))}</option>`).join('');
+  sel.value = actual || '';
 }
 function cerrarEditarNombreCliente() {
   document.getElementById('modalEditarNombreClienteOverlay').classList.remove('open');
@@ -5430,51 +5531,128 @@ function cerrarEditarNombreCliente() {
 }
 
 async function guardarNombreCliente() {
-  if (ROL_ACTUAL === 'secretaria') { alert('Solo el administrador puede editar nombres de clientes.'); return; }
+  if (ROL_ACTUAL === 'secretaria') { alert('Solo el administrador puede editar clientes.'); return; }
   const nuevo = (document.getElementById('editNomClienteNuevo').value || '').replace(/\s+/g,' ').trim();
   if (!nuevo) { alert('Escribe el nombre correcto del cliente.'); return; }
+  const telefono = (document.getElementById('editCliTelefono').value || '').trim();
+  const direccion = (document.getElementById('editCliDireccion').value || '').replace(/\s+/g,' ').trim();
+  const asesor = document.getElementById('editCliAsesor').value || '';
   const marcados = [...document.querySelectorAll('.chkNomClienteSimilar:checked')].map(c => c.value);
   const viejos = [...new Set([_editNomClienteOriginal, ...marcados])].filter(n => n && n !== nuevo);
-  if (!viejos.length) { alert('El nombre no cambió.'); return; }
-  if (!confirm(`Se cambiará el nombre del cliente en TODO el historial:\n\n${viejos.map(v => `"${v}"`).join('\n')}\n\n→ "${nuevo}"\n\nTodos quedarán unificados como un solo cliente. ¿Continuar?`)) return;
+  const cambiaTel = telefono !== _editCliTelInicial;
+  const cambiaDir = direccion !== _editCliDirInicial;
+  const cambiaAsesor = !!asesor && asesor !== _editCliAsesorInicial;
+  if (!viejos.length && !cambiaTel && !cambiaDir && !cambiaAsesor) { alert('No hay cambios para guardar.'); return; }
+
+  // [NEW] Aviso si el asesor elegido es distinto al que tiene el cliente en la base de datos subida
+  if (cambiaAsesor) {
+    const enBase = [...new Set(_editCliBase.map(b => b.data.empleado || '').filter(Boolean))].filter(r => r !== asesor);
+    if (enBase.length && !confirm(`⚠️ ¿Está seguro que desea cambiar el asesor?\n\nEn la base de datos subida este cliente está con el asesor: ${enBase.map(_corto).join(', ')}.\n\nNuevo asesor principal: ${_corto(asesor)}`)) return;
+  }
+
+  const lineas = [];
+  if (viejos.length) lineas.push(`• Nombre: ${viejos.map(v => `"${v}"`).join(', ')} → "${nuevo}" (quedan unificados)`);
+  if (cambiaTel) lineas.push(`• Teléfono: ${_editCliTelInicial || '(vacío)'} → ${telefono || '(vacío)'}`);
+  if (cambiaDir) lineas.push(`• Dirección: ${_editCliDirInicial || '(vacía)'} → ${direccion || '(vacía)'}`);
+  if (cambiaAsesor) lineas.push(`• Asesor principal: ${_corto(_editCliAsesorInicial) || '(ninguno)'} → ${_corto(asesor)}`);
+  if (!confirm(`Se actualizará el cliente en TODO el historial (pedidos, pagos y base de datos de clientes):\n\n${lineas.join('\n')}\n\n¿Continuar?`)) return;
 
   const btn = document.getElementById('btnGuardarNombreCliente');
   const estado = document.getElementById('editNomClienteEstado');
   btn.disabled = true; btn.textContent = '⏳ Guardando...';
-  const conteo = {}; const errores = [];
+  const conteo = { pedidos: 0, pagos: 0, pedidosEliminados: 0, base: 0 }; const errores = [];
+  const ahoraMs = Date.now();
+  const nombres = [...new Set([...viejos, nuevo])];
   try {
+    // 1) Pedidos, pagos y respaldos de eliminados: nombre + (teléfono, dirección, asesor principal)
     for (const col of _COLECCIONES_CON_CLIENTE) {
-      conteo[col] = 0;
-      for (const viejo of viejos) {
-        estado.textContent = `Actualizando ${col}: "${viejo}"...`;
+      const extra = {};
+      if (col === 'pedidos') { if (cambiaTel) extra.telefono = telefono; if (cambiaDir) extra.direccion = direccion; }
+      if ((col === 'pedidos' || col === 'pagos') && cambiaAsesor) { extra.asesorPrincipal = asesor; extra.asesorPrincipalEn = ahoraMs; }
+      for (const n of nombres) {
+        const cambios = Object.assign({}, n !== nuevo ? { cliente: nuevo } : {}, extra);
+        if (!Object.keys(cambios).length) continue;
+        estado.textContent = `Actualizando ${col}: "${n}"...`;
         try {
-          const snap = await db.collection(col).where('cliente', '==', viejo).get();
-          let lote = db.batch(); let n = 0;
+          const snap = await db.collection(col).where('cliente', '==', n).get();
+          let lote = db.batch(); let k = 0;
           for (const d of snap.docs) {
-            lote.update(d.ref, { cliente: nuevo });
-            n++;
-            if (n % 400 === 0) { await lote.commit(); lote = db.batch(); }
+            lote.update(d.ref, cambios);
+            k++;
+            if (k % 400 === 0) { await lote.commit(); lote = db.batch(); }
           }
-          if (n % 400 !== 0) await lote.commit();
-          conteo[col] += n;
+          if (k % 400 !== 0) await lote.commit();
+          conteo[col] += k;
         } catch (e) {
-          console.error(`Editar nombre cliente — ${col}:`, e);
+          console.error(`Editar cliente — ${col}:`, e);
           errores.push(`${col}: ${e.message}`);
         }
       }
     }
-    const resumen = `pedidos ${conteo.pedidos||0}, pagos ${conteo.pagos||0}, eliminados ${conteo.pedidosEliminados||0}`;
-    await _registrarAuditoria('cliente', 'edición', null, `Nombre de cliente ${viejos.map(v => `"${v}"`).join(', ')} → "${nuevo}" (${resumen}) por ${actorAuditoria()}`);
+
+    // 2) Base de datos subida (preciosClientes): nombre, teléfono, dirección y asesor (ruta).
+    //    El id del documento es Asesor + Cliente, así que si cambia el asesor o el nombre el
+    //    registro se mueve al id nuevo conservando sus precios.
+    estado.textContent = 'Actualizando base de datos de clientes...';
+    try {
+      const base = await _buscarClienteEnBase(nombres);
+      const nombreBase = nuevo.toLocaleUpperCase('es-EC');
+      for (const b of base) {
+        const x = b.data;
+        const empleado = cambiaAsesor ? asesor : (x.empleado || '');
+        const cliente = viejos.length ? nombreBase : (x.cliente || nombreBase);
+        const datos = { cliente, clienteKey: cliente, empleado, actualizadoPor: ADMIN_ACTUAL.uid || null, actualizadoEn: firebase.firestore.FieldValue.serverTimestamp() };
+        if (cambiaTel) datos.telefono = telefono;
+        if (cambiaDir) datos.direccion = direccion.toLocaleUpperCase('es-EC');
+        const idNuevo = _idPrecioCliente(empleado, cliente);
+        if (idNuevo === b.id) { await b.ref.update(datos); conteo.base++; continue; }
+        const refNuevo = db.collection('preciosClientes').doc(idNuevo);
+        const destino = await refNuevo.get();
+        const dDest = destino.exists ? (destino.data() || {}) : {};
+        // Si ya existe un registro en el destino, se conservan sus precios y se agregan los que falten
+        const precios = Object.assign({}, x.precios || {}, dDest.precios || {});
+        const completo = Object.assign({}, x, dDest, datos, { precios });
+        if (!cambiaTel && !completo.telefono && x.telefono) completo.telefono = x.telefono;
+        if (!cambiaDir && !completo.direccion && x.direccion) completo.direccion = x.direccion;
+        await refNuevo.set(completo);
+        await b.ref.delete();
+        conteo.base++;
+      }
+    } catch (e) {
+      console.error('Editar cliente — base de datos:', e);
+      errores.push(`base de datos de clientes: ${e.message}`);
+    }
+
+    if (_asesorPrincipalFijoMap && viejos.length && !cambiaAsesor) {
+      // el asesor fijado a mano sigue al cliente con su nombre nuevo
+      const previo = viejos.map(v => _asesorPrincipalFijoMap[_normNombreCliente(v)]).filter(Boolean).sort((a,b) => b.en - a.en)[0];
+      if (previo && !_asesorPrincipalFijoMap[_normNombreCliente(nuevo)]) _asesorPrincipalFijoMap[_normNombreCliente(nuevo)] = previo;
+    }
+    if (cambiaAsesor) {
+      if (!_asesorPrincipalFijoMap) _asesorPrincipalFijoMap = {};
+      _asesorPrincipalFijoMap[_normNombreCliente(nuevo)] = { asesor, en: ahoraMs };
+    }
+    const resumen = `pedidos ${conteo.pedidos}, pagos ${conteo.pagos}, eliminados ${conteo.pedidosEliminados}, base ${conteo.base}`;
+    await _registrarAuditoria('cliente', 'edición', null, `Cliente "${_editNomClienteOriginal}": ${lineas.join(' | ').replace(/• /g,'')} (${resumen}) por ${actorAuditoria()}`);
     viejos.forEach(v => _clientesSeleccionadosPdf.delete(v));
+    // Refleja el cambio en la tabla al instante (el tiempo real lo confirma luego)
+    (_clientesTablaDatos || []).forEach(c => {
+      if (!nombres.includes(c.nombre)) return;
+      if (cambiaAsesor) c.asesor = asesor;
+      if (cambiaTel) c.telefono = telefono;
+      if (cambiaDir) c.direccion = direccion;
+    });
+    mostrarDetalleCliente();
+    if (typeof window.renderCobranzasAsesores === 'function') { try { window.renderCobranzasAsesores(); } catch (e) {} }
     cerrarEditarNombreCliente();
     cerrarDetalleClienteModal();
     if (errores.length) alert(`⚠️ Se actualizó parcialmente (${resumen}).\n\nNo se pudo actualizar:\n${errores.join('\n')}`);
-    else mostrarToastEdicion(`✅ Cliente unificado como "${nuevo}" — ${resumen}`);
+    else mostrarToastEdicion(`✅ Cliente "${nuevo}" actualizado — ${resumen}`);
   } catch (err) {
     console.error(err);
-    alert('❌ No se pudo cambiar el nombre: ' + err.message);
+    alert('❌ No se pudo guardar: ' + err.message);
   } finally {
-    btn.disabled = false; btn.textContent = '💾 Guardar y unificar';
+    btn.disabled = false; btn.textContent = '💾 Guardar';
     estado.textContent = '';
   }
 }

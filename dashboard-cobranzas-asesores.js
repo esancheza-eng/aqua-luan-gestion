@@ -66,7 +66,7 @@
           '</div>' +
           '<div style="padding:12px 20px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">' +
             'Las mismas deudas y cobros de <b>Consulta Cobranzas</b>, agrupados por el <b>asesor principal</b> de cada cliente (su ruta): toda la deuda y todos los cobros del cliente quedan con ese asesor, aunque lo haya atendido otro. ' +
-            'El principal es el asesor con más pedidos al cliente (si empatan, el más reciente). La suma de todos los asesores cuadra con el total de Consulta Cobranzas. Todo el historial (no depende del filtro de fechas).' +
+            'El principal es el asesor fijado en Consultar por Cliente → Editar cliente; si no se ha fijado, el asesor con más pedidos al cliente (si empatan, el más reciente). La suma de todos los asesores cuadra con el total de Consulta Cobranzas. Todo el historial (no depende del filtro de fechas).' +
           '</div>' +
           '<div style="padding:14px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border)">' +
             '<input type="text" id="cobAsBusqueda" placeholder="Buscar cliente, teléfono o asesor..." oninput="renderCobranzasAsesores()" style="flex:1;min-width:240px;' + CTRL + '">' +
@@ -140,6 +140,13 @@
         if (!c.porAsesor[a]) c.porAsesor[a] = { asesor: a, pedidos: 0, deuda: 0, cobros: 0, ultFechaPed: '', ultMsPed: 0, ultFechaPag: '', ultMsPag: 0 };
         return c.porAsesor[a];
       }
+      /* [NEW] Asesor principal fijado a mano en "Consultar por Cliente → Editar cliente"
+         (campo asesorPrincipal en pedidos/pagos): manda sobre el cálculo automático. */
+      function fijar(c, x) {
+        if (!x || !x.asesorPrincipal) return;
+        var en = Number(x.asesorPrincipalEn) || 0;
+        if (!c.fijo || en > c.fijo.en) c.fijo = { asesor: x.asesorPrincipal, en: en };
+      }
       f.ped.forEach(function (p) {
         var c = asegurar(p.cliente);
         var st = stat(c, p.empleado);
@@ -152,6 +159,7 @@
         c.pedidos += 1;
         if (cred > 0.004) c.deudas.push({ fecha: fe, total: tot, credito: cred, ms: ms, asesor: p.empleado || '' });
         if (p.telefono) c.telefono = p.telefono;
+        fijar(c, p);
         st.pedidos += 1; st.deuda += cred;
         if (fc > st.ultFechaPed || (fc === st.ultFechaPed && ms > st.ultMsPed)) { st.ultFechaPed = fc; st.ultMsPed = ms; }
       });
@@ -161,13 +169,14 @@
         var monto = parseFloat(pg.monto) || 0;
         var ms = msDe(pg), fe = pg.fecha || '', fc = isoCmp(pg);
         c.cobros += monto;
+        fijar(c, pg);
         c.ingresos.push({ fecha: fe, monto: monto, forma: pg.forma || '', notas: pg.notas || '', ms: ms, asesor: pg.empleado || '' });
         st.cobros += monto;
         if (fc > st.ultFechaPag || (fc === st.ultFechaPag && ms > st.ultMsPag)) { st.ultFechaPag = fc; st.ultMsPag = ms; }
       });
       var filas = Object.keys(cli).map(function (ck) {
         var c = cli[ck];
-        c.asesor = elegirPrincipal(c.porAsesor);
+        c.asesor = c.fijo ? c.fijo.asesor : elegirPrincipal(c.porAsesor);
         c.asesorCorto = corto(c.asesor);
         c.key = c.asesor + '||' + ck;
         c.saldo = c.deuda - c.cobros;
