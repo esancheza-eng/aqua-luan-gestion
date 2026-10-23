@@ -8699,16 +8699,22 @@ function _igAgruparPedidos(pedidos, rango){
     const ruta = _igParseRuta(p.empleado);
     if (!ruta || IG_RUTAS_REPORTE.indexOf(ruta.num) < 0) return; // Ruta 6 y otras: fuera
     const iso = (typeof _isoFechaDash === 'function') ? _isoFechaDash(p.fecha, p.creadoEn) : String(p.fecha || '').slice(0, 10);
-    if (!iso || iso < rango.desde || iso > rango.hasta || iso.slice(0, 8) !== pref) return;
-    const dia = parseInt(iso.slice(8, 10), 10);
-    if (!(dia >= 1 && dia <= rango.ultimo)) return;
-    const tramo = dia <= 15 ? 1 : 2;
+    if (!iso || iso < rango.desde || iso > rango.hasta) return;
+    let tramo = 1; // [NEW] en modo 'rango' todo va a una sola columna
+    if (rango.modo !== 'rango') {
+      if (iso.slice(0, 8) !== pref) return;
+      const dia = parseInt(iso.slice(8, 10), 10);
+      if (!(dia >= 1 && dia <= rango.ultimo)) return;
+      tramo = dia <= 15 ? 1 : 2;
+    }
     const R = rutas[ruta.num];
     if (!R.nombre && ruta.nombre) R.nombre = ruta.nombre;
     (Array.isArray(p.productos) ? p.productos : []).forEach(prod => {
       if (!prod) return;
       const nombre = String(prod.nombre || 'Sin nombre').trim() || 'Sin nombre';
       const clave = nombre.toUpperCase();
+      _igProdsVistos[clave] = nombre; // [NEW] para la lista de productos del filtro
+      if (rango.productos && !rango.productos.has(clave)) return; // [NEW] filtro de productos
       const cant = parseFloat(prod.cantidad) || 0;
       let cents;
       if (prod.subtotal !== undefined && prod.subtotal !== null && prod.subtotal !== '' && !isNaN(parseFloat(prod.subtotal))) {
@@ -8745,7 +8751,7 @@ function _igFmtDol(cents){
   return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 /* Tabla de productos (una ruta o el total general) */
-function _igTablaProductos(prods, modo, etiquetaTotal){
+function _igTablaProductos(prods, modo, etiquetaTotal, etiquetaRango){
   if (!_igEsAdmin()) return '';
   const lista = Object.keys(prods || {}).map(k => prods[k])
     .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
@@ -8753,7 +8759,8 @@ function _igTablaProductos(prods, modo, etiquetaTotal){
   const thr = 'style="text-align:right"';
   const tdr = 'style="text-align:right;white-space:nowrap"';
   const tdrb = 'style="text-align:right;white-space:nowrap;border-left:1px solid var(--border)"';
-  const grupos = modo === 'q1' ? [['Quincena (1 al 15)', 'q1']]
+  const grupos = modo === 'rango' ? [[etiquetaRango || 'Rango seleccionado', 'q1']] // [NEW]
+               : modo === 'q1' ? [['Quincena (1 al 15)', 'q1']]
                : modo === 'q2' ? [['Fin de mes (16 al último día)', 'q2']]
                : [['Quincena (1 al 15)', 'q1'], ['Fin de mes (16 al último día)', 'q2'], ['TOTAL', 't']];
   const val = (r, g) => g === 'q1' ? [r.c1, r.d1] : g === 'q2' ? [r.c2, r.d2] : [r.c1 + r.c2, r.d1 + r.d2];
@@ -8784,6 +8791,12 @@ function _igTablaProductos(prods, modo, etiquetaTotal){
 }
 function _igTextoPeriodo(rango){
   if (!_igEsAdmin() || !rango) return '';
+  if (rango.modo === 'rango') { // [NEW]
+    const per = rango.desde === rango.hasta
+      ? 'Día ' + _igFmtFecha(rango.desde)
+      : 'Del ' + _igFmtFecha(rango.desde) + ' al ' + _igFmtFecha(rango.hasta);
+    return { mesTxt: '', per };
+  }
   const mesTxt = IG_MESES[rango.mes - 1] + ' ' + rango.anio;
   const ult = String(rango.ultimo);
   let per;
@@ -8797,10 +8810,14 @@ function _igConstruirHtml(datos, rango){
   if (!_igEsAdmin() || !datos || !rango) return '';
   const t = _igTextoPeriodo(rango);
   let h = '<div class="ig-reporte">';
+  const esRango = rango.modo === 'rango'; // [NEW]
+  const etqRango = esRango ? t.per : '';
+  const prodTxt = rango.productos ? Array.from(rango.productos).map(k => _igProdsVistos[k] || k).sort((a, b) => a.localeCompare(b, 'es')).join(', ') : '';
   h += '<div style="text-align:center;margin:6px 0 18px">'
-     + '<div class="ig-titulo" style="font-size:20px;font-weight:800;color:var(--navy);letter-spacing:.04em">REPORTE QUINCENA VENTAS</div>'
+     + `<div class="ig-titulo" style="font-size:20px;font-weight:800;color:var(--navy);letter-spacing:.04em">${esRango ? 'REPORTE DE VENTAS' : 'REPORTE QUINCENA VENTAS'}</div>`
      + `<div class="ig-sub" style="font-size:13px;font-weight:700;color:var(--teal-dark);margin-top:4px">${_igEsc(t.per)}</div>`
-     + `<div class="ig-sub" style="font-size:13px;color:var(--muted);margin-top:2px">Mes: ${_igEsc(t.mesTxt)}</div>`
+     + (esRango ? '' : `<div class="ig-sub" style="font-size:13px;color:var(--muted);margin-top:2px">Mes: ${_igEsc(t.mesTxt)}</div>`)
+     + `<div class="ig-sub" style="font-size:13px;color:var(--muted);margin-top:2px">Productos: ${prodTxt ? _igEsc(prodTxt) : 'Todos'}</div>`
      + '</div>';
   h += '<div class="ig-subtitulo" style="font-size:15px;font-weight:800;color:var(--navy);border-bottom:3px solid var(--teal);padding-bottom:4px;margin:8px 0 12px">RUTAS</div>';
   IG_RUTAS_REPORTE.forEach(n => {
@@ -8811,7 +8828,7 @@ function _igConstruirHtml(datos, rango){
     if (!Object.keys(R.prods).length) {
       h += '<div style="color:var(--muted);font-style:italic;padding:6px 0 4px">Sin ventas en este período</div>';
     } else {
-      h += _igTablaProductos(R.prods, rango.modo, 'TOTAL RUTA ' + n);
+      h += _igTablaProductos(R.prods, rango.modo, 'TOTAL RUTA ' + n, etqRango);
     }
     h += '</div>';
   });
@@ -8819,7 +8836,7 @@ function _igConstruirHtml(datos, rango){
   if (!Object.keys(datos.general.prods).length) {
     h += '<div style="color:var(--muted);font-style:italic;padding:6px 0 4px">Sin ventas en este período</div>';
   } else {
-    h += _igTablaProductos(datos.general.prods, rango.modo, 'TOTAL GENERAL');
+    h += _igTablaProductos(datos.general.prods, rango.modo, 'TOTAL GENERAL', etqRango);
   }
   h += '</div>';
   return h;
@@ -8832,15 +8849,162 @@ async function _igLeerPedidos(desde, hasta){
   snap.forEach(d => { const _p = d.data() || {}; if (_esPedidoSaldoAnt(_p)) return; /* [NEW] sin deuda anterior importada */ out.push(Object.assign({ _id: d.id }, _p)); });
   return out;
 }
+/* ── [NEW] Rango de fechas y filtro de productos ─────────────────────── */
+let _igProdsSel = null;      // null = todos; Set de claves (MAYÚSCULAS) = solo esos
+let _igProdsVistos = {};     // clave → nombre, de los pedidos ya leídos
+function _igIsoLocal(d){
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function _igFmtFecha(iso){
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? m[3] + '/' + m[2] + '/' + m[1] : String(iso || '');
+}
+/* Fechas desde/hasta para los atajos (hoy, ayer, 3 días, semana, 7 días) */
+function _igFechasAtajo(tipo){
+  const hoy = new Date(); hoy.setHours(12, 0, 0, 0);
+  const d = new Date(hoy);
+  if (tipo === 'ayer') { d.setDate(d.getDate() - 1); return [_igIsoLocal(d), _igIsoLocal(d)]; }
+  if (tipo === '3dias') d.setDate(d.getDate() - 2);
+  else if (tipo === '7dias') d.setDate(d.getDate() - 6);
+  else if (tipo === 'semana') d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // lunes
+  return [_igIsoLocal(d), _igIsoLocal(hoy)];
+}
+function igCambiarTipoFecha(){
+  if (!_igEsAdmin()) return;
+  const tipo = (document.getElementById('igTipoFecha') || {}).value || 'mes';
+  const cMes = document.getElementById('igCtrlMes');
+  const cRan = document.getElementById('igCtrlRango');
+  if (cMes) cMes.style.display = tipo === 'mes' ? 'inline-flex' : 'none';
+  if (cRan) cRan.style.display = tipo === 'mes' ? 'none' : 'inline-flex';
+  if (tipo === 'mes') return;
+  const inD = document.getElementById('igDesde'), inH = document.getElementById('igHasta');
+  if (tipo === 'rango') {
+    if (inD && !inD.value) inD.value = _igIsoLocal(new Date());
+    if (inH && !inH.value) inH.value = inD ? inD.value : _igIsoLocal(new Date());
+    return; // días específicos: el usuario elige y presiona «Generar»
+  }
+  const f = _igFechasAtajo(tipo);
+  if (inD) inD.value = f[0];
+  if (inH) inH.value = f[1];
+  generarInformeGerencial();
+}
+/* Si el usuario cambia una fecha a mano, pasa a «Días específicos» */
+function igFechaManual(){
+  const sel = document.getElementById('igTipoFecha');
+  if (sel && sel.value !== 'mes') sel.value = 'rango';
+}
+function _igRangoFechas(desde, hasta){
+  if (!_igEsAdmin()) return null;
+  const ok = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+  if (!ok(desde) || !ok(hasta)) return null;
+  if (desde > hasta) { const t = desde; desde = hasta; hasta = t; }
+  return { modo: 'rango', desde, hasta };
+}
+function _igClaveActual(){
+  const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const tipo = v('igTipoFecha') || 'mes';
+  const fechas = tipo === 'mes' ? v('igMes') + '|' + v('igPeriodo') : v('igDesde') + '|' + v('igHasta');
+  const prods = _igProdsSel ? Array.from(_igProdsSel).sort().join(',') : '*';
+  return tipo + '|' + fechas + '|' + prods;
+}
+/* Lista de productos para el filtro: catálogo activo + los vistos en pedidos */
+function _igListaProductos(){
+  const mapa = {};
+  try {
+    (typeof _productosCache !== 'undefined' && Array.isArray(_productosCache) ? _productosCache : []).forEach(p => {
+      const n = String((p && p.nombre) || '').trim();
+      if (n) mapa[n.toUpperCase()] = n;
+    });
+  } catch(e) {}
+  Object.keys(_igProdsVistos).forEach(k => { if (!mapa[k]) mapa[k] = _igProdsVistos[k]; });
+  if (_igProdsSel) _igProdsSel.forEach(k => { if (!mapa[k]) mapa[k] = k; });
+  return Object.keys(mapa).map(k => ({ clave: k, nombre: mapa[k] }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+function _igActualizarBotonProductos(){
+  const btn = document.getElementById('igProdBtn');
+  if (!btn) return;
+  if (!_igProdsSel) { btn.textContent = 'Productos: Todos ▾'; return; }
+  const n = _igProdsSel.size;
+  if (n === 1) {
+    const k = Array.from(_igProdsSel)[0];
+    btn.textContent = 'Producto: ' + (_igProdsVistos[k] || k) + ' ▾';
+  } else btn.textContent = 'Productos: ' + n + ' seleccionados ▾';
+}
+function _igCerrarPanelProductos(){
+  const pan = document.getElementById('igProdPanel');
+  if (pan) pan.style.display = 'none';
+  document.removeEventListener('mousedown', _igClickFueraProductos, true);
+}
+function _igClickFueraProductos(ev){
+  const wrap = document.getElementById('igProdWrap');
+  if (wrap && !wrap.contains(ev.target)) _igCerrarPanelProductos();
+}
+function igToggleProductos(ev){
+  if (!_igEsAdmin()) return;
+  if (ev) ev.stopPropagation();
+  const pan = document.getElementById('igProdPanel');
+  if (!pan) return;
+  if (pan.style.display === 'block') { _igCerrarPanelProductos(); return; }
+  const lista = _igListaProductos();
+  const marcado = k => !_igProdsSel || _igProdsSel.has(k);
+  const todos = !_igProdsSel;
+  let h = '<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:var(--navy);padding:4px 2px 8px;border-bottom:1px solid var(--border);cursor:pointer">'
+        + `<input type="checkbox" id="igProdTodos" ${todos ? 'checked' : ''} onchange="igProdMarcarTodos(this.checked)"> Todos los productos</label>`;
+  h += '<div style="max-height:260px;overflow-y:auto;padding:6px 0">';
+  if (!lista.length) h += '<div style="color:var(--muted);font-style:italic;font-size:12px;padding:6px 2px">No hay productos cargados todavía.</div>';
+  lista.forEach(p => {
+    h += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);padding:4px 2px;cursor:pointer">'
+       + `<input type="checkbox" class="ig-prod-chk" value="${_igEsc(p.clave)}" ${marcado(p.clave) ? 'checked' : ''} onchange="igProdSincronizarTodos()"> ${_igEsc(p.nombre)}</label>`;
+  });
+  h += '</div>';
+  h += '<div style="display:flex;gap:6px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:8px">'
+     + '<button type="button" class="btn-filter" style="background:#888" onclick="_igCerrarPanelProductos()">Cancelar</button>'
+     + '<button type="button" class="btn-filter" style="background:#0a7c6e" onclick="igAplicarProductos()">Aplicar</button></div>';
+  pan.innerHTML = h;
+  pan.style.display = 'block';
+  document.addEventListener('mousedown', _igClickFueraProductos, true);
+}
+function igProdMarcarTodos(valor){
+  document.querySelectorAll('#igProdPanel .ig-prod-chk').forEach(c => { c.checked = !!valor; });
+}
+function igProdSincronizarTodos(){
+  const chks = Array.from(document.querySelectorAll('#igProdPanel .ig-prod-chk'));
+  const t = document.getElementById('igProdTodos');
+  if (t) t.checked = chks.length > 0 && chks.every(c => c.checked);
+}
+function igAplicarProductos(){
+  if (!_igEsAdmin()) return;
+  const chks = Array.from(document.querySelectorAll('#igProdPanel .ig-prod-chk'));
+  const sel = chks.filter(c => c.checked).map(c => c.value);
+  if (!sel.length) { alert('Selecciona al menos un producto.'); return; }
+  _igProdsSel = (sel.length === chks.length) ? null : new Set(sel);
+  _igActualizarBotonProductos();
+  _igCerrarPanelProductos();
+  generarInformeGerencial();
+}
+
 async function generarInformeGerencial(){
   if (!_igEsAdmin()) return;
   const cont = document.getElementById('igContenido');
   const inMes = document.getElementById('igMes');
   const selPer = document.getElementById('igPeriodo');
   if (!cont || !inMes || !selPer) return;
-  if (!inMes.value) inMes.value = _igMesActual();
-  const rango = _igRangoSeleccionado(inMes.value, selPer.value);
-  if (!rango) { alert('Selecciona un mes válido.'); return; }
+  const tipo = (document.getElementById('igTipoFecha') || {}).value || 'mes'; // [NEW]
+  let rango;
+  if (tipo === 'mes') {
+    if (!inMes.value) inMes.value = _igMesActual();
+    rango = _igRangoSeleccionado(inMes.value, selPer.value);
+    if (!rango) { alert('Selecciona un mes válido.'); return; }
+  } else {
+    const inD = document.getElementById('igDesde'), inH = document.getElementById('igHasta');
+    rango = _igRangoFechas(inD ? inD.value : '', inH ? inH.value : '');
+    if (!rango) { alert('Selecciona las fechas Desde y Hasta.'); return; }
+    if (inD) inD.value = rango.desde;
+    if (inH) inH.value = rango.hasta;
+  }
+  rango.productos = _igProdsSel ? new Set(_igProdsSel) : null; // [NEW]
+  const clave = _igClaveActual();
   const token = ++_igRenderToken;
   cont.innerHTML = '<div class="loading" style="padding:18px 8px"><div class="spinner"></div><span>Generando informe…</span></div>';
   try {
@@ -8850,7 +9014,8 @@ async function generarInformeGerencial(){
     const html = _igConstruirHtml(datos, rango);
     cont.innerHTML = html;
     _igUltimoHtml = html;
-    _igUltimaClave = inMes.value + '|' + rango.modo;
+    _igUltimaClave = clave;
+    _igActualizarBotonProductos();
   } catch (err) {
     if (token !== _igRenderToken) return;
     console.warn('Informe Gerencial:', err);
@@ -8862,14 +9027,12 @@ async function generarInformeGerencial(){
 }
 async function imprimirInformeGerencial(){
   if (!_igEsAdmin()) return;
-  const inMes = document.getElementById('igMes');
-  const selPer = document.getElementById('igPeriodo');
-  const clave = (inMes ? inMes.value : '') + '|' + (selPer ? selPer.value : '');
-  if (!_igUltimoHtml || clave !== _igUltimaClave) await generarInformeGerencial();
+  if (!_igUltimoHtml || _igClaveActual() !== _igUltimaClave) await generarInformeGerencial();
   if (!_igUltimoHtml) { alert('No hay datos para imprimir.'); return; }
+  const tipo = (document.getElementById('igTipoFecha') || {}).value || 'mes';
   const v = _abrirVentanaImpresion();
   v.document.open();
-  v.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Reporte Quincena Ventas</title>
+  v.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${tipo === 'mes' ? 'Reporte Quincena Ventas' : 'Reporte de Ventas'}</title>
   <style>
     :root{--navy:#12324d;--teal:#0a7c6e;--teal-dark:#075e54;--teal-light:#e6f4f2;--muted:#666;--border:#ccc;--surface2:#f3f7f6;--red:#c0392b}
     body{font-family:system-ui,sans-serif;color:#1a3a5c;padding:20px}

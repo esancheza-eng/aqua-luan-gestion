@@ -619,6 +619,19 @@
           <div class="table-header">
             <div class="table-title">📊 Informe Gerencial</div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <!-- [NEW] Tipo de fecha: por mes (quincenas, como antes) o por rango de días -->
+              <label style="font-size:12px;font-weight:700;color:var(--muted)">Fechas
+                <select id="igTipoFecha" onchange="igCambiarTipoFecha()" style="margin-left:4px;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:9px 12px;outline:none;cursor:pointer">
+                  <option value="mes" selected>Por mes (quincenas)</option>
+                  <option value="hoy">Hoy</option>
+                  <option value="ayer">Ayer</option>
+                  <option value="3dias">Últimos 3 días</option>
+                  <option value="semana">Esta semana (lunes a hoy)</option>
+                  <option value="7dias">Últimos 7 días</option>
+                  <option value="rango">Días específicos (desde / hasta)</option>
+                </select>
+              </label>
+              <span id="igCtrlMes" style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
               <label style="font-size:12px;font-weight:700;color:var(--muted)">Mes
                 <input type="month" id="igMes" style="margin-left:4px;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:8px 10px;outline:none">
               </label>
@@ -629,11 +642,26 @@
                   <option value="q2">Solo Fin de mes (días 16 al 31)</option>
                 </select>
               </label>
+              </span>
+              <!-- [NEW] Rango de fechas (se muestra al elegir Hoy, Últimos 3 días, Semana, etc.) -->
+              <span id="igCtrlRango" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
+                <label style="font-size:12px;font-weight:700;color:var(--muted)">Desde
+                  <input type="date" id="igDesde" onchange="igFechaManual()" style="margin-left:4px;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:8px 10px;outline:none">
+                </label>
+                <label style="font-size:12px;font-weight:700;color:var(--muted)">Hasta
+                  <input type="date" id="igHasta" onchange="igFechaManual()" style="margin-left:4px;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:8px 10px;outline:none">
+                </label>
+              </span>
+              <!-- [NEW] Selección múltiple de productos -->
+              <div id="igProdWrap" style="position:relative;display:inline-block">
+                <button type="button" class="btn-filter" id="igProdBtn" style="background:#3d5a80" onclick="igToggleProductos(event)">Productos: Todos ▾</button>
+                <div id="igProdPanel" style="display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:60;min-width:260px;max-width:340px;background:var(--surface,#fff);border:1.5px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:10px"></div>
+              </div>
               <button class="btn-filter" style="background:#12324d" onclick="generarInformeGerencial()">Generar</button>
               <button class="btn-filter" style="background:#0a7c6e" onclick="imprimirInformeGerencial()">Imprimir PDF</button>
             </div>
           </div>
-          <div style="padding:0 1.25rem 8px;font-size:12px;color:var(--muted)">Ventas por ruta (Rutas 1 a 5) y resumen general de productos. Quincena = días 1 al 15; Fin de mes = día 16 al último día del mes. No incluye regalías. No depende del filtro de fecha de arriba.</div>
+          <div style="padding:0 1.25rem 8px;font-size:12px;color:var(--muted)">Ventas por ruta (Rutas 1 a 5) y resumen general de productos. Quincena = días 1 al 15; Fin de mes = día 16 al último día del mes. No incluye regalías. No depende del filtro de fecha de arriba. También puedes elegir un rango de días (hoy, últimos 3 días, semana o fechas específicas) y uno o varios productos.</div>
           <div id="igContenido" style="padding:0 1.25rem 1.25rem"><div style="color:var(--muted);font-style:italic">Elige el mes y el período y presiona «Generar».</div></div>
         </div>
         </div>
