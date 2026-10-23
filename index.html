@@ -262,7 +262,13 @@
           <div style="padding:1.25rem 1.25rem 8px" id="bloqueGastosCaja">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
               <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--red)">📉 Gastos registrados</div>
-              <button type="button" class="btn-editar-fila" id="btnNuevoGastoCaja" onclick="abrirNuevoGasto()" style="display:none">＋ Añadir gasto</button>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <!-- [NEW] Filtro de gastos por descripción — respeta los filtros de fechas y asesor de arriba -->
+                <select id="filtroGastoCaja" onchange="_renderTablaGastosCaja()" title="Filtrar gastos por descripción" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;color:var(--navy);background:var(--surface);max-width:260px;cursor:pointer">
+                  <option value="">Todas las descripciones</option>
+                </select>
+                <button type="button" class="btn-editar-fila" id="btnNuevoGastoCaja" onclick="abrirNuevoGasto()" style="display:none">＋ Añadir gasto</button>
+              </div>
             </div>
           </div>
           <div class="table-wrap">

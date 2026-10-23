@@ -4028,9 +4028,34 @@ function renderPagosGastosDetalle(pagos, gastos) {
     tbodyPagos.innerHTML = filas + `<tr style="background:#e8f0fd"><td colspan="4" style="text-align:right;font-weight:800;color:var(--blue)">SUBTOTAL PAGOS</td><td style="text-align:right;font-weight:800;color:var(--blue)">$${totalPagos.toFixed(2)}</td><td></td></tr>`;
   }
 
+  _renderTablaGastosCaja(); // [NEW] tabla de gastos con filtro por descripción
+}
+
+/* [NEW] Filtro de "Gastos registrados" (Cuadre de Caja) por descripción.
+   Trabaja SOBRE los gastos que ya filtraron arriba las fechas y el asesor
+   (gastosDetalleActuales), así que siempre coincide con esos filtros.
+   Solo cambia lo que se ve en esta tabla y su subtotal: los totales del cuadre,
+   el neto y el PDF siguen igual que antes. */
+function _descGastoCaja(r){ return String(r['NOTAS'] || r['CLIENTE'] || r['DIRECCIÓN'] || '-').trim(); }
+function _filtroGastoCajaActivo(){ return (document.getElementById('filtroGastoCaja')?.value||''); }
+function _renderTablaGastosCaja(){
+  const todos = gastosDetalleActuales || [];
+  const sel = document.getElementById('filtroGastoCaja');
+  if(sel){
+    const previo = sel.value;
+    const conteo = {};
+    todos.forEach(r => { const d=_descGastoCaja(r); conteo[d]=(conteo[d]||0)+1; });
+    const descs = Object.keys(conteo).sort((a,b)=>a.localeCompare(b,'es'));
+    sel.innerHTML = `<option value="">Todas las descripciones (${todos.length})</option>` +
+      descs.map(d => `<option value="${escapeAttr(d)}">${escHTML(d)} (${conteo[d]})</option>`).join('');
+    sel.value = descs.includes(previo) ? previo : '';
+  }
+  const filtro = _filtroGastoCajaActivo();
+  const gastos = filtro ? todos.filter(r => _descGastoCaja(r) === filtro) : todos;
+  const totalGastos = gastos.reduce((s,r) => s + Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
   const tbodyGastos = document.getElementById('tablaGastosDetalle');
   if (!gastos.length) {
-    tbodyGastos.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="icon">📉</div>No hay gastos en este período</div></td></tr>';
+    tbodyGastos.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">📉</div>${_filtroGastoCajaActivo()?'No hay gastos con esta descripción en este período':'No hay gastos en este período'}</div></td></tr>`;
   } else {
     const filas = gastos.map(r => {
       const monto = Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0);
