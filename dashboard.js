@@ -8220,6 +8220,17 @@ function mostrarToastEdicion(msg){
    [NEW] EDITAR / ELIMINAR PAGO Y GASTO — Cuadre de Caja (solo Admin)
 ════════════════════════════════════════════════════════════ */
 const FORMAS_PAGO_COBRO = ['Efectivo','Transferencia','Cheque']; // mismas opciones que usa index.html al registrar un pago
+/* [NEW] Listado cerrado de gastos — IGUAL a LISTAS_BLANCAS.gastoDesc de la app de pedidos
+   (luan_aqua_basededatos/index.html). Si cambias uno, cambia el otro. */
+const GASTOS_PERMITIDOS = ['COMBUSTIBLE','DEPOSITO','ALMUERZO','PEAJE','RETENCION','TRICICLO','ENCOMIENDAS','VIGILANTE','AIRE PARA LLANTAS','RECARGAS','SACOS DE SAL','ASCENSOR','VACUNAS','RECARGUE DE GAS','JUGOS BODEGUEROS','IMPRESION DE FACTURAS','CANECA DE JABON NEUTRO','PALLETS','PARCHE PARA LLANTA','MOTOTAXI','CAMBIO DE LLANTAS','COMPRA DE ACEITE PARA MOTOR','CAMBIO DE ACEITE','LIQUIDO DE FRENO','CLORO EN GRANO','MANO DE OBRA (CAMION)','REPUESTOS PARA CAMION','OTROS GASTOS DE CAMION','COMPRAS DE OFICINA'];
+/* Opciones del <select>. Si un gasto antiguo tiene un texto fuera del listado, se muestra
+   como "(anterior)" para no perderlo al abrir el editor, pero no se puede volver a guardar. */
+function _opcionesGastoDesc(actual){
+  const act=String(actual||'').trim();
+  let html='<option value="">Selecciona...</option>';
+  if(act && !GASTOS_PERMITIDOS.includes(act)) html+=`<option value="" selected disabled>${escHTML(act)} (anterior)</option>`;
+  return html+GASTOS_PERMITIDOS.map(o=>`<option value="${o}" ${o===act?'selected':''}>${o}</option>`).join('');
+}
 let _editandoPagoGasto = null; // { tipo:'pago'|'gasto', id:'...' }
 
 function _opcionesAsesorCuadre(sel){
@@ -8253,8 +8264,7 @@ function abrirNuevoGasto(){
   document.getElementById('editarPagoGastoTitulo').textContent='＋ Añadir gasto';
   document.getElementById('editarPagoGastoBody').innerHTML=`
     <div class="editar-grid full">
-      <div class="editar-field"><label>Descripción</label><input type="text" id="epgDesc" value=""></div>
-      <div class="editar-field"><label>Categoría</label><input type="text" id="epgCategoria" value=""></div>
+      <div class="editar-field"><label>Descripción del gasto</label><select id="epgDesc">${_opcionesGastoDesc('')}</select></div>
       <div class="editar-field"><label>Asesor / responsable</label><select id="epgAsesor">${_opcionesAsesorCuadre('')}</select></div>
       <div class="editar-field"><label>Monto ($)</label><input type="number" min="0" step="0.01" id="epgMonto" value=""></div>
       <div class="editar-field"><label>Fecha</label><input type="date" id="epgFecha" value="${fecha}"></div>
@@ -8290,8 +8300,7 @@ function abrirEditarGasto(id){
   document.getElementById('editarPagoGastoTitulo').textContent = '✏ Editar Gasto';
   document.getElementById('editarPagoGastoBody').innerHTML = `
     <div class="editar-grid full">
-      <div class="editar-field"><label>Descripción</label><input type="text" id="epgDesc" value="${escapeAttr(g.desc||'')}"></div>
-      <div class="editar-field"><label>Categoría</label><input type="text" id="epgCategoria" value="${escapeAttr(g.categoria||'')}"></div>
+      <div class="editar-field"><label>Descripción del gasto</label><select id="epgDesc">${_opcionesGastoDesc(GASTOS_PERMITIDOS.includes(String(g.categoria||'').trim())?g.categoria:(g.desc||g.categoria||''))}</select></div>
       <div class="editar-field"><label>Monto ($)</label><input type="number" min="0" step="0.01" id="epgMonto" value="${parseFloat(g.monto)||0}"></div>
       <div class="editar-field"><label>Fecha</label><input type="date" id="epgFecha" value="${g.fecha||''}"></div>
       <div class="editar-field"><label>Comprobante / Referencia</label><input type="text" id="epgRef" value="${escapeAttr(g.ref||'')}"></div>
@@ -8333,9 +8342,9 @@ async function guardarEdicionPagoGasto(){
       }
     } else {
       const desc = document.getElementById('epgDesc').value.trim();
-      if(!desc){ alert('La descripción no puede quedar vacía.'); btn.disabled=false; btn.textContent='✅ Guardar Cambios'; return; }
+      if(!GASTOS_PERMITIDOS.includes(desc)){ alert('Selecciona la descripción del gasto del listado.'); btn.disabled=false; btn.textContent='✅ Guardar Cambios'; return; }
       const payloadGasto={
-        desc, categoria: document.getElementById('epgCategoria').value.trim(), monto,
+        desc, categoria: desc, monto, // [NEW] descripción = categoría = opción del listado
         fecha: document.getElementById('epgFecha').value, ref: document.getElementById('epgRef').value.trim()
       };
       const asEl=document.getElementById('epgAsesor');
