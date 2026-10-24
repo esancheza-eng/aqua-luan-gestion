@@ -3766,7 +3766,7 @@ function _recalcularTodosLosDatos() {
   _gastosRaw.forEach(g => filas.push({
     'FECHA': g.fecha || '', 'ASESOR / RUTA': g.empleado || '', 'CLIENTE': '',
     'TELÉFONO': '', 'DIRECCIÓN': '', 'PRODUCTO': '', 'CANTIDAD': '', 'PRECIO UNIT.': '', 'SUBTOTAL': '',
-    'TOTAL PEDIDO ($)': -(parseFloat(g.monto) || 0), 'FORMA DE PAGO': '', 'LINK GPS': '', 'NOTAS': g.desc || g.categoria || '',
+    'TOTAL PEDIDO ($)': -(parseFloat(g.monto) || 0), 'FORMA DE PAGO': '', 'LINK GPS': '', 'NOTAS': g.desc || g.categoria || '', 'DETALLE': String(g.ref || '').trim(),
     '_gastoId': g._id || '' /* [NEW] */
   }));
   todosLosDatos = filas;
@@ -4196,8 +4196,12 @@ function _renderTablaGastosCaja(){
       }
       const puedeGasto = gid && _puedeEditarCuadreCaja(r['FECHA']);
       const accionesGasto = puedeGasto ? `<button class="btn-editar-fila" onclick="abrirEditarGasto('${gid}')" title="Editar este gasto">✏ Editar</button><button class="btn-eliminar-fila" onclick="eliminarGastoDash('${gid}')" title="Eliminar este gasto">🗑 Eliminar</button>` : '<span style="color:var(--muted);font-size:11px">—</span>';
+      const detalle = String(r['DETALLE'] || '').trim();
       return `<tr>
-        <td style="font-weight:600">${escHTML(desc)}</td>
+        <td>
+          <div style="font-weight:600">${escHTML(desc)}</div>
+          ${detalle ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.3">${escHTML(detalle)}</div>` : ''}
+        </td>
         <td style="font-size:12px">${(r['ASESOR / RUTA']||'').split(':')[1]?.trim()||r['ASESOR / RUTA']||'-'}</td>
         <td style="font-size:11px;color:var(--muted);white-space:nowrap">${limpiarFecha(r['FECHA'])}</td>
         <td style="text-align:right;font-weight:700;color:var(--red)">$${monto.toFixed(2)}</td>
@@ -6576,8 +6580,9 @@ function exportarPagosGastosPDF() {
   </tr>`).join('');
   const filasGastos = gastos.map(r => {
     const desc = r['NOTAS'] || r['CLIENTE'] || r['DIRECCIÓN'] || '-';
+    const detalle = String(r['DETALLE'] || '').trim();
     return `<tr>
-      <td>${escHTML(desc)}</td>
+      <td>${escHTML(desc)}${detalle ? `<br><small style="color:#666;font-size:10px">${escHTML(detalle)}</small>` : ''}</td>
       <td>${(r['ASESOR / RUTA']||'').split(':')[1]?.trim()||r['ASESOR / RUTA']||'-'}</td>
       <td>${limpiarFecha(r['FECHA'])}</td>
       <td style="text-align:right">$${Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0).toFixed(2)}</td>
