@@ -414,7 +414,21 @@
         <div class="table-card">
           <div class="table-header">
             <div class="table-title">🕵️ Auditoría — Modificaciones y Eliminaciones</div>
-            <span class="last-update" id="auditoriaCount" style="margin-left:0">Cargando...</span>
+            <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
+              <div class="filtro-pago-wrap">
+                <button class="btn-filter" style="background:var(--navy);display:flex;align-items:center;gap:6px;padding:7px 12px;font-size:12px" onclick="toggleDropdownAudUsuario(event)">
+                  👤 Usuario <span id="filtroAudUsuarioContador" style="display:none"></span> ▾
+                </button>
+                <div class="filtro-pago-dropdown" id="dropdownAudUsuario" style="min-width:220px;right:0;left:auto">
+                  <div id="filtroAudUsuarioOpciones"></div>
+                  <div class="filtro-pago-actions">
+                    <button type="button" onclick="marcarTodosFiltroAudUsuario(true)">Marcar todos</button>
+                    <button type="button" onclick="marcarTodosFiltroAudUsuario(false)">Desmarcar todos</button>
+                  </div>
+                </div>
+              </div>
+              <span class="last-update" id="auditoriaCount" style="margin-left:0">Cargando...</span>
+            </div>
           </div>
           <div style="font-size:11px;color:var(--muted);padding:0 1.25rem 12px">Registro de quién hizo cada cambio o eliminación, con fecha y hora exactas. Solo visible para el administrador.</div>
           <div class="table-wrap">

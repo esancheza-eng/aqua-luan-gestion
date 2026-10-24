@@ -634,13 +634,65 @@ function detenerListenerEliminados(){ if(_unsubEliminados){_unsubEliminados();_u
    Limitado a los 300 registros más recientes por la misma razón que Eliminados/Roles:
    es una lista pura de lectura, sin ningún total acumulado que dependa del historial completo. */
 let _unsubAuditoria=null, _auditoriaRaw=[];
+let _audUsuarioExcluidos = new Set(); // usuarios desmarcados en el filtro de Auditoría
+
 function _iniciarListenerAuditoria(){
   if(_unsubAuditoria){_unsubAuditoria();_unsubAuditoria=null;}
   _unsubAuditoria = db.collection('historialCambios').orderBy('creadoEn','desc').limit(300).onSnapshot(snap => {
     _auditoriaRaw = snap.docs.map(d => d.data());
+    renderFiltroAudUsuario();
     renderTablaAuditoria();
   }, err => console.error('listener auditoría:', err));
 }
+
+function renderFiltroAudUsuario(){
+  const cont = document.getElementById('filtroAudUsuarioOpciones');
+  if (!cont) return;
+  const usuarios = Array.from(new Set((_auditoriaRaw||[]).map(r => (r.usuarioAdmin||'').trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'es'));
+  cont.innerHTML = usuarios.map((u, i) => `
+    <label class="filtro-pago-item">
+      <input type="checkbox" data-usr="${escHTML(u)}" ${_audUsuarioExcluidos.has(u) ? '' : 'checked'} onchange="toggleFiltroAudUsuarioFromCb(this)">
+      ${escHTML(u)}
+    </label>
+  `).join('') || '<div style="padding:8px;font-size:12px;color:var(--muted)">Sin usuarios</div>';
+  const contador = document.getElementById('filtroAudUsuarioContador');
+  if (contador) {
+    if (_audUsuarioExcluidos.size > 0 && usuarios.length) {
+      contador.textContent = `(${usuarios.length - _audUsuarioExcluidos.size}/${usuarios.length})`;
+      contador.style.display = 'inline';
+    } else {
+      contador.style.display = 'none';
+    }
+  }
+}
+
+function toggleFiltroAudUsuarioFromCb(cb) {
+  const usuario = cb.getAttribute('data-usr') || '';
+  if (cb.checked) _audUsuarioExcluidos.delete(usuario);
+  else _audUsuarioExcluidos.add(usuario);
+  renderTablaAuditoria();
+}
+
+function marcarTodosFiltroAudUsuario(marcarTodo) {
+  const usuarios = Array.from(new Set((_auditoriaRaw||[]).map(r => (r.usuarioAdmin||'').trim()).filter(Boolean)));
+  if (marcarTodo) _audUsuarioExcluidos.clear();
+  else usuarios.forEach(u => _audUsuarioExcluidos.add(u));
+  renderTablaAuditoria();
+  renderFiltroAudUsuario();
+}
+
+function toggleDropdownAudUsuario(ev) {
+  if (ev) ev.stopPropagation();
+  const dd = document.getElementById('dropdownAudUsuario');
+  if (dd) dd.classList.toggle('open');
+}
+
+document.addEventListener('click', (ev) => {
+  const dd = document.getElementById('dropdownAudUsuario');
+  if (dd && dd.classList.contains('open') && !dd.contains(ev.target) && ev.target.closest('.filtro-pago-wrap') === null) {
+    dd.classList.remove('open');
+  }
+});
 /* ════════════════════════════════════════════════════════════
    [NEW] PAGINACIÓN COMÚN para las tablas grandes del Dashboard
    (Auditoría, Pedidos Eliminados, Notas Adicionales, Cobranzas,
@@ -681,7 +733,13 @@ function renderTablaAuditoria(){
   const tbody = document.getElementById('auditoriaTbody');
   const count = document.getElementById('auditoriaCount');
   if (!tbody) return;
-  const registros = (_auditoriaRaw||[]).filter(r => _estaEnRangoFiltroDash(r.fecha, r.creadoEn));
+  renderFiltroAudUsuario(); // asegura que el checklist esté actualizado
+  const registros = (_auditoriaRaw||[]).filter(r => {
+    if (!_estaEnRangoFiltroDash(r.fecha, r.creadoEn)) return false;
+    const usr = (r.usuarioAdmin||'').trim();
+    if (_audUsuarioExcluidos.size && _audUsuarioExcluidos.has(usr)) return false;
+    return true;
+  });
   if (count) count.textContent = `${registros.length} registro${registros.length!==1?'s':''}`;
   const badgeAccion = (a) => {
     const color = a==='eliminación' ? '#b71c1c' : (a==='edición' ? '#8a6d00' : '#0a7c6e');
