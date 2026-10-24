@@ -362,7 +362,7 @@ function _sincronizarFechaRutasConDashboard(){
   const ra=document.getElementById('rutasAsesor');
   const fa=document.getElementById('filtroAsesor');
   if(ra && fa){
-    const seleccionados = Array.from(fa.selectedOptions).map(o=>o.value).filter(Boolean);
+    const seleccionados = _getAsesoresSeleccionados();
     if(seleccionados.length === 1){
       const v = seleccionados[0];
       const opts=[...ra.options].map(o=>o.value);
@@ -567,15 +567,24 @@ function _iniciarListenerAsesoresDash(){
     if (typeof poblarClienteSelect === 'function') poblarClienteSelect(todosLosDatos); // [FIX] mismo problema en "Consultar por Cliente": el filtro de asesores se quedaba vacío (solo "Todos los asesores") si esta lista llegaba después que los pedidos
     _agregarRutasNuevasMapa(rutas); // [NEW] rutas nuevas (ej. RUTA 7) también en el filtro de "Rutas del Día"
     const sel = document.getElementById('filtroAsesor');
-    if (!sel) return;
-    const seleccionados = Array.from(sel.selectedOptions).map(o => o.value).filter(v => v);
-    sel.innerHTML = '<option value="">Todos</option>' + rutas.map(r => {
+    const list = document.getElementById('asesorMultiList');
+    if (!sel || !list) return;
+    const seleccionados = Array.from(document.querySelectorAll('#asesorMultiList input[type="checkbox"]:checked')).map(cb => cb.value);
+    sel.innerHTML = '';
+    list.innerHTML = rutas.map(r => {
       const nombre = r.split(':')[1]?.trim() || r;
-      return `<option value="${r}">${nombre}</option>`;
+      const checked = seleccionados.includes(r) ? 'checked' : '';
+      return `<label class="asesor-multi-item"><input type="checkbox" value="${r}" ${checked} onchange="onAsesorCheckChange()"><span>${nombre}</span></label>`;
     }).join('');
-    Array.from(sel.options).forEach(o => {
-      if (seleccionados.includes(o.value)) o.selected = true;
+    // Sincronizar select oculto
+    rutas.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r;
+      opt.textContent = r.split(':')[1]?.trim() || r;
+      if (seleccionados.includes(r)) opt.selected = true;
+      sel.appendChild(opt);
     });
+    _actualizarLabelAsesores();
   }, err => console.error('listener asesores dash:', err));
 }
 /* [NEW] El <select id="rutasAsesor"> del mapa "Rutas del Día" muestra exactamente los mismos
@@ -3846,19 +3855,67 @@ async function cargarDatos(mostrarSpinner = true) {
 /* ════════════════════════════════════════
    FILTROS DASHBOARD
 ════════════════════════════════════════ */
-/* [NEW] Multi-select de asesores. Array vacío = "Todos". */
+/* [NEW] Multi-select de asesores con dropdown de checkboxes. Array vacío = "Todos". */
 function _getAsesoresSeleccionados() {
-  const sel = document.getElementById('filtroAsesor');
-  if (!sel) return [];
-  return Array.from(sel.selectedOptions).map(o => o.value).filter(v => v !== '');
+  const checks = document.querySelectorAll('#asesorMultiList input[type="checkbox"]:checked');
+  return Array.from(checks).map(cb => cb.value);
 }
+function _actualizarLabelAsesores() {
+  const label = document.getElementById('asesorMultiLabel');
+  const todosCb = document.getElementById('asesorMultiTodos');
+  if (!label) return;
+  const sel = _getAsesoresSeleccionados();
+  if (!sel.length) {
+    label.textContent = 'Todos';
+    if (todosCb) todosCb.checked = true;
+  } else if (sel.length === 1) {
+    label.textContent = (sel[0].split(':')[1] || sel[0]).trim();
+    if (todosCb) todosCb.checked = false;
+  } else {
+    label.textContent = sel.length + ' asesores';
+    if (todosCb) todosCb.checked = false;
+  }
+  // Sincronizar select oculto
+  const selEl = document.getElementById('filtroAsesor');
+  if (selEl) {
+    Array.from(selEl.options).forEach(o => { o.selected = sel.includes(o.value); });
+  }
+}
+function toggleAsesorMulti(e) {
+  e.stopPropagation();
+  const panel = document.getElementById('asesorMultiPanel');
+  const btn = document.getElementById('asesorMultiBtn');
+  if (!panel || !btn) return;
+  const open = panel.classList.toggle('open');
+  btn.classList.toggle('open', open);
+}
+function toggleTodosAsesores(cb) {
+  const checks = document.querySelectorAll('#asesorMultiList input[type="checkbox"]');
+  checks.forEach(c => { c.checked = false; });
+  if (cb.checked) {
+    _actualizarLabelAsesores();
+  }
+}
+function onAsesorCheckChange() {
+  const todosCb = document.getElementById('asesorMultiTodos');
+  const alguno = document.querySelector('#asesorMultiList input[type="checkbox"]:checked');
+  if (todosCb) todosCb.checked = !alguno;
+  _actualizarLabelAsesores();
+}
+document.addEventListener('click', function(e) {
+  const wrap = document.getElementById('asesorMultiWrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('asesorMultiPanel')?.classList.remove('open');
+    document.getElementById('asesorMultiBtn')?.classList.remove('open');
+  }
+});
 function _asesorEnSeleccion(asesor, seleccion) {
   if (!seleccion || !seleccion.length) return true;
   const a = String(asesor || '').trim();
   return seleccion.some(s => a === s || (typeof _mismoAsesorLiq === 'function' && _mismoAsesorLiq(a, s)));
 }
 function filtrarHoy() { const hoy = fechaHoy(); document.getElementById('filtroFecha').value = hoy; document.getElementById('filtroFechaHasta').value = hoy; if(typeof _sincronizarFechaRutasConDashboard==='function') _sincronizarFechaRutasConDashboard(); iniciarListenersDashboard(); }
-function limpiarFiltro() { document.getElementById('filtroFecha').value = ''; document.getElementById('filtroFechaHasta').value = fechaHoy(); const fa = document.getElementById('filtroAsesor'); if (fa) Array.from(fa.options).forEach(o => o.selected = false); _productoFiltroSeleccionado = ''; iniciarListenersDashboard(); }
+function limpiarFiltro() { document.getElementById('filtroFecha').value = ''; document.getElementById('filtroFechaHasta').value = fechaHoy(); document.querySelectorAll('#asesorMultiList input[type="checkbox"]').forEach(cb => cb.checked = false); const todos = document.getElementById('asesorMultiTodos'); if (todos) todos.checked = true; _actualizarLabelAsesores(); _productoFiltroSeleccionado = ''; iniciarListenersDashboard(); }
 /* [NEW] Texto legible del rango de fecha actualmente filtrado, para usar en encabezados de PDF */
 function _textoRangoFecha() {
   const desde = document.getElementById('filtroFecha').value;

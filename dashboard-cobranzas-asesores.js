@@ -514,7 +514,9 @@
             var fa = document.getElementById('filtroAsesor');
             var sel = document.getElementById('cobAsAsesor');
             if (fa && sel) {
-              var seleccionados = Array.from(fa.selectedOptions).map(function(o){ return o.value; }).filter(Boolean);
+              var seleccionados = (typeof _getAsesoresSeleccionados === 'function')
+                ? _getAsesoresSeleccionados()
+                : Array.from(fa.selectedOptions).map(function(o){ return o.value; }).filter(Boolean);
               if (seleccionados.length === 1) {
                 var v = seleccionados[0];
                 if (!Array.prototype.some.call(sel.options, function (o) { return o.value === v; })) {

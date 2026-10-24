@@ -69,9 +69,21 @@
           <span class="filter-label" style="text-transform:none;font-size:12px">Hasta</span>
           <input type="date" id="filtroFechaHasta">
           <span class="filter-label" style="margin-left:6px">Asesor</span>
-          <select id="filtroAsesor" multiple size="4" title="Mantén Ctrl (o Cmd) para seleccionar varios asesores" style="min-width:180px;max-width:240px;">
-            <option value="">Todos</option>
-          </select>
+          <div class="asesor-multi-wrap" id="asesorMultiWrap">
+            <button type="button" class="asesor-multi-btn" id="asesorMultiBtn" onclick="toggleAsesorMulti(event)">
+              <span id="asesorMultiLabel">Todos</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="asesor-multi-panel" id="asesorMultiPanel">
+              <label class="asesor-multi-item asesor-multi-todos">
+                <input type="checkbox" id="asesorMultiTodos" checked onchange="toggleTodosAsesores(this)">
+                <span>Todos</span>
+              </label>
+              <div id="asesorMultiList"></div>
+            </div>
+            <!-- Select oculto para compatibilidad con código existente -->
+            <select id="filtroAsesor" multiple style="display:none;"></select>
+          </div>
           <button class="btn-filter btn-hoy" onclick="filtrarHoy()">Hoy</button>
           <button class="btn-filter" onclick="iniciarListenersDashboard()">Aplicar</button>
           <button class="btn-filter" style="background:var(--muted)" onclick="limpiarFiltro()">Todo</button>
