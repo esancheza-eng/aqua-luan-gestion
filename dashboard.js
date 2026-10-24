@@ -362,9 +362,9 @@ function _sincronizarFechaRutasConDashboard(){
   const ra=document.getElementById('rutasAsesor');
   const fa=document.getElementById('filtroAsesor');
   if(ra && fa){
-    const v=fa.value||'';
-    if(!v){ ra.value=''; }
-    else {
+    const seleccionados = Array.from(fa.selectedOptions).map(o=>o.value).filter(Boolean);
+    if(seleccionados.length === 1){
+      const v = seleccionados[0];
       const opts=[...ra.options].map(o=>o.value);
       if(opts.includes(v)) ra.value=v;
       else {
@@ -568,12 +568,14 @@ function _iniciarListenerAsesoresDash(){
     _agregarRutasNuevasMapa(rutas); // [NEW] rutas nuevas (ej. RUTA 7) también en el filtro de "Rutas del Día"
     const sel = document.getElementById('filtroAsesor');
     if (!sel) return;
-    const valorActual = sel.value;
+    const seleccionados = Array.from(sel.selectedOptions).map(o => o.value).filter(v => v);
     sel.innerHTML = '<option value="">Todos</option>' + rutas.map(r => {
       const nombre = r.split(':')[1]?.trim() || r;
       return `<option value="${r}">${nombre}</option>`;
     }).join('');
-    if (rutas.includes(valorActual)) sel.value = valorActual;
+    Array.from(sel.options).forEach(o => {
+      if (seleccionados.includes(o.value)) o.selected = true;
+    });
   }, err => console.error('listener asesores dash:', err));
 }
 /* [NEW] El <select id="rutasAsesor"> del mapa "Rutas del Día" muestra exactamente los mismos
@@ -733,13 +735,13 @@ function _calcularLiquidacionDash(){
   }; return porAsesor[nombre]; };
   // [FIX] Antes esta función ignoraba por completo el selector "Asesor" del filtro
   // general del Dashboard — siempre calculaba y mostraba TODAS las rutas, aunque
-  // el usuario hubiera elegido una en el dropdown. Ahora, si hay un asesor
-  // seleccionado, solo se procesan sus pedidos/pagos/gastos.
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
+  // el usuario hubiera elegido una en el dropdown. Ahora, si hay asesores
+  // seleccionados, solo se procesan los de esa selección (multi-select).
+  const asesoresSel = _getAsesoresSeleccionados();
   const _enFecha = (r) => !_estaEnRangoFiltroDash || _estaEnRangoFiltroDash(r.fecha, r.creadoEn || r.fechaTs || r.registradoEn);
-  const pedidosF = (_pedidosRaw||[]).filter(p => _enFecha(p) && (!asesorSel || (p.empleado||'') === asesorSel));
-  const pagosF   = (_pagosRaw||[]).filter(p => _enFecha(p) && (!asesorSel || (p.empleado||'') === asesorSel));
-  const gastosF  = (_gastosRaw||[]).filter(g => _enFecha(g) && (!asesorSel || (g.empleado||'') === asesorSel));
+  const pedidosF = (_pedidosRaw||[]).filter(p => _enFecha(p) && _asesorEnSeleccion(p.empleado||'', asesoresSel));
+  const pagosF   = (_pagosRaw||[]).filter(p => _enFecha(p) && _asesorEnSeleccion(p.empleado||'', asesoresSel));
+  const gastosF  = (_gastosRaw||[]).filter(g => _enFecha(g) && _asesorEnSeleccion(g.empleado||'', asesoresSel));
   pedidosF.forEach(p=>{
     const d = getAsesor(p.empleado || 'Sin asignar'); const tot = parseFloat(p.total||0);
     // [FIX] NUEVO FORMATO DE PAGO MÚLTIPLE (index.html) — el asesor ahora puede marcar
@@ -1181,8 +1183,10 @@ async function imprimirCierreDelDia(){
   const asesores=_cierreDelDiaAsesoresCache||[];
   if(!asesores.length){ alert('No hay datos para imprimir en este período.'); return; }
   const fecha = _textoRangoFecha();
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-  const asesorLabel = asesorSel ? ((asesorSel.split(':')[1]||asesorSel).trim()) : 'Todos';
+  const asesoresSel = _getAsesoresSeleccionados();
+  const asesorLabel = asesoresSel.length
+    ? asesoresSel.map(s => (s.split(':')[1]||s).trim()).join(', ')
+    : 'Todos';
   const filaAHtml = tr => {
     const celdas=[...tr.querySelectorAll('td')].map((td,i)=>{
       if(i===0) return `<td style="text-align:center;font-weight:800">${escHTML(td.textContent)}</td>`;
@@ -1344,10 +1348,10 @@ document.addEventListener('click',(ev)=>{
 });
 function _agruparProductosVendidos(aplicarFiltrosPv){
   if(aplicarFiltrosPv===undefined) aplicarFiltrosPv=true;
-  const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
+  const asesoresSel = _getAsesoresSeleccionados();
   const por={};
   const add=(asesor,nom,precio,cant,dol,id)=>{
-    if(asesorSel && asesor!==asesorSel) return;
+    if(!_asesorEnSeleccion(asesor, asesoresSel)) return;
     if(_esSaldoAntNombre(nom)) return; // [NEW] la deuda anterior importada no es producto vendido
     if(aplicarFiltrosPv){
       if(_pvProdExcluidos.size && _pvProdExcluidos.has(nom)) return;
@@ -1440,8 +1444,10 @@ function imprimirProductosVendidosDash(){
   const box=document.getElementById('productosVendidosDashLista');
   if(!box||!box.querySelector('table')){ alert('No hay datos para imprimir.'); return; }
   const fecha=_textoRangoFecha();
-  const asesorSel=document.getElementById('filtroAsesor')?document.getElementById('filtroAsesor').value:'';
-  const asesorLabel=asesorSel?((asesorSel.split(':')[1]||asesorSel).trim()):'Todos';
+  const asesoresSel = _getAsesoresSeleccionados();
+  const asesorLabel = asesoresSel.length
+    ? asesoresSel.map(s => (s.split(':')[1]||s).trim()).join(', ')
+    : 'Todos';
   const v=_abrirVentanaImpresion();
   v.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Productos vendidos</title>
   <style>body{font-family:system-ui,sans-serif;color:#1a3a5c;padding:24px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}th{text-align:left;font-size:10px;border-bottom:1px solid #ccc;padding:6px}td{padding:6px}.cierre-prod-subtotal td{font-weight:800;background:#e6f4f2}.pv-total-prod td{background:#f3f7f6}.pv-asesor{font-weight:800;font-size:22px;color:#12324d;margin:0 0 10px}</style></head><body>
@@ -1478,11 +1484,10 @@ async function renderCierreDelDia(){
   const rutasSet = new Set(
     Object.keys(porAsesor).filter(n => _asesorTieneMovimientoLiq(porAsesor[n]))
   );
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
+  const asesoresSel = _getAsesoresSeleccionados();
   let rutasFull = [...rutasSet].sort((a,b)=>a.localeCompare(b,'es'));
-  if(asesorSel){
-    const selNom=(asesorSel.split(':')[1]||asesorSel).trim().toLowerCase();
-    rutasFull = rutasFull.filter(r => r===asesorSel || (r.split(':')[1]||r).trim().toLowerCase()===selNom);
+  if(asesoresSel.length){
+    rutasFull = rutasFull.filter(r => _asesorEnSeleccion(r, asesoresSel));
   }
   if(!rutasFull.length){
     cont1.innerHTML=''; cont2.innerHTML='';
@@ -1610,7 +1615,7 @@ async function renderCierreDelDia(){
 function _pedidosNotasAdicionalesFiltrados(){
   const desde = (document.getElementById('filtroFecha')?.value || '').trim();
   const hasta = (document.getElementById('filtroFechaHasta')?.value || '').trim();
-  const asesorSel = (document.getElementById('filtroAsesor')?.value || '').trim();
+  const asesoresSel = _getAsesoresSeleccionados();
   return (_pedidosRaw || [])
     .filter(p => String(p.notas||'').trim() !== '')
     .filter(p => {
@@ -1621,12 +1626,7 @@ function _pedidosNotasAdicionalesFiltrados(){
       if(hasta && f > hasta) return false;
       return true;
     })
-    .filter(p => {
-      if(!asesorSel) return true;
-      const emp = String(p.empleado||'').trim();
-      if(emp === asesorSel) return true;
-      return (typeof _mismoAsesorLiq==='function') ? _mismoAsesorLiq(emp, asesorSel) : false;
-    })
+    .filter(p => _asesorEnSeleccion(p.empleado||'', asesoresSel))
     .sort((a,b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
 }
 function renderNotasAdicionalesDash(){
@@ -1716,8 +1716,10 @@ function eliminarNotaAdicional(pedidoId){
    que ya aplica renderNotasAdicionalesDash(). */
 function imprimirNotasAdicionalesDash(){
   const fecha = _textoRangoFecha();
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-  const asesorLabel = asesorSel.split(':')[1]?.trim() || 'Todos';
+  const asesoresSel = _getAsesoresSeleccionados();
+  const asesorLabel = asesoresSel.length
+    ? asesoresSel.map(s => (s.split(':')[1]||s).trim()).join(', ')
+    : 'Todos';
   const pedidosConNota = _pedidosNotasAdicionalesFiltrados(); // [FIX] imprime exactamente lo del filtro de fecha/asesor
   const filas = pedidosConNota.map(p => `<tr>
     <td style="font-weight:700;color:#1a3a5c">${escHTML(p.fecha||'-')}</td>
@@ -1990,11 +1992,11 @@ function _msMovBanc(l){
 }
 function _lineasMovimientosDesdeDatos(){
   const lineas=[];
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
+  const asesoresSel = _getAsesoresSeleccionados();
   const activas = new Set(_mbFormasActivas());
   function pushLinea(asesor, valor, metodo, fecha, ts, origen){
     if(!metodo || !(Number(valor)>0)) return;
-    if(!_asesorMatchMB(asesor, asesorSel)) return;
+    if(!_asesorEnSeleccion(asesor, asesoresSel)) return;
     if(activas.size && !activas.has(metodo)) return;
     lineas.push({asesor, valor:Number(valor), metodo, fecha:fecha||'', ts:ts||null, origen:origen||null});
   }
@@ -2084,11 +2086,11 @@ async function renderMovimientosBancarios(){
   try{
     if(typeof db!=='undefined'){
       const rutasSet=new Set([...(Array.isArray(_asesoresCache)?_asesoresCache:[]), ...(_pedidosRaw||[]).map(p=>p.empleado||''), ...(_pagosRaw||[]).map(p=>p.empleado||'')].filter(Boolean));
-      const asesorSelDep = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
+      const asesoresSel = _getAsesoresSeleccionados();
       const dias=_diasDelRangoFiltroMB();
       const ids=[];
       [...rutasSet].forEach(nombre=>{
-        if(!_asesorMatchMB(nombre, asesorSelDep)) return;
+        if(!_asesorEnSeleccion(nombre, asesoresSel)) return;
         const sl=_slugAsesorLiq(nombre);
         dias.forEach(dia=> ids.push({nombre, id: dia+'_'+dia+'__'+sl, dia}));
         const rangoId=_idEntregaLiquidacion(nombre);
@@ -2569,7 +2571,8 @@ function _slugAsesorLiq(nombre){
 function _idEntregaLiquidacion(asesor){
   const desde=document.getElementById('filtroFecha')?.value||fechaHoy();
   const hasta=document.getElementById('filtroFechaHasta')?.value||desde;
-  const sl=_slugAsesorLiq(asesor||document.getElementById('filtroAsesor')?.value||'general');
+  const selMulti = _getAsesoresSeleccionados();
+  const sl=_slugAsesorLiq(asesor|| (selMulti.length===1 ? selMulti[0] : 'general'));
   return desde+'_'+hasta+'__'+sl;
 }
 function _diasISOInclusive(desde, hasta){
@@ -3293,14 +3296,14 @@ async function imprimirLiquidacionDash(){
   const porAsesor = _calcularLiquidacionDash();
   const asesores = Object.keys(porAsesor).sort((a,b)=>a.localeCompare(b,'es'));
   const fecha = _textoRangoFecha();
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
+  const asesoresSel = _getAsesoresSeleccionados();
   const _etiquetaRutaLiq = (txt)=>{
     const raw=String(txt||'').trim();
     const antes=raw.split(':')[0].trim();
     return antes||raw;
   };
-  const rutasLabel = (asesorSel
-    ? [_etiquetaRutaLiq(asesorSel)]
+  const rutasLabel = (asesoresSel.length
+    ? asesoresSel.map(_etiquetaRutaLiq)
     : asesores.map(_etiquetaRutaLiq)
   ).filter((v,i,a)=>v && a.indexOf(v)===i).join(', ') || 'General';
   let totalGeneral = 0;
@@ -3843,8 +3846,19 @@ async function cargarDatos(mostrarSpinner = true) {
 /* ════════════════════════════════════════
    FILTROS DASHBOARD
 ════════════════════════════════════════ */
+/* [NEW] Multi-select de asesores. Array vacío = "Todos". */
+function _getAsesoresSeleccionados() {
+  const sel = document.getElementById('filtroAsesor');
+  if (!sel) return [];
+  return Array.from(sel.selectedOptions).map(o => o.value).filter(v => v !== '');
+}
+function _asesorEnSeleccion(asesor, seleccion) {
+  if (!seleccion || !seleccion.length) return true;
+  const a = String(asesor || '').trim();
+  return seleccion.some(s => a === s || (typeof _mismoAsesorLiq === 'function' && _mismoAsesorLiq(a, s)));
+}
 function filtrarHoy() { const hoy = fechaHoy(); document.getElementById('filtroFecha').value = hoy; document.getElementById('filtroFechaHasta').value = hoy; if(typeof _sincronizarFechaRutasConDashboard==='function') _sincronizarFechaRutasConDashboard(); iniciarListenersDashboard(); }
-function limpiarFiltro() { document.getElementById('filtroFecha').value = ''; document.getElementById('filtroFechaHasta').value = fechaHoy(); if (document.getElementById('filtroAsesor')) document.getElementById('filtroAsesor').value = ''; _productoFiltroSeleccionado = ''; iniciarListenersDashboard(); }
+function limpiarFiltro() { document.getElementById('filtroFecha').value = ''; document.getElementById('filtroFechaHasta').value = fechaHoy(); const fa = document.getElementById('filtroAsesor'); if (fa) Array.from(fa.options).forEach(o => o.selected = false); _productoFiltroSeleccionado = ''; iniciarListenersDashboard(); }
 /* [NEW] Texto legible del rango de fecha actualmente filtrado, para usar en encabezados de PDF */
 function _textoRangoFecha() {
   const desde = document.getElementById('filtroFecha').value;
@@ -3861,7 +3875,7 @@ function _esPedidoSaldoAnt(p){ const pr = (p && p.productos) || []; return pr.le
 function getDatosFiltrados() {
   const desde = document.getElementById('filtroFecha').value;
   const hasta = document.getElementById('filtroFechaHasta').value;
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
+  const asesoresSel = _getAsesoresSeleccionados();
   let datos = todosLosDatos;
   if (desde) datos = datos.filter(r => {
     const f = _isoFechaDash(r['FECHA'] || r['fecha'] || '');
@@ -3871,7 +3885,7 @@ function getDatosFiltrados() {
     const f = _isoFechaDash(r['FECHA'] || r['fecha'] || '');
     return f ? f <= hasta : String(r['FECHA'] || r['fecha'] || '') <= hasta;
   });
-  if (asesorSel) datos = datos.filter(r => (r['ASESOR / RUTA']||'') === asesorSel);
+  if (asesoresSel.length) datos = datos.filter(r => _asesorEnSeleccion(r['ASESOR / RUTA'] || '', asesoresSel));
   return datos;
 }
 /* [NEW] Igual que getDatosFiltrados() pero SIN el filtro de asesor — para que "Reporte
@@ -4993,8 +5007,10 @@ function exportarClientePDF() {
   if (!items.length) { alert('No hay pedidos para estos clientes en el filtro actual.'); return; }
 
   const fecha = _textoRangoFecha();
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-  const asesorLabel = asesorSel.split(':')[1]?.trim() || 'Todos';
+  const asesoresSel = _getAsesoresSeleccionados();
+  const asesorLabel = asesoresSel.length
+    ? asesoresSel.map(s => (s.split(':')[1]||s).trim()).join(', ')
+    : 'Todos';
 
   const porCliente = {};
   items.forEach(r => { const c = r['CLIENTE']||'Sin nombre'; if (!porCliente[c]) porCliente[c] = []; porCliente[c].push(r); });
@@ -5156,9 +5172,9 @@ function poblarClienteSelect(datos) {
     const _yaListados = new Set(Object.keys(porCliente).map(_normCli));
     // Misma fuente y mismo filtro que "Consulta Cobranzas" (_pagosRaw + filtro de asesor),
     // para que ambas pantallas muestren exactamente los mismos clientes con cobros.
-    const _asesorSelCli = document.getElementById('filtroAsesor')?.value || '';
+    const _asesoresSelCli = _getAsesoresSeleccionados();
     (_pagosRaw || []).forEach(pg => {
-      if (_asesorSelCli && (pg.empleado || '') !== _asesorSelCli) return;
+      if (!_asesorEnSeleccion(pg.empleado || '', _asesoresSelCli)) return;
       const nombre = pg.cliente || '';
       const k = _normCli(nombre);
       if (!k || _yaListados.has(k)) return;
@@ -6430,8 +6446,10 @@ function exportarPagosGastosPDF() {
   const gastos = gastosDetalleActuales || [];
   if (!pagos.length && !gastos.length) { alert('No hay pagos ni gastos para exportar. Aplica los filtros primero.'); return; }
   const fecha = _textoRangoFecha();
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-  const asesorLabel = _etiquetaRutaParaImpresion(asesorSel);
+  const asesoresSel = _getAsesoresSeleccionados();
+  const asesorLabel = asesoresSel.length
+    ? asesoresSel.map(s => _etiquetaRutaParaImpresion(s)).join(', ')
+    : 'Todas las rutas';
   const totalPagos = pagos.reduce((s,r) => s + (parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
   const totalGastos = gastos.reduce((s,r) => s + Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
   const filasPagos = pagos.map(r => `<tr>
@@ -6589,7 +6607,7 @@ function _cobranzasHistCargando(){
 /* sinFecha=true → usa el histórico completo y no aplica Desde/Hasta (Consulta Cobranzas).
    Sin parámetro se comporta exactamente como antes (lo usa "Consultar por Cliente"). */
 function _datosCobranzasClientes(sinFecha){
-  const asesorSel=document.getElementById('filtroAsesor')?.value||'';
+  const asesoresSel = _getAsesoresSeleccionados();
   const map={};
   const fuentePedidos = (sinFecha && _cobPedidosHist) ? _cobPedidosHist : (_pedidosRaw||[]);
   const fuentePagos   = (sinFecha && _cobPagosHist)   ? _cobPagosHist   : (_pagosRaw||[]);
@@ -6600,15 +6618,15 @@ function _datosCobranzasClientes(sinFecha){
      cobró, la deuda salía distinta según el asesor elegido y no cuadraba con "Todos".
      Solo aplica a Consulta Cobranzas (sinFecha=true); "Consultar por Cliente" sigue igual. */
   let clientesDelAsesor=null;
-  if (sinFecha && asesorSel){
+  if (sinFecha && asesoresSel.length){
     clientesDelAsesor=new Set();
-    fuentePedidos.forEach(p=>{ if((p.empleado||'')===asesorSel) clientesDelAsesor.add(_normNombreCliente(p.cliente)||'sin-nombre'); });
-    fuentePagos.forEach(pg=>{ if((pg.empleado||'')===asesorSel) clientesDelAsesor.add(_normNombreCliente(pg.cliente||'Sin nombre')||'sin-nombre'); });
+    fuentePedidos.forEach(p=>{ if(_asesorEnSeleccion(p.empleado||'', asesoresSel)) clientesDelAsesor.add(_normNombreCliente(p.cliente)||'sin-nombre'); });
+    fuentePagos.forEach(pg=>{ if(_asesorEnSeleccion(pg.empleado||'', asesoresSel)) clientesDelAsesor.add(_normNombreCliente(pg.cliente||'Sin nombre')||'sin-nombre'); });
   }
   const pasaAsesor=(empleado, cliente)=>{
-    if (!asesorSel) return true;
+    if (!asesoresSel.length) return true;
     if (clientesDelAsesor) return clientesDelAsesor.has(_normNombreCliente(cliente)||'sin-nombre');
-    return (empleado||'')===asesorSel;
+    return _asesorEnSeleccion(empleado||'', asesoresSel);
   };
   const asegurar=(nombre)=>{
     const key=_normNombreCliente(nombre)||'sin-nombre';
@@ -6911,8 +6929,10 @@ function exportarDetallePDF() {
   const datos = _pedidosTablaFiltrados; // [NEW] exporta lo mismo que se ve en pantalla (respeta el filtro de Pago)
   if (!datos.length) { alert('No hay datos para exportar. Aplica los filtros primero.'); return; }
   const fecha = _textoRangoFecha();
-  const asesorSel = document.getElementById('filtroAsesor') ? document.getElementById('filtroAsesor').value : '';
-  const rutaLabel = asesorSel ? _etiquetaRutaPDF(asesorSel) : 'Todas';
+  const asesoresSel = _getAsesoresSeleccionados();
+  const rutaLabel = asesoresSel.length
+    ? asesoresSel.map(s => _etiquetaRutaPDF(s)).join(', ')
+    : 'Todas';
 
   const tDet=_totalYEtiquetaDetalleFiltrado(datos);
   const totalGeneral=tDet.total;
@@ -8553,7 +8573,7 @@ function _fechaPedidoControlTicket(p){
 function _pedidosControlTicketFiltrados(){
   const desde = (document.getElementById('filtroFecha')?.value || '').trim();
   const hasta = (document.getElementById('filtroFechaHasta')?.value || '').trim();
-  const asesorSel = (document.getElementById('filtroAsesor')?.value || '').trim();
+  const asesoresSel = _getAsesoresSeleccionados();
   return (_pedidosRaw || [])
     .filter(p => {
       if(!desde && !hasta) return true;
@@ -8563,12 +8583,7 @@ function _pedidosControlTicketFiltrados(){
       if(hasta && f > hasta) return false;
       return true;
     })
-    .filter(p => {
-      if(!asesorSel) return true;
-      const emp = String(p.empleado||'').trim();
-      if(emp === asesorSel) return true;
-      return (typeof _mismoAsesorLiq==='function') ? _mismoAsesorLiq(emp, asesorSel) : false;
-    })
+    .filter(p => _asesorEnSeleccion(p.empleado||'', asesoresSel))
     .sort((a,b) => (b.creadoEn?.toMillis?.() || 0) - (a.creadoEn?.toMillis?.() || 0));
 }
 function renderControlTickets(){

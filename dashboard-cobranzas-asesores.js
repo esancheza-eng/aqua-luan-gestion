@@ -510,14 +510,18 @@
         try {
           if (sec === SEC && visible()) {
             if (typeof _iniciarListenerCobranzasHist === 'function') _iniciarListenerCobranzasHist();
-            /* Al entrar, toma el asesor elegido arriba (si hay uno) como punto de partida */
+            /* Al entrar, toma el asesor elegido arriba (si hay uno solo) como punto de partida */
             var fa = document.getElementById('filtroAsesor');
             var sel = document.getElementById('cobAsAsesor');
-            if (fa && sel && fa.value) {
-              if (!Array.prototype.some.call(sel.options, function (o) { return o.value === fa.value; })) {
-                var op = document.createElement('option'); op.value = fa.value; op.textContent = corto(fa.value); sel.appendChild(op);
+            if (fa && sel) {
+              var seleccionados = Array.from(fa.selectedOptions).map(function(o){ return o.value; }).filter(Boolean);
+              if (seleccionados.length === 1) {
+                var v = seleccionados[0];
+                if (!Array.prototype.some.call(sel.options, function (o) { return o.value === v; })) {
+                  var op = document.createElement('option'); op.value = v; op.textContent = corto(v); sel.appendChild(op);
+                }
+                sel.value = v;
               }
-              sel.value = fa.value;
             }
             render();
           }
