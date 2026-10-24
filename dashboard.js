@@ -347,7 +347,8 @@ function switchSeccionDash(sec){
   // tabla de "Consultar por Cliente" — se recalculan al instante solo al entrar,
   // usando los datos que ya se tenían en caché desde el último cambio de Firestore.
   if (sec === 'resumen' && typeof renderResumenPorCliente === 'function') renderResumenPorCliente(_resumenClientesPedidosCache);
-  if (sec === 'cliente' && typeof poblarClienteSelect === 'function') poblarClienteSelect(_clienteSelectPedidosCache);
+  if (sec === 'cliente' && typeof _iniciarClientesHybrid === 'function') _iniciarClientesHybrid();
+  else if (sec === 'cliente' && typeof poblarClienteSelect === 'function') poblarClienteSelect(_clienteSelectPedidosCache);
 }
 function _fechaRutasDesdeDashboard(){
   const desde=(document.getElementById('filtroFecha')?.value||'').trim();
@@ -5235,6 +5236,138 @@ function _badgeEstadoCliente(estado) {
 }
 
 let _clientesTablaDatos = []; // [NEW] estadísticas calculadas por cliente, para la tabla/modal/PDF
+
+/* ════════════════════════════════════════
+   [NEW] CONSULTAR POR CLIENTE — Híbrido (historial completo 1 vez + tiempo real últimos X días)
+   - Carga UNA sola vez todo el historial antiguo (fecha < hoy - X días).
+   - Mantiene un listener en vivo solo de los últimos X días.
+   - Combina ambos para mostrar TODOS los clientes, con datos frescos de los días recientes.
+   - El filtro de fecha global de arriba NO afecta esta sección.
+════════════════════════════════════════ */
+const CLIENTES_DIAS_VIVOS = 30; // últimos 30 días en tiempo real (puedes cambiar este número)
+let _clientesHistFilas = null;     // filas expandidas del historial antiguo de pedidos (carga única)
+let _clientesHistPagos = [];       // pagos crudos del historial antiguo (carga única)
+let _clientesRecentPedidos = [];   // pedidos crudos de los últimos X días (listener)
+let _clientesRecentPagos = [];     // pagos crudos de los últimos X días (listener)
+let _unsubClientesPedidos = null;
+let _unsubClientesPagos = null;
+let _clientesHybridCargando = null;
+
+function _fechaHaceXDias(dias) {
+  const d = new Date();
+  d.setDate(d.getDate() - dias);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function _combinarYPoblarClientes() {
+  if (!_clientesHistFilas) return;
+  // Expandir solo los recientes y concatenar con el historial
+  const filasRecientes = [];
+  (_clientesRecentPedidos || []).forEach(p => {
+    if (typeof _expandirPedido === 'function') filasRecientes.push(..._expandirPedido(p));
+  });
+  const todasLasFilas = _clientesHistFilas.concat(filasRecientes);
+
+  // Temporalmente inyectar TODOS los pagos (históricos + recientes) para que el cruce de clientes
+  // que solo tienen cobros (sin pedidos) funcione con el historial completo.
+  const pagosBackup = _pagosRaw;
+  _pagosRaw = (_clientesHistPagos || []).concat(_clientesRecentPagos || []);
+  try {
+    poblarClienteSelect(todasLasFilas);
+  } finally {
+    _pagosRaw = pagosBackup;
+  }
+}
+
+async function _iniciarClientesHybrid() {
+  const contador = document.getElementById('clienteContadorTabla');
+  if (contador && !_clientesHistFilas) contador.textContent = 'Cargando historial de clientes…';
+
+  if (_clientesHistFilas) {
+    _combinarYPoblarClientes();
+    _iniciarListenersClientesRecientes();
+    return;
+  }
+  if (_clientesHybridCargando) {
+    await _clientesHybridCargando;
+    _combinarYPoblarClientes();
+    _iniciarListenersClientesRecientes();
+    return;
+  }
+
+  const desdeVivo = _fechaHaceXDias(CLIENTES_DIAS_VIVOS);
+
+  _clientesHybridCargando = (async () => {
+    try {
+      // 1) Carga única del historial antiguo (todo lo anterior a los últimos X días)
+      const [pedidosAntiguosSnap, pagosAntiguosSnap] = await Promise.all([
+        db.collection('pedidos').where('fecha', '<', desdeVivo).get(),
+        db.collection('pagos').where('fecha', '<', desdeVivo).get()
+      ]);
+      const pedidosAntiguos = pedidosAntiguosSnap.docs.map(d => ({ ...d.data(), _id: d.id }));
+      const filas = [];
+      pedidosAntiguos.forEach(p => {
+        if (typeof _expandirPedido === 'function') filas.push(..._expandirPedido(p));
+      });
+      _clientesHistFilas = filas;
+      _clientesHistPagos = pagosAntiguosSnap.docs.map(d => ({ ...d.data(), _id: d.id }));
+    } catch (e) {
+      console.error('Error cargando historial antiguo de clientes:', e);
+      if (contador) contador.textContent = '⚠️ Error al cargar historial';
+      _clientesHistFilas = [];
+      _clientesHistPagos = [];
+    }
+  })();
+
+  await _clientesHybridCargando;
+  _clientesHybridCargando = null;
+
+  if (document.getElementById('seccion-cliente')?.classList.contains('active')) {
+    _combinarYPoblarClientes();
+    _iniciarListenersClientesRecientes();
+  }
+}
+
+function _iniciarListenersClientesRecientes() {
+  _detenerListenersClientesRecientes(); // evitar duplicados
+  const desdeVivo = _fechaHaceXDias(CLIENTES_DIAS_VIVOS);
+
+  _unsubClientesPedidos = db.collection('pedidos')
+    .where('fecha', '>=', desdeVivo)
+    .onSnapshot(snap => {
+      _clientesRecentPedidos = snap.docs.map(d => ({ ...d.data(), _id: d.id }));
+      if (document.getElementById('seccion-cliente')?.classList.contains('active')) {
+        _combinarYPoblarClientes();
+      }
+    }, err => console.warn('Listener clientes pedidos recientes:', err));
+
+  _unsubClientesPagos = db.collection('pagos')
+    .where('fecha', '>=', desdeVivo)
+    .onSnapshot(snap => {
+      _clientesRecentPagos = snap.docs.map(d => ({ ...d.data(), _id: d.id }));
+      if (document.getElementById('seccion-cliente')?.classList.contains('active')) {
+        _combinarYPoblarClientes();
+      }
+    }, err => console.warn('Listener clientes pagos recientes:', err));
+}
+
+function _detenerListenersClientesRecientes() {
+  if (_unsubClientesPedidos) { _unsubClientesPedidos(); _unsubClientesPedidos = null; }
+  if (_unsubClientesPagos) { _unsubClientesPagos(); _unsubClientesPagos = null; }
+}
+
+// Al salir de la sección se detienen los listeners de los últimos X días (ahorro)
+const _switchSeccionDashOriginal = typeof switchSeccionDash === 'function' ? switchSeccionDash : null;
+if (_switchSeccionDashOriginal) {
+  switchSeccionDash = function (sec) {
+    const result = _switchSeccionDashOriginal.apply(this, arguments);
+    if (sec !== 'cliente') _detenerListenersClientesRecientes();
+    return result;
+  };
+}
+
+let _clientesSeleccionadosPdf = new Set(); // [NEW] checkboxes marcados para exportar
+
 let _clientesSeleccionadosPdf = new Set(); // [NEW] checkboxes marcados para exportar
 
 /* [FIX] Esta función se había perdido al reescribir el bloque — agrupa las líneas de
