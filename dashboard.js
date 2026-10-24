@@ -5368,8 +5368,6 @@ if (_switchSeccionDashOriginal) {
 
 let _clientesSeleccionadosPdf = new Set(); // [NEW] checkboxes marcados para exportar
 
-let _clientesSeleccionadosPdf = new Set(); // [NEW] checkboxes marcados para exportar
-
 /* [FIX] Esta función se había perdido al reescribir el bloque — agrupa las líneas de
    producto de un mismo pedido real (Cliente+Fecha+Asesor) en un solo grupo. */
 function _agruparPedidosReales(datos) {
