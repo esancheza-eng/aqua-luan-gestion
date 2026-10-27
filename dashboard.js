@@ -565,7 +565,7 @@ function _iniciarListenerAsesoresDash(){
     const rutas = snap.docs.map(d => d.data().ruta).filter(Boolean).sort();
     _asesoresCache = rutas; // [NEW] disponible para el <select> de Asesor dentro del modal Editar Pedido
     if (typeof renderReporteAsesores === 'function') renderReporteAsesores(); /* [FIX] antes solo se refrescaba cuando cambiaban los pedidos, no cuando llegaba la lista de asesores — se quedaba en "No hay asesores registrados" si este listener tardaba más en cargar */
-    if (typeof poblarClienteSelect === 'function') poblarClienteSelect(todosLosDatos); // [FIX] mismo problema en "Consultar por Cliente": el filtro de asesores se quedaba vacío (solo "Todos los asesores") si esta lista llegaba después que los pedidos
+    if (typeof _poblarClientesSegunModo === 'function') _poblarClientesSegunModo(todosLosDatos); else if (typeof poblarClienteSelect === 'function') poblarClienteSelect(todosLosDatos); // [FIX 26-oct] no pisa la vista híbrida · [FIX] mismo problema en "Consultar por Cliente": el filtro de asesores se quedaba vacío (solo "Todos los asesores") si esta lista llegaba después que los pedidos
     _agregarRutasNuevasMapa(rutas); // [NEW] rutas nuevas (ej. RUTA 7) también en el filtro de "Rutas del Día"
     const sel = document.getElementById('filtroAsesor');
     const list = document.getElementById('asesorMultiList');
@@ -575,7 +575,7 @@ function _iniciarListenerAsesoresDash(){
     list.innerHTML = rutas.map(r => {
       const nombre = r.split(':')[1]?.trim() || r;
       const checked = seleccionados.includes(r) ? 'checked' : '';
-      return `<label class="asesor-multi-item"><input type="checkbox" value="${r}" ${checked} onchange="onAsesorCheckChange()"><span>${nombre}</span></label>`;
+      return `<label class="asesor-multi-item"><input type="checkbox" value="${escapeAttr(r)}" ${checked} onchange="onAsesorCheckChange()"><span>${escHTML(nombre)}</span></label>`; // [FIX 26-oct] nombres escapados
     }).join('');
     // Sincronizar select oculto
     rutas.forEach(r => {
@@ -3951,9 +3951,9 @@ function toggleAsesorMulti(e) {
 function toggleTodosAsesores(cb) {
   const checks = document.querySelectorAll('#asesorMultiList input[type="checkbox"]');
   checks.forEach(c => { c.checked = false; });
-  if (cb.checked) {
-    _actualizarLabelAsesores();
-  }
+  // [FIX 26-oct] "Todos" no puede quedar desmarcado sin ningún asesor elegido: sin selección = Todos
+  cb.checked = true;
+  _actualizarLabelAsesores();
 }
 function onAsesorCheckChange() {
   const todosCb = document.getElementById('asesorMultiTodos');
@@ -4085,7 +4085,7 @@ function renderDashboard() {
   _clienteSelectPedidosCache = pedidos;
   if (seccionResumenVisible) renderResumenPorCliente(_pedidosTablaFiltrados);
   const seccionClienteVisible = document.getElementById('seccion-cliente')?.classList.contains('active');
-  if (seccionClienteVisible) poblarClienteSelect(pedidos);
+  if (seccionClienteVisible) _poblarClientesSegunModo(pedidos); // [FIX 26-oct] respeta la vista híbrida de Consultar por Cliente
   renderPagosGastosDetalle(pagos, gastos); // [NEW]
   document.getElementById('chartsGrid').style.display = 'grid';
   document.getElementById('tableCard').style.display = 'block';
@@ -5239,16 +5239,30 @@ let _clientesTablaDatos = []; // [NEW] estadísticas calculadas por cliente, par
 
 /* ════════════════════════════════════════
    [NEW] CONSULTAR POR CLIENTE — Híbrido (historial completo 1 vez + tiempo real últimos X días)
-   - Carga UNA sola vez todo el historial antiguo (fecha < hoy - X días).
-   - Mantiene un listener en vivo solo de los últimos X días.
+   - Carga UNA sola vez todo el historial antiguo (fecha < corte).
+   - Mantiene un listener en vivo solo desde el corte en adelante.
    - Combina ambos para mostrar TODOS los clientes, con datos frescos de los días recientes.
    - El filtro de fecha global de arriba NO afecta esta sección.
+   [FIX 26-oct] Correcciones:
+   - Los pedidos se ordenan del más reciente al más antiguo (creadoEn), igual que el flujo
+     normal — antes "Último pedido", "Días sin comprar", "Asesor" y "Estado" salían errados.
+   - El corte (fecha límite) se fija UNA vez al cargar el historial y el listener usa ese
+     mismo corte — así ningún día se pierde si el dashboard queda abierto pasada la medianoche.
+   - Si un pedido aparece en ambos lados (ej. le editaron la fecha), cuenta una sola vez.
+   - Deuda Vigente / Abonado se calculan sobre TODO el historial (mismo criterio que
+     Consulta Cobranzas), coherente con que la lista muestra todos los clientes.
+   - Los listeners generales ya no pisan esta vista mientras está abierta
+     (ver _poblarClientesSegunModo).
+   - Botón "↻ Recargar historial" para traer cambios hechos a pedidos antiguos.
 ════════════════════════════════════════ */
 const CLIENTES_DIAS_VIVOS = 30; // últimos 30 días en tiempo real (puedes cambiar este número)
-let _clientesHistFilas = null;     // filas expandidas del historial antiguo de pedidos (carga única)
+let _clientesHistFilas = null;     // [FIX] grupos del historial antiguo: [{id, ms, filas}] ya ordenados (carga única)
+let _clientesHistPedidosRaw = [];  // pedidos crudos del historial antiguo (para el cálculo de deuda)
 let _clientesHistPagos = [];       // pagos crudos del historial antiguo (carga única)
-let _clientesRecentPedidos = [];   // pedidos crudos de los últimos X días (listener)
-let _clientesRecentPagos = [];     // pagos crudos de los últimos X días (listener)
+let _clientesRecentPedidos = [];   // pedidos crudos desde el corte (listener)
+let _clientesRecentPagos = [];     // pagos crudos desde el corte (listener)
+let _clientesCorte = null;         // [FIX] fecha límite fija usada por el historial y por el listener
+let _clientesFuentesHibrido = null;// [FIX] fuentes completas que usa poblarClienteSelect para la deuda
 let _unsubClientesPedidos = null;
 let _unsubClientesPagos = null;
 let _clientesHybridCargando = null;
@@ -5258,24 +5272,46 @@ function _fechaHaceXDias(dias) {
   d.setDate(d.getDate() - dias);
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+function _msCreadoPedido(p) { return (p && p.creadoEn && typeof p.creadoEn.toMillis === 'function') ? p.creadoEn.toMillis() : 0; }
+function _seccionClienteActiva() { return !!document.getElementById('seccion-cliente')?.classList.contains('active'); }
+
+/* [FIX] Punto único para refrescar "Consultar por Cliente": si la vista híbrida ya está
+   cargada y la sección abierta, usa la vista completa; si no, el comportamiento de siempre. */
+function _poblarClientesSegunModo(datosFiltrados) {
+  if (_clientesHistFilas && _seccionClienteActiva()) { _combinarYPoblarClientes(); return; }
+  if (typeof poblarClienteSelect === 'function') poblarClienteSelect(datosFiltrados);
+}
 
 function _combinarYPoblarClientes() {
   if (!_clientesHistFilas) return;
-  // Expandir solo los recientes y concatenar con el historial
-  const filasRecientes = [];
-  (_clientesRecentPedidos || []).forEach(p => {
-    if (typeof _expandirPedido === 'function') filasRecientes.push(..._expandirPedido(p));
-  });
-  const todasLasFilas = _clientesHistFilas.concat(filasRecientes);
+  // Recientes ordenados del más nuevo al más antiguo
+  const recientes = (_clientesRecentPedidos || []).slice().sort((a, b) => _msCreadoPedido(b) - _msCreadoPedido(a));
+  const idsRecientes = new Set(recientes.map(p => p._id));
+  const gruposRec = recientes.map(p => ({ ms: _msCreadoPedido(p), filas: (typeof _expandirPedido === 'function') ? _expandirPedido(p) : [] }));
+  const gruposHist = _clientesHistFilas.filter(g => !idsRecientes.has(g.id));
+  // Mezcla ordenada (ambas listas ya vienen de mayor a menor creadoEn)
+  const todasLasFilas = [];
+  let i = 0, j = 0;
+  while (i < gruposRec.length || j < gruposHist.length) {
+    const tomarRec = j >= gruposHist.length || (i < gruposRec.length && gruposRec[i].ms >= gruposHist[j].ms);
+    const g = tomarRec ? gruposRec[i++] : gruposHist[j++];
+    for (let k = 0; k < g.filas.length; k++) todasLasFilas.push(g.filas[k]);
+  }
+
+  const pedidosTodos = recientes.concat(_clientesHistPedidosRaw.filter(p => !idsRecientes.has(p._id)));
+  const idsPagosRec = new Set((_clientesRecentPagos || []).map(p => p._id));
+  const pagosTodos = (_clientesRecentPagos || []).concat((_clientesHistPagos || []).filter(p => !idsPagosRec.has(p._id)));
 
   // Temporalmente inyectar TODOS los pagos (históricos + recientes) para que el cruce de clientes
   // que solo tienen cobros (sin pedidos) funcione con el historial completo.
   const pagosBackup = _pagosRaw;
-  _pagosRaw = (_clientesHistPagos || []).concat(_clientesRecentPagos || []);
+  _pagosRaw = pagosTodos;
+  _clientesFuentesHibrido = { pedidos: pedidosTodos, pagos: pagosTodos };
   try {
     poblarClienteSelect(todasLasFilas);
   } finally {
     _pagosRaw = pagosBackup;
+    _clientesFuentesHibrido = null;
   }
 }
 
@@ -5290,70 +5326,80 @@ async function _iniciarClientesHybrid() {
   }
   if (_clientesHybridCargando) {
     await _clientesHybridCargando;
-    _combinarYPoblarClientes();
-    _iniciarListenersClientesRecientes();
+    if (_clientesHistFilas && _seccionClienteActiva()) { _combinarYPoblarClientes(); _iniciarListenersClientesRecientes(); }
     return;
   }
 
-  const desdeVivo = _fechaHaceXDias(CLIENTES_DIAS_VIVOS);
+  const corte = _fechaHaceXDias(CLIENTES_DIAS_VIVOS);
 
   _clientesHybridCargando = (async () => {
     try {
-      // 1) Carga única del historial antiguo (todo lo anterior a los últimos X días)
+      // 1) Carga única del historial antiguo (todo lo anterior al corte)
       const [pedidosAntiguosSnap, pagosAntiguosSnap] = await Promise.all([
-        db.collection('pedidos').where('fecha', '<', desdeVivo).get(),
-        db.collection('pagos').where('fecha', '<', desdeVivo).get()
+        db.collection('pedidos').where('fecha', '<', corte).get(),
+        db.collection('pagos').where('fecha', '<', corte).get()
       ]);
-      const pedidosAntiguos = pedidosAntiguosSnap.docs.map(d => ({ ...d.data(), _id: d.id }));
-      const filas = [];
-      pedidosAntiguos.forEach(p => {
-        if (typeof _expandirPedido === 'function') filas.push(..._expandirPedido(p));
-      });
-      _clientesHistFilas = filas;
+      const pedidosAntiguos = pedidosAntiguosSnap.docs.map(d => ({ ...d.data(), _id: d.id }))
+        .sort((a, b) => _msCreadoPedido(b) - _msCreadoPedido(a)); // [FIX] mismo orden que el flujo normal
+      _clientesHistPedidosRaw = pedidosAntiguos;
+      _clientesHistFilas = pedidosAntiguos.map(p => ({
+        id: p._id, ms: _msCreadoPedido(p),
+        filas: (typeof _expandirPedido === 'function') ? _expandirPedido(p) : []
+      }));
       _clientesHistPagos = pagosAntiguosSnap.docs.map(d => ({ ...d.data(), _id: d.id }));
+      _clientesCorte = corte;
     } catch (e) {
       console.error('Error cargando historial antiguo de clientes:', e);
-      if (contador) contador.textContent = '⚠️ Error al cargar historial';
-      _clientesHistFilas = [];
-      _clientesHistPagos = [];
+      if (contador) contador.textContent = '⚠️ Error al cargar historial — se muestran los datos del filtro';
+      // [FIX] no se marca como cargado: al volver a entrar se reintenta
+      _clientesHistFilas = null; _clientesHistPedidosRaw = []; _clientesHistPagos = []; _clientesCorte = null;
     }
   })();
 
   await _clientesHybridCargando;
   _clientesHybridCargando = null;
 
-  if (document.getElementById('seccion-cliente')?.classList.contains('active')) {
+  if (!_seccionClienteActiva()) return;
+  if (_clientesHistFilas) {
     _combinarYPoblarClientes();
     _iniciarListenersClientesRecientes();
+  } else if (typeof poblarClienteSelect === 'function') {
+    poblarClienteSelect(_clienteSelectPedidosCache); // respaldo: comportamiento anterior
   }
 }
 
 function _iniciarListenersClientesRecientes() {
   _detenerListenersClientesRecientes(); // evitar duplicados
-  const desdeVivo = _fechaHaceXDias(CLIENTES_DIAS_VIVOS);
+  const corte = _clientesCorte || _fechaHaceXDias(CLIENTES_DIAS_VIVOS); // [FIX] mismo corte que el historial
 
   _unsubClientesPedidos = db.collection('pedidos')
-    .where('fecha', '>=', desdeVivo)
+    .where('fecha', '>=', corte)
     .onSnapshot(snap => {
       _clientesRecentPedidos = snap.docs.map(d => ({ ...d.data(), _id: d.id }));
-      if (document.getElementById('seccion-cliente')?.classList.contains('active')) {
-        _combinarYPoblarClientes();
-      }
+      if (_seccionClienteActiva()) _combinarYPoblarClientes();
     }, err => console.warn('Listener clientes pedidos recientes:', err));
 
   _unsubClientesPagos = db.collection('pagos')
-    .where('fecha', '>=', desdeVivo)
+    .where('fecha', '>=', corte)
     .onSnapshot(snap => {
       _clientesRecentPagos = snap.docs.map(d => ({ ...d.data(), _id: d.id }));
-      if (document.getElementById('seccion-cliente')?.classList.contains('active')) {
-        _combinarYPoblarClientes();
-      }
+      if (_seccionClienteActiva()) _combinarYPoblarClientes();
     }, err => console.warn('Listener clientes pagos recientes:', err));
 }
 
 function _detenerListenersClientesRecientes() {
   if (_unsubClientesPedidos) { _unsubClientesPedidos(); _unsubClientesPedidos = null; }
   if (_unsubClientesPagos) { _unsubClientesPagos(); _unsubClientesPagos = null; }
+}
+
+/* [NEW 26-oct] Vuelve a leer el historial antiguo (para ver cambios hechos a pedidos/pagos
+   de hace más de CLIENTES_DIAS_VIVOS días sin recargar toda la página). */
+async function recargarHistorialClientes() {
+  if (_clientesHybridCargando) return;
+  _detenerListenersClientesRecientes();
+  _clientesHistFilas = null; _clientesHistPedidosRaw = []; _clientesHistPagos = []; _clientesCorte = null;
+  _clientesRecentPedidos = []; _clientesRecentPagos = [];
+  await _iniciarClientesHybrid();
 }
 
 // Al salir de la sección se detienen los listeners de los últimos X días (ahorro)
@@ -5441,7 +5487,9 @@ function poblarClienteSelect(datos) {
   // fecha/asesor que Cuadre de Caja — así las 3 pantallas muestran los mismos valores.
   const _mapaCobranzaPorCliente = {};
   try {
-    _datosCobranzasClientes().forEach(cb => { _mapaCobranzaPorCliente[_normNombreCliente(cb.nombre)] = cb; });
+    // [FIX 26-oct] En la vista híbrida la deuda se calcula sobre TODO el historial
+    const _listaCobranza = _clientesFuentesHibrido ? _datosCobranzasClientes(true, _clientesFuentesHibrido) : _datosCobranzasClientes();
+    _listaCobranza.forEach(cb => { _mapaCobranzaPorCliente[_normNombreCliente(cb.nombre)] = cb; });
   } catch (e) { console.error('poblarClienteSelect (cruce cobranzas):', e); }
 
   const hoyMs = Date.now();
@@ -6857,11 +6905,12 @@ function _cobranzasHistCargando(){
 }
 /* sinFecha=true → usa el histórico completo y no aplica Desde/Hasta (Consulta Cobranzas).
    Sin parámetro se comporta exactamente como antes (lo usa "Consultar por Cliente"). */
-function _datosCobranzasClientes(sinFecha){
+function _datosCobranzasClientes(sinFecha, fuentes){
   const asesoresSel = _getAsesoresSeleccionados();
   const map={};
-  const fuentePedidos = (sinFecha && _cobPedidosHist) ? _cobPedidosHist : (_pedidosRaw||[]);
-  const fuentePagos   = (sinFecha && _cobPagosHist)   ? _cobPagosHist   : (_pagosRaw||[]);
+  // [FIX 26-oct] 'fuentes' opcional {pedidos, pagos}: lo usa la vista híbrida de Consultar por Cliente
+  const fuentePedidos = (fuentes && fuentes.pedidos) ? fuentes.pedidos : ((sinFecha && _cobPedidosHist) ? _cobPedidosHist : (_pedidosRaw||[]));
+  const fuentePagos   = (fuentes && fuentes.pagos)   ? fuentes.pagos   : ((sinFecha && _cobPagosHist)   ? _cobPagosHist   : (_pagosRaw||[]));
   const enRango = (f)=> sinFecha ? true : _enRangoFechaFiltroDash(f);
   /* [NEW] Consulta Cobranzas con filtro de asesor: el asesor elige QUÉ clientes se ven,
      pero cada cliente muestra su deuda y cobros COMPLETOS (de todos los asesores).
@@ -8518,7 +8567,7 @@ function mostrarToastEdicion(msg){
 const FORMAS_PAGO_COBRO = ['Efectivo','Transferencia','Cheque']; // mismas opciones que usa index.html al registrar un pago
 /* [NEW] Listado cerrado de gastos — IGUAL a LISTAS_BLANCAS.gastoDesc de la app de pedidos
    (luan_aqua_basededatos/index.html). Si cambias uno, cambia el otro. */
-const GASTOS_PERMITIDOS = ['COMBUSTIBLE','DEPOSITO','ALMUERZO','PEAJE','RETENCION','TRICICLO','ENCOMIENDAS','VIGILANTE','AIRE PARA LLANTAS','RECARGAS','SACOS DE SAL','ASCENSOR','VACUNAS','RECARGUE DE GAS','JUGOS BODEGUEROS','IMPRESION DE FACTURAS','CANECA DE JABON NEUTRO','PALLETS','PARCHE PARA LLANTA','MOTOTAXI','CAMBIO DE LLANTAS','COMPRA DE ACEITE PARA MOTOR','CAMBIO DE ACEITE','LIQUIDO DE FRENO','CLORO EN GRANO','MANO DE OBRA (CAMION)','REPUESTOS PARA CAMION','OTROS GASTOS DE CAMION','COMPRAS DE OFICINA'];
+const GASTOS_PERMITIDOS = ['COMBUSTIBLE','DEPOSITO','ALMUERZO','PEAJE','RETENCION','TRICICLO','ENCOMIENDAS','VIGILANTE','AIRE PARA LLANTAS','RECARGAS','SACOS DE SAL','ASCENSOR','VACUNAS','RECARGUE DE GAS','JUGOS BODEGUEROS','IMPRESION DE FACTURAS','CANECA DE JABON NEUTRO','PALLETS','PARCHE PARA LLANTA','MOTOTAXI','CAMBIO DE LLANTAS','COMPRA DE ACEITE PARA MOTOR','CAMBIO DE ACEITE','LIQUIDO DE FRENO','CLORO EN GRANO','MANO DE OBRA (CAMION)','REPUESTOS PARA CAMION','OTROS GASTOS DE CAMION','COMPRAS DE OFICINA','OTROS']; // [FIX 26-oct] 'OTROS' agregado igual que en la app de pedidos
 /* Opciones del <select>. Si un gasto antiguo tiene un texto fuera del listado, se muestra
    como "(anterior)" para no perderlo al abrir el editor, pero no se puede volver a guardar. */
 function _opcionesGastoDesc(actual){
@@ -8526,6 +8575,18 @@ function _opcionesGastoDesc(actual){
   let html='<option value="">Selecciona...</option>';
   if(act && !GASTOS_PERMITIDOS.includes(act)) html+=`<option value="" selected disabled>${escHTML(act)} (anterior)</option>`;
   return html+GASTOS_PERMITIDOS.map(o=>`<option value="${o}" ${o===act?'selected':''}>${o}</option>`).join('');
+}
+/* [FIX 26-oct] Campo de texto libre para la opción OTROS (igual que en la app de pedidos).
+   La categoría se guarda como 'OTROS' y la descripción lleva el texto escrito. */
+function _campoGastoOtros(visible, valor){
+  return `<div class="editar-field" id="epgOtrosWrap" style="display:${visible?'block':'none'}"><label>Especifica el gasto (Otros)</label><input type="text" id="epgOtros" maxlength="100" value="${escapeAttr(valor||'')}"></div>`;
+}
+function _toggleEpgOtros(){
+  const sel=document.getElementById('epgDesc'); const wrap=document.getElementById('epgOtrosWrap');
+  if(!sel||!wrap) return;
+  const esOtros=sel.value==='OTROS';
+  wrap.style.display=esOtros?'block':'none';
+  if(!esOtros){ const inp=document.getElementById('epgOtros'); if(inp) inp.value=''; }
 }
 let _editandoPagoGasto = null; // { tipo:'pago'|'gasto', id:'...' }
 
@@ -8560,11 +8621,12 @@ function abrirNuevoGasto(){
   document.getElementById('editarPagoGastoTitulo').textContent='＋ Añadir gasto';
   document.getElementById('editarPagoGastoBody').innerHTML=`
     <div class="editar-grid full">
-      <div class="editar-field"><label>Descripción del gasto</label><select id="epgDesc">${_opcionesGastoDesc('')}</select></div>
+      <div class="editar-field"><label>Descripción del gasto</label><select id="epgDesc" onchange="_toggleEpgOtros()">${_opcionesGastoDesc('')}</select></div>
+      ${_campoGastoOtros(false,'')}
       <div class="editar-field"><label>Asesor / responsable</label><select id="epgAsesor">${_opcionesAsesorCuadre('')}</select></div>
       <div class="editar-field"><label>Monto ($)</label><input type="number" min="0" step="0.01" id="epgMonto" value=""></div>
       <div class="editar-field"><label>Fecha</label><input type="date" id="epgFecha" value="${fecha}"></div>
-      <div class="editar-field"><label>Comprobante / Referencia</label><input type="text" id="epgRef" value=""></div>
+      <div class="editar-field"><label>Detalle de Gastos</label><input type="text" id="epgRef" value=""></div>
     </div>`;
   document.getElementById('editarPagoGastoOverlay').classList.add('open');
   document.body.style.overflow='hidden';
@@ -8594,12 +8656,14 @@ function abrirEditarGasto(id){
   if(!_puedeEditarCuadreCaja(g.fecha)){ alert('No se puede editar este gasto en el período.'); return; }
   _editandoPagoGasto = { tipo:'gasto', id };
   document.getElementById('editarPagoGastoTitulo').textContent = '✏ Editar Gasto';
+  const _esOtrosG = String(g.categoria||'').trim()==='OTROS'; // [FIX 26-oct] gasto OTROS: conserva el texto libre
   document.getElementById('editarPagoGastoBody').innerHTML = `
     <div class="editar-grid full">
-      <div class="editar-field"><label>Descripción del gasto</label><select id="epgDesc">${_opcionesGastoDesc(GASTOS_PERMITIDOS.includes(String(g.categoria||'').trim())?g.categoria:(g.desc||g.categoria||''))}</select></div>
+      <div class="editar-field"><label>Descripción del gasto</label><select id="epgDesc" onchange="_toggleEpgOtros()">${_opcionesGastoDesc(GASTOS_PERMITIDOS.includes(String(g.categoria||'').trim())?g.categoria:(g.desc||g.categoria||''))}</select></div>
+      ${_campoGastoOtros(_esOtrosG, _esOtrosG ? (g.desc||'') : '')}
       <div class="editar-field"><label>Monto ($)</label><input type="number" min="0" step="0.01" id="epgMonto" value="${parseFloat(g.monto)||0}"></div>
       <div class="editar-field"><label>Fecha</label><input type="date" id="epgFecha" value="${g.fecha||''}"></div>
-      <div class="editar-field"><label>Comprobante / Referencia</label><input type="text" id="epgRef" value="${escapeAttr(g.ref||'')}"></div>
+      <div class="editar-field"><label>Detalle de Gastos</label><input type="text" id="epgRef" value="${escapeAttr(g.ref||'')}"></div>
     </div>`;
   document.getElementById('editarPagoGastoOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -8639,8 +8703,14 @@ async function guardarEdicionPagoGasto(){
     } else {
       const desc = document.getElementById('epgDesc').value.trim();
       if(!GASTOS_PERMITIDOS.includes(desc)){ alert('Selecciona la descripción del gasto del listado.'); btn.disabled=false; btn.textContent='✅ Guardar Cambios'; return; }
+      // [FIX 26-oct] OTROS: categoría 'OTROS' y la descripción es el texto libre (obligatorio)
+      let descFinal = desc;
+      if(desc === 'OTROS'){
+        descFinal = String(document.getElementById('epgOtros')?.value||'').trim().toUpperCase().slice(0,100);
+        if(!descFinal){ alert('Cuando seleccionas OTROS, debes escribir la descripción del gasto.'); btn.disabled=false; btn.textContent='✅ Guardar Cambios'; return; }
+      }
       const payloadGasto={
-        desc, categoria: desc, monto, // [NEW] descripción = categoría = opción del listado
+        desc: descFinal, categoria: desc, monto, // [NEW] descripción = categoría = opción del listado (salvo OTROS)
         fecha: document.getElementById('epgFecha').value, ref: document.getElementById('epgRef').value.trim()
       };
       const asEl=document.getElementById('epgAsesor');
