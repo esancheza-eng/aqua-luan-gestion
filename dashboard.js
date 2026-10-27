@@ -4170,21 +4170,79 @@ function renderPagosGastosDetalle(pagos, gastos) {
    Solo cambia lo que se ve en esta tabla y su subtotal: los totales del cuadre,
    el neto y el PDF siguen igual que antes. */
 function _descGastoCaja(r){ return String(r['NOTAS'] || r['CLIENTE'] || r['DIRECCIÓN'] || '-').trim(); }
-function _filtroGastoCajaActivo(){ return (document.getElementById('filtroGastoCaja')?.value||''); }
+/* [NEW] Selección múltiple: se pueden marcar varias descripciones a la vez.
+   Sin ninguna marcada = se ven todas (igual que antes "Todas las descripciones"). */
+let _gastoCajaSel = new Set();
+let _gastoCajaDescs = [];
+let _gastoCajaConteo = {};
+function _filtroGastoCajaActivo(){ return _gastoCajaSel.size > 0; }
+function _toggleFiltroGastoCaja(ev){
+  if(ev) ev.stopPropagation();
+  const p = document.getElementById('filtroGastoCaja');
+  if(!p) return;
+  const abrir = p.style.display === 'none';
+  p.style.display = abrir ? 'block' : 'none';
+  if(abrir){ const b=document.getElementById('filtroGastoCajaBuscar'); if(b){ b.value=''; _buscarFiltroGastoCaja(); } }
+}
+document.addEventListener('click', ev => {
+  const w = document.getElementById('filtroGastoCajaWrap');
+  const p = document.getElementById('filtroGastoCaja');
+  if(w && p && p.style.display !== 'none' && !w.contains(ev.target)) p.style.display = 'none';
+});
+function _buscarFiltroGastoCaja(){
+  const q = (document.getElementById('filtroGastoCajaBuscar')?.value||'').trim().toLowerCase();
+  document.querySelectorAll('#filtroGastoCajaLista label[data-i]').forEach(l => {
+    const d = _gastoCajaDescs[+l.dataset.i] || '';
+    l.style.display = (!q || d.toLowerCase().includes(q)) ? 'flex' : 'none';
+  });
+}
+function _marcarTodosFiltroGastoCaja(marcar){
+  if(!marcar){ _gastoCajaSel.clear(); }
+  else {
+    document.querySelectorAll('#filtroGastoCajaLista label[data-i]').forEach(l => {
+      if(l.style.display !== 'none') _gastoCajaSel.add(_gastoCajaDescs[+l.dataset.i]);
+    });
+  }
+  document.querySelectorAll('#filtroGastoCajaLista input[data-i]').forEach(c => { c.checked = _gastoCajaSel.has(_gastoCajaDescs[+c.dataset.i]); });
+  _aplicarFiltroGastoCaja();
+}
+function _cambioCheckGastoCaja(chk){
+  const d = _gastoCajaDescs[+chk.dataset.i];
+  if(d === undefined) return;
+  if(chk.checked) _gastoCajaSel.add(d); else _gastoCajaSel.delete(d);
+  _aplicarFiltroGastoCaja();
+}
+function _actualizarLblFiltroGastoCaja(total){
+  const lbl = document.getElementById('filtroGastoCajaLbl');
+  if(!lbl) return;
+  const n = _gastoCajaSel.size;
+  if(!n){ lbl.textContent = `Todas las descripciones (${total})`; return; }
+  const cant = [..._gastoCajaSel].reduce((s,d)=>s+(_gastoCajaConteo[d]||0),0);
+  lbl.textContent = n === 1 ? `${[..._gastoCajaSel][0]} (${cant})` : `${n} descripciones (${cant})`;
+}
 function _renderTablaGastosCaja(){
   const todos = gastosDetalleActuales || [];
-  const sel = document.getElementById('filtroGastoCaja');
-  if(sel){
-    const previo = sel.value;
-    const conteo = {};
-    todos.forEach(r => { const d=_descGastoCaja(r); conteo[d]=(conteo[d]||0)+1; });
-    const descs = Object.keys(conteo).sort((a,b)=>a.localeCompare(b,'es'));
-    sel.innerHTML = `<option value="">Todas las descripciones (${todos.length})</option>` +
-      descs.map(d => `<option value="${escapeAttr(d)}">${escHTML(d)} (${conteo[d]})</option>`).join('');
-    sel.value = descs.includes(previo) ? previo : '';
+  const lista = document.getElementById('filtroGastoCajaLista');
+  _gastoCajaConteo = {};
+  todos.forEach(r => { const d=_descGastoCaja(r); _gastoCajaConteo[d]=(_gastoCajaConteo[d]||0)+1; });
+  _gastoCajaDescs = Object.keys(_gastoCajaConteo).sort((a,b)=>a.localeCompare(b,'es'));
+  // se quitan marcas de descripciones que ya no existen en el período/asesor filtrado
+  [..._gastoCajaSel].forEach(d => { if(!(d in _gastoCajaConteo)) _gastoCajaSel.delete(d); });
+  if(lista){
+    lista.innerHTML = _gastoCajaDescs.length ? _gastoCajaDescs.map((d,i) =>
+      `<label data-i="${i}" style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;cursor:pointer;color:var(--navy)">
+        <input type="checkbox" data-i="${i}" ${_gastoCajaSel.has(d)?'checked':''} onchange="_cambioCheckGastoCaja(this)" style="width:15px;height:15px;cursor:pointer;flex-shrink:0">
+        <span style="flex:1">${escHTML(d)}</span><span style="color:var(--muted);font-size:11px">${_gastoCajaConteo[d]}</span>
+      </label>`).join('')
+      : '<div style="padding:8px;color:var(--muted)">No hay gastos en este período</div>';
+    _buscarFiltroGastoCaja();
   }
-  const filtro = _filtroGastoCajaActivo();
-  const gastos = filtro ? todos.filter(r => _descGastoCaja(r) === filtro) : todos;
+  _aplicarFiltroGastoCaja();
+}
+function _aplicarFiltroGastoCaja(){
+  const todos = gastosDetalleActuales || [];
+  _actualizarLblFiltroGastoCaja(todos.length);
+  const gastos = _gastoCajaSel.size ? todos.filter(r => _gastoCajaSel.has(_descGastoCaja(r))) : todos;
   const totalGastos = gastos.reduce((s,r) => s + Math.abs(parseFloat(r['TOTAL PEDIDO ($)'])||0), 0);
   const tbodyGastos = document.getElementById('tablaGastosDetalle');
   if (!gastos.length) {

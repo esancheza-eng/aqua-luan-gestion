@@ -279,9 +279,20 @@
               <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--red)">📉 Gastos registrados</div>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <!-- [NEW] Filtro de gastos por descripción — respeta los filtros de fechas y asesor de arriba -->
-                <select id="filtroGastoCaja" onchange="_renderTablaGastosCaja()" title="Filtrar gastos por descripción" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;color:var(--navy);background:var(--surface);max-width:260px;cursor:pointer">
-                  <option value="">Todas las descripciones</option>
-                </select>
+                <!-- [NEW] Selección múltiple con casillas (reemplaza el <select> de una sola opción) -->
+                <div id="filtroGastoCajaWrap" style="position:relative">
+                  <button type="button" id="filtroGastoCajaBtn" onclick="_toggleFiltroGastoCaja(event)" title="Filtrar gastos por descripción (puede marcar varias)" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;color:var(--navy);background:var(--surface);max-width:260px;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden">
+                    <span id="filtroGastoCajaLbl" style="overflow:hidden;text-overflow:ellipsis">Todas las descripciones</span><span style="font-size:10px">▾</span>
+                  </button>
+                  <div id="filtroGastoCaja" style="display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:60;width:300px;max-width:85vw;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:8px">
+                    <input type="text" id="filtroGastoCajaBuscar" placeholder="Buscar descripción…" oninput="_buscarFiltroGastoCaja()" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;margin-bottom:6px;background:var(--surface);color:var(--navy)">
+                    <div style="display:flex;gap:6px;margin-bottom:6px">
+                      <button type="button" onclick="_marcarTodosFiltroGastoCaja(true)" style="flex:1;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--navy);font-size:11px;font-weight:700;cursor:pointer">✓ Marcar visibles</button>
+                      <button type="button" onclick="_marcarTodosFiltroGastoCaja(false)" style="flex:1;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--navy);font-size:11px;font-weight:700;cursor:pointer">✕ Limpiar</button>
+                    </div>
+                    <div id="filtroGastoCajaLista" style="max-height:300px;overflow-y:auto;font-size:12px"></div>
+                  </div>
+                </div>
                 <button type="button" class="btn-editar-fila" id="btnNuevoGastoCaja" onclick="abrirNuevoGasto()" style="display:none">＋ Añadir gasto</button>
               </div>
             </div>
