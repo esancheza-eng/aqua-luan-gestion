@@ -334,6 +334,12 @@ async function cpdConfirmarUnir(i){
       const lote = db.batch();
       refs.slice(k, k + 400).forEach(r => lote.update(r, { cliente: destino }));
       await lote.commit();
+      /* [NEW 27-oct] Aviso para Consultar por Cliente (solo pedidos y pagos) */
+      if (typeof _registrarCambioRegistro === 'function') {
+        const lot = refs.slice(k, k + 400);
+        _registrarCambioRegistro('pedidos', lot.filter(r => r.parent && r.parent.id === 'pedidos').map(r => r.id), 'edición');
+        _registrarCambioRegistro('pagos', lot.filter(r => r.parent && r.parent.id === 'pagos').map(r => r.id), 'edición');
+      }
     }
     cpdCerrarModal();
     _cpdToast(`✅ ${c.cliente} → ${destino}: ${refs.length} registro(s) actualizados.`);

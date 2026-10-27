@@ -172,7 +172,7 @@
           <div class="table-header">
             <div class="table-title">🔍 Consultar por Cliente</div>
             <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
-              <button type="button" class="btn-filter" style="background:var(--muted);padding:6px 10px;font-size:11px" onclick="recargarHistorialClientes()" title="Vuelve a leer los pedidos y pagos de hace más de 30 días (cambios hechos a pedidos antiguos)">↻ Recargar historial</button>
+              <button type="button" id="btnRecargarHistorialClientes" class="btn-filter" style="background:var(--muted);padding:6px 10px;font-size:11px" onclick="if(confirm('¿Recargar todo el historial desde Firebase?\n\nNo hace falta en el uso normal: los cambios llegan solos. Úsalo solo si editaste algo a mano en la consola de Firebase.')) recargarHistorialClientes()" title="Solo administrador — vuelve a leer todo el historial desde Firebase">↻ Recargar todo</button>
               <span style="font-size:12px;color:var(--muted)" id="clienteContadorTabla">0 clientes</span>
             </div>
           </div>
@@ -818,6 +818,7 @@
      "Importar Datos" (ver cargarXLSX en dashboard.js), igual que ya se hacía
      con Leaflet para el mapa de rutas. -->
 <script src="dashboard.js"></script>
+<script src="dashboard-cache-clientes.js"></script> <!-- [NEW 27-oct] Consultar por Cliente: memoria en el navegador + registro de cambios -->
 <script src="dashboard-envases.js"></script> <!-- [NEW] Envases prestados + Cuadre del camión -->
 <script src="dashboard-clientes-precios.js"></script> <!-- [NEW] Clientes y Precios (lista de precios por cliente + pendientes) -->
 <script src="dashboard-exportar-base.js"></script> <!-- [NEW][TEMPORAL] Exportar Base (solo lectura) + carga de SheetJS para Importar Datos -->
