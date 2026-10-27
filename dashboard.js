@@ -8138,14 +8138,19 @@ async function corregirAsesoresPedidosExistentes(){
 /* ════════════════════════════════════════════════════════════
    ROLES DE PAGO — sueldo base + comisión por producto − faltantes
    Reglas de comisión (definidas por administración, 29-09-2026):
-   · JEFFERSON y LUIS: 10% sobre botellones (20 LT, con llave, premium)
-     vendidos a $1,00 o menos. Solo comisiona el día en que la ruta vende
+   · JEFFERSON (corregido 27-10-2026): 10% sobre botellones (20 LT, con
+     llave, premium) vendidos a $1,00 O MÁS. Mínimo 50 botellones al día.
+   · LUIS (corregido 27-10-2026): 10% sobre botellones (20 LT, con llave,
+     premium) vendidos a $1,00 O MÁS. Solo comisiona el día en que la ruta vende
      50 botellones o más (suma de los 3 tipos, a cualquier precio, sin
      regalías ni líneas en $0). Si llega, comisiona todos los del día.
-   · LISTER: igual que Jefferson/Luis, pero el mínimo diario es 75.
+   · LISTER (corregido 27-10-2026): igual que Jefferson/Luis ($1,00 o más),
+     pero el mínimo diario es 75.
    · VICENTE y WILSON: 8% sin mínimo diario sobre botellón 20 LT a $0,80
-     o más, botellón con llave / premium a $1,00 o más, y pacas 600, 625,
-     400 y 1 litro a cualquier precio mayor a $0.
+     o más y botellón con llave / premium a $1,00 o más; pacas 600, 625,
+     400 y 1 litro a cualquier precio mayor a $0 al 1% (corregido 27-10-2026).
+     En Vicente no se listan las líneas que no comisionan.
+   · WASHINGTON (nuevo 27-10-2026): 5% solo sobre botellón 20 LT, sin mínimo.
    · Resto de asesores: sin comisión (solo sueldo).
    Otras piezas:
    · Sueldo base se guarda por asesor en rolesConfig.
@@ -8184,16 +8189,30 @@ const _BOTELLONES_ROL = ['BOT_20','BOT_LLAVE','BOT_PREMIUM'];
 
 /* Reglas por asesor — si cambian, se cambian SOLO aquí */
 const REGLAS_COMISION_ROL = {
-  JEFFERSON: { pct:10, minimoDiario:50, descripcion:'10% botellones a $1,00 o menos · mínimo 50 botellones al día',
-               califica:(tipo, precio) => _BOTELLONES_ROL.includes(tipo) && precio <= 1 + _EPS_ROL },
-  LUIS:      { pct:10, minimoDiario:50, descripcion:'10% botellones a $1,00 o menos · mínimo 50 botellones al día',
-               califica:(tipo, precio) => _BOTELLONES_ROL.includes(tipo) && precio <= 1 + _EPS_ROL },
-  LISTER:    { pct:10, minimoDiario:75, descripcion:'10% botellones a $1,00 o menos · mínimo 75 botellones al día',
-               califica:(tipo, precio) => _BOTELLONES_ROL.includes(tipo) && precio <= 1 + _EPS_ROL },
-  VICENTE:   { pct:8, minimoDiario:0, descripcion:'8% sin mínimo · 20 LT desde $0,80 · con llave/premium desde $1,00 · pacas 600/625/400/1 L',
+  /* [FIX 27-oct-2026] JEFFERSON: comisiona botellones a $1,00 O MÁS ($1 · $1,25 · $1,50 · $1,75…), antes era "$1,00 o menos" */
+  JEFFERSON: { pct:10, minimoDiario:50, descripcion:'10% botellones a $1,00 o más · mínimo 50 botellones al día',
+               califica:(tipo, precio) => _BOTELLONES_ROL.includes(tipo) && precio >= 1 - _EPS_ROL },
+  /* [FIX 27-oct-2026] LUIS: comisiona botellones a $1,00 O MÁS ($1 · $1,25 · $1,50 · $1,75…), antes era "$1,00 o menos" */
+  LUIS:      { pct:10, minimoDiario:50, descripcion:'10% botellones a $1,00 o más · mínimo 50 botellones al día',
+               califica:(tipo, precio) => _BOTELLONES_ROL.includes(tipo) && precio >= 1 - _EPS_ROL },
+  /* [FIX 27-oct-2026] LISTER: comisiona botellones a $1,00 O MÁS ($1 · $1,25 · $1,50 · $1,75…), antes era "$1,00 o menos" */
+  LISTER:    { pct:10, minimoDiario:75, descripcion:'10% botellones a $1,00 o más · mínimo 75 botellones al día',
+               califica:(tipo, precio) => _BOTELLONES_ROL.includes(tipo) && precio >= 1 - _EPS_ROL },
+  /* [FIX 27-oct-2026] VICENTE: pacas comisionan 1% (botellones siguen al 8%) y en el
+     detalle ya no se muestran los botellones que no califican (ej. 20 LT a menos de $0,80) */
+  VICENTE:   { pct:8, minimoDiario:0, descripcion:'8% sin mínimo · 20 LT desde $0,80 · con llave/premium desde $1,00 · pacas 600/625/400/1 L al 1%',
+               pctPorTipo:(tipo) => /^PACA_/.test(tipo||'') ? 1 : 8,
+               ocultarNoCalifican:true,
                califica:(tipo, precio) => (tipo === 'BOT_20' && precio >= 0.80 - _EPS_ROL) || ((tipo === 'BOT_LLAVE' || tipo === 'BOT_PREMIUM') && precio >= 1 - _EPS_ROL) || (/^PACA_/.test(tipo||'') && precio > 0) },
-  WILSON:    { pct:8, minimoDiario:0, descripcion:'8% sin mínimo · 20 LT desde $0,80 · con llave/premium desde $1,00 · pacas 600/625/400/1 L',
-               califica:(tipo, precio) => (tipo === 'BOT_20' && precio >= 0.80 - _EPS_ROL) || ((tipo === 'BOT_LLAVE' || tipo === 'BOT_PREMIUM') && precio >= 1 - _EPS_ROL) || (/^PACA_/.test(tipo||'') && precio > 0) }
+  /* [FIX 27-oct-2026] WILSON: pacas comisionan 1% (botellones siguen al 8%) */
+  WILSON:    { pct:8, minimoDiario:0, descripcion:'8% sin mínimo · 20 LT desde $0,80 · con llave/premium desde $1,00 · pacas 600/625/400/1 L al 1%',
+               pctPorTipo:(tipo) => /^PACA_/.test(tipo||'') ? 1 : 8,
+               califica:(tipo, precio) => (tipo === 'BOT_20' && precio >= 0.80 - _EPS_ROL) || ((tipo === 'BOT_LLAVE' || tipo === 'BOT_PREMIUM') && precio >= 1 - _EPS_ROL) || (/^PACA_/.test(tipo||'') && precio > 0) },
+  /* [NEW 27-oct-2026] WASHINGTON (Ruta 7): 5% solo sobre botellón 20 LT, sin mínimo diario, a cualquier precio mayor a $0.
+     En el detalle solo se listan los botellones 20 LT (con llave / premium no comisionan). */
+  WASHINGTON:{ pct:5, minimoDiario:0, descripcion:'5% solo botellón 20 LT · sin mínimo',
+               ocultarNoCalifican:true,
+               califica:(tipo, precio) => tipo === 'BOT_20' && precio > 0 }
 };
 function _reglaComisionRol(ruta){
   const n = _normRol(ruta);
@@ -8233,12 +8252,14 @@ function _calcularComisionAsesorRol(ruta, pedidos){
     if (regla && regla.minimoDiario && cumple) diasCumplen++;
     d.items.forEach(it => {
       if (!_tipoRelevanteRol(regla, it.tipo)) return;
+      if (regla.ocultarNoCalifican && !regla.califica(it.tipo, it.precio)) return; // [NEW 27-oct] no listar lo que no comisiona
+      const pctLinea = regla.pctPorTipo ? regla.pctPorTipo(it.tipo) : regla.pct;  // [NEW 27-oct] % por tipo de producto
       const k = _normRol(it.nombre) + '|' + it.precio.toFixed(2);
-      if (!lineas[k]) lineas[k] = { producto: _normRol(it.nombre), precio: it.precio, cantidad:0, cantComisiona:0, comision:0 };
+      if (!lineas[k]) lineas[k] = { producto: _normRol(it.nombre), precio: it.precio, cantidad:0, cantComisiona:0, comision:0, pct: pctLinea };
       const L = lineas[k];
       L.cantidad += it.cant;
       if (cumple && regla.califica(it.tipo, it.precio)) {
-        const c = it.cant * it.precio * (regla.pct / 100);
+        const c = it.cant * it.precio * (pctLinea / 100);
         L.cantComisiona += it.cant;
         L.comision += c;
         comision += c;
@@ -8340,7 +8361,7 @@ function renderTablaRolesPago(){
         <td style="text-align:right">$${L.precio.toFixed(2)}</td>
         <td style="text-align:right">${L.cantidad}</td>
         <td style="text-align:right;color:${L.cantComisiona?'var(--teal)':'var(--muted)'};font-weight:${L.cantComisiona?700:400}">${L.cantComisiona}</td>
-        <td style="text-align:right">${L.cantComisiona ? r.regla.pct + '%' : '—'}</td>
+        <td style="text-align:right">${L.cantComisiona ? (L.pct != null ? L.pct : r.regla.pct) + '%' : '—'}</td>
         <td style="text-align:right">$${L.comision.toFixed(2)}</td>
       </tr>`).join('')
       : (r.regla ? '<tr><td colspan="6" style="padding-left:28px;color:var(--muted);font-size:12px">Sin ventas de productos que comisionan en el período</td></tr>' : '');
@@ -8443,7 +8464,7 @@ function _imprimirRolPagoDoc(r){
   const htmlDetalle = detalle.length
     ? `<table class="det"><tr class="th"><td>Producto</td><td class="num">Precio unit.</td><td class="num">Cantidad</td><td class="num">Comisiona</td><td class="num">Comisión</td></tr>` +
       detalle.map(L => `<tr><td>${escHTML(L.producto)}</td><td class="num">${f2(L.precio)}</td><td class="num">${L.cantidad}</td><td class="num">${L.cantComisiona}</td><td class="num">${f2(L.comision)}</td></tr>`).join('') +
-      `<tr class="sub"><td colspan="4">Total comisión${r.regla ? ' (' + r.regla.pct + '%)' : ''}</td><td class="num">${f2(r.comisionCalculada)}</td></tr></table>`
+      `<tr class="sub"><td colspan="4">Total comisión${r.regla ? ' (' + ([...new Set(detalle.filter(L => L.cantComisiona).map(L => L.pct != null ? L.pct : r.regla.pct))].sort((a,b)=>b-a).join('% / ') || r.regla.pct) + '%)' : ''}</td><td class="num">${f2(r.comisionCalculada)}</td></tr></table>`
     : `<table><tr><td style="color:#888">${r.regla ? 'Sin ventas de productos que comisionan en el período' : 'Este asesor no comisiona'}</td><td class="num">${f2(r.comisionCalculada)}</td></tr></table>`;
   const logoUrl = location.origin + '/logo-luanaqua.png';
   const filasFalt = faltantes.length
